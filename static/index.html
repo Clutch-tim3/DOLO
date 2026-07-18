@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donington Vale — Procurement Dashboard</title>
+    <!-- Premium Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@200;300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+
+    <!-- Transparent Navigation Bar -->
+    <nav class="top-nav" id="topNav">
+        <div class="nav-left">
+            <a href="#" class="back-link">
+                <svg class="back-arrow" width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 1L1 6M1 6L6 11M1 6H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>BACK</span>
+            </a>
+        </div>
+        <div class="nav-center">
+            <span class="logo">DONINGTON VALE</span>
+        </div>
+        <div class="nav-right" style="display:flex; justify-content:flex-end;">
+            <a href="/system" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span>SYSTEM</span>
+            </a>
+            <a href="/calendar" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span>CALENDAR</span>
+            </a>
+            <a href="/vault" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span>COMPLIANCE</span>
+            </a>
+            <a href="/accuracy" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span>ACCURACY</span>
+            </a>
+            <a href="/sort" class="back-link" style="flex-direction:row-reverse;">
+                <span>SORT TENDERS</span>
+                <svg class="back-arrow" width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(180deg); margin-right:0; margin-left:8px;">
+                    <path d="M6 1L1 6M1 6L6 11M1 6H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+        </div>
+    </nav>
+
+    <!-- Main Viewport Container -->
+    <main class="page-container">
+
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <span class="category-label">INTELLIGENT FORECASTING</span>
+                <h1 class="hero-title">THE ETERNAL ARC.</h1>
+                <p class="hero-subtitle">
+                    Predicting win margins and bid success criteria by matching automated bid documents with your central company archive.
+                </p>
+                <div style="display: flex; gap: 24px; margin-top: 40px;">
+                    <button class="corner-btn" id="openBidBtn">
+                        <span>NEW BID SUBMISSION</span>
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                    </button>
+                    <button class="corner-btn" id="openArchiveBtn">
+                        <span>MANAGE ARCHIVE</span>
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Company Registration Drawer (Glassmorphic Slide-over) -->
+        <section class="prediction-panel" id="archivePanel">
+            <div class="panel-container">
+                <div class="panel-header">
+                    <span class="category-label">COMPANY ARCHIVE PROFILE</span>
+                    <h2 class="section-title">ARCHIVE COMPANY</h2>
+                    <button class="close-btn" id="closeArchiveBtn">CLOSE</button>
+                </div>
+                
+                <p class="column-desc" style="margin-bottom: 24px;">
+                    Upload a CIPC registration form (COR14.3) or a CSD supplier details report to automatically parse and register a company under your profile. You can select and upload multiple files at once.
+                </p>
+                
+                <div id="targetCompanyIndicator" style="display: none; margin-bottom: 16px; padding: 12px; border: 1px dashed var(--accent-gold); font-size: 12px; color: var(--accent-gold); background: rgba(197, 168, 128, 0.05);">
+                    ADDITIONAL DOCUMENTS FOR: <strong id="targetCompanyName">None</strong>
+                    <button type="button" onclick="clearTargetCompany()" style="float: right; background: transparent; border: none; color: #fff; cursor: pointer; font-size: 11px;">[CLEAR]</button>
+                </div>
+                
+                <form id="archiveForm" class="predict-form">
+                    <div class="form-group" style="position: relative;">
+                        <label>Upload CIPC / CSD Documents (PDFs)</label>
+                        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                            <button type="button" id="addMoreCompanyFilesBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
+                                <span>+ ADD FILES</span>
+                                <span class="bracket bracket-tr"></span>
+                                <span class="bracket bracket-bl"></span>
+                            </button>
+                            <input type="file" id="company_file" name="file" accept=".pdf" multiple style="display: none;">
+                            <button type="button" id="clear_company_files" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR ALL]</button>
+                        </div>
+                        <!-- Accumulated file list -->
+                        <div id="company_files_list" style="margin-top:12px; font-size:12px; color:#ccc; display:flex; flex-direction:column; gap:4px; max-height: 150px; overflow-y: auto;"></div>
+                    </div>
+                    <button type="submit" class="submit-btn corner-btn">
+                        <span>UPLOAD FILES</span>
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                    </button>
+                </form>
+                
+                <div id="uploadFeedback" style="margin-top: 24px; font-size: 13px; color: var(--accent-gold); display: none;">
+                    Processing documents. Please wait...
+                </div>
+            </div>
+        </section>
+
+        <!-- New Bid Submission Drawer (Glassmorphic Slide-over) -->
+        <section class="prediction-panel" id="bidPanel">
+            <div class="panel-container">
+                <div class="panel-header">
+                    <span class="category-label">TENDER ANALYTICS SUBMISSION</span>
+                    <h2 class="section-title">SUBMIT NEW BID</h2>
+                    <button class="close-btn" id="closeBidBtn">CLOSE</button>
+                </div>
+                
+                <form id="tenderSubmitForm" class="predict-form" enctype="multipart/form-data">
+                    <div class="form-group" style="position: relative;">
+                        <label>Upload Tender Document (PDF)</label>
+                        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                            <button type="button" id="addTenderFileBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
+                                <span>+ ADD TENDER</span>
+                                <span class="bracket bracket-tr"></span>
+                                <span class="bracket bracket-bl"></span>
+                            </button>
+                            <input type="file" id="tender_file" name="tender_file" accept=".pdf" style="display: none;">
+                            <button type="button" id="clear_tender_file" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR]</button>
+                        </div>
+                        <div id="tender_file_list" style="margin-top:12px; font-size:12px; color:#ccc; display:flex; flex-direction:column; gap:4px;"></div>
+                        <small style="color:#666; font-size: 11px; margin-top: 8px; display: block;">System will extract target estimated value and reference numbers from this form.</small>
+                    </div>
+
+                    <div class="form-group" style="position: relative; margin-top: 24px;">
+                        <label>Upload Your Bid Document (PDF)</label>
+                        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                            <button type="button" id="addBidFileBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
+                                <span>+ ADD BID</span>
+                                <span class="bracket bracket-tr"></span>
+                                <span class="bracket bracket-bl"></span>
+                            </button>
+                            <input type="file" id="bid_file" name="bid_file" accept=".pdf" style="display: none;">
+                            <button type="button" id="clear_bid_file" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR]</button>
+                        </div>
+                        <div id="bid_file_list" style="margin-top:12px; font-size:12px; color:#ccc; display:flex; flex-direction:column; gap:4px;"></div>
+                        <small style="color:#666; font-size: 11px; margin-top: 8px; display: block;">System will match this bid to an archived company and read pricing offers.</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="supplier_name">Supplier Name (Fallback)</label>
+                        <input type="text" id="supplier_name" name="supplier_name" placeholder="Enter supplier name if not uploading a Bid PDF">
+                    </div>
+
+                    <button type="submit" class="submit-btn corner-btn">
+                        <span>COMPUTE ESTIMATES</span>
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        
+
+
+        <!-- Prediction Results & Capabilities Layout -->
+        <section class="results-section" id="resultsSection" style="display: none;">
+            <div style="display:flex; justify-content: flex-end; margin-bottom:16px;" id="markOutcomeContainer">
+                <div style="position:relative;">
+                    <button type="button" class="corner-btn" id="markOutcomeBtn" style="padding:8px 16px; font-size:11px;">
+                        <span>MARK OUTCOME ▾</span>
+                        <span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                    </button>
+                    <div id="markOutcomeDropdown" style="display:none; position:absolute; right:0; top:100%; margin-top:8px; background:rgba(0,0,0,0.9); border:1px solid rgba(197,168,128,0.3); padding:16px; z-index:100; min-width:250px;">
+                        <form id="markOutcomeForm">
+                            <input type="hidden" id="outcome_prediction_id" name="prediction_id">
+                            <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Actual Outcome</label>
+                            <select name="actual_outcome" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px; margin-bottom:12px;">
+                                <option value="won">Won</option>
+                                <option value="lost">Lost</option>
+                                <option value="withdrawn">Withdrawn</option>
+                            </select>
+                            <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Date (Optional)</label>
+                            <input type="date" name="outcome_date" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:7px; margin-bottom:12px;">
+                            <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Notes (Optional)</label>
+                            <input type="text" name="notes" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px; margin-bottom:16px;">
+                            <button type="submit" class="corner-btn" style="width:100%; padding:8px; font-size:11px;">
+                                <span>SAVE OUTCOME</span>
+                                <span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="two-column-layout">
+                <!-- Left Column: Capabilities -->
+                <div class="capabilities-column">
+                    <span class="category-label">METRIC INTERPRETATION</span>
+                    <h2 class="column-title">CAPABILITIES & ANALYSIS.</h2>
+                    <p class="column-desc">
+                        Our model processes point-in-time experience indicators, buyer concentration curves, and preferential procurement regulations to generate calibrated probability estimates.
+                    </p>
+                    
+                    <ul class="capabilities-list">
+                        <li>
+                            <h3 class="cap-item-title">Ensemble Probability</h3>
+                            <p class="cap-item-desc">A blended prediction leveraging XGBoost, LightGBM, and CatBoost models trained on over 46M contracts.</p>
+                        </li>
+                        <li>
+                            <h3 class="cap-item-title">PPPFA Price & Preference scoring</h3>
+                            <p class="cap-item-desc">SA-specific pricing and black empowerment rating calculations adjusted natively using 80/20 and 90/10 frameworks.</p>
+                        </li>
+                        <li>
+                            <h3 class="cap-item-title">Optimal Threshold Recalibration</h3>
+                            <p class="cap-item-desc">Dynamically compares win estimates against the optimal business utility decision threshold of 41.9%.</p>
+                        </li>
+                    </ul>
+                </div>
+                
+                <!-- Right Column: Specifications Table -->
+                <div class="specs-column">
+                    <span class="category-label">SYSTEM TELEMETRY</span>
+                    <h2 class="column-title">PREDICTION METRICS.</h2>
+                    
+                    <div class="specs-table-wrapper">
+                        <table class="specs-table">
+                            <tbody>
+                                <tr>
+                                    <td class="spec-label">Detected Bidding Supplier</td>
+                                    <td class="spec-value highlighted" id="resSupplier">Pending</td>
+                                </tr>
+                                <tr>
+                                    <td class="spec-label">Matched From Archive</td>
+                                    <td class="spec-value" id="resMatchedArchive">No</td>
+                                </tr>
+                                <tr>
+                                    <td class="spec-label">B-BBEE Preference Level</td>
+                                    <td class="spec-value" id="resBbbee">9</td>
+                                </tr>
+                                <tr id="rowParsedTenderValue" class="sa-only" style="display:none;">
+                                    <td class="spec-label">Parsed Tender Value</td>
+                                    <td class="spec-value" id="resParsedTenderValue">R0.00</td>
+                                </tr>
+                                <tr id="rowParsedBidPrice" class="sa-only" style="display:none;">
+                                    <td class="spec-label">Parsed Bid Price</td>
+                                    <td class="spec-value" id="resParsedBidPrice">R0.00</td>
+                                </tr>
+                                <tr id="rowParsedLowestPrice" class="sa-only" style="display:none;">
+                                    <td class="spec-label">Parsed Lowest Price</td>
+                                    <td class="spec-value" id="resParsedLowestPrice">R0.00</td>
+                                </tr>
+                                <tr>
+                                    <td class="spec-label">Tender Identifier</td>
+                                    <td class="spec-value" id="resTenderId">Pending</td>
+                                </tr>
+                                <tr>
+                                    <td class="spec-label">Primary Ensemble Prob</td>
+                                    <td class="spec-value" id="resBaseProb">0.0%</td>
+                                </tr>
+                                <tr id="rowSaSystem" class="sa-only" style="display:none;">
+                                    <td class="spec-label">Preferential Framework</td>
+                                    <td class="spec-value" id="resSaSystem">80/20</td>
+                                </tr>
+                                <tr id="rowSaPriceScore" class="sa-only" style="display:none;">
+                                    <td class="spec-label">Price Points</td>
+                                    <td class="spec-value" id="resSaPriceScore">0.0</td>
+                                </tr>
+                                <tr id="rowSaBbeeScore" class="sa-only" style="display:none;">
+                                    <td class="spec-label">B-BBEE Points</td>
+                                    <td class="spec-value" id="resSaBbeeScore">0.0</td>
+                                </tr>
+                                <tr id="rowSaTotalScore" class="sa-only" style="display:none;">
+                                    <td class="spec-label">Total Preference Score</td>
+                                    <td class="spec-value" id="resSaTotalScore">0.0</td>
+                                </tr>
+                                <tr id="rowSaPosition" class="sa-only" style="display:none;">
+                                    <td class="spec-label">Competitive Position</td>
+                                    <td class="spec-value highlighted" id="resSaPosition">Unknown</td>
+                                </tr>
+                                <tr id="rowSaFinalProb" class="sa-only" style="display:none;">
+                                    <td class="spec-label">SA-Adjusted Probability</td>
+                                    <td class="spec-value highlighted-gold" id="resSaFinalProb">0.0%</td>
+                                </tr>
+                                <tr>
+                                    <td class="spec-label">Decision Recommendation</td>
+                                    <td class="spec-value highlighted-gold" id="resRecommendation">PASS</td>
+                                </tr>
+                                <tr>
+                                    <td class="spec-label">Confidence Interval</td>
+                                    <td class="spec-value" id="resConfidence">PASS</td>
+                                </tr>
+                                <tr>
+                                    <td class="spec-label">Inference Threshold</td>
+                                    <td class="spec-value" id="resThreshold">41.9%</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="advice-block sa-only" id="adviceBlock" style="display:none;">
+                        <span class="category-label">STRATEGIC PREFERENCE ADVICE</span>
+                        <p id="resAdviceText"></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        
+        
+
+<!-- Floating Card Grid Section -->
+        <section class="grid-section">
+            <span class="category-label">CENTRAL LEDGER</span>
+            <h2 class="grid-section-title">COMPANY ARCHIVE.</h2>
+            
+            <div class="floating-grid" id="companiesGrid">
+                <!-- Companies dynamically populated here -->
+                <div class="profile-card" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 180px;" id="addFirstCompanyCard">
+                    <div style="text-align: center;">
+                        <span class="card-tag">ARCHIVE IS EMPTY</span>
+                        <h3 class="card-title">ADD FIRST COMPANY</h3>
+                        <p class="card-desc" style="min-height: auto; margin-bottom: 0; font-size: 12px; color: #666;">Upload CIPC/CSD documents to get started.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- UI Interaction Scripts -->
+    <script>
+        const openBidBtn = document.getElementById("openBidBtn");
+        const closeBidBtn = document.getElementById("closeBidBtn");
+        const bidPanel = document.getElementById("bidPanel");
+        
+        const openArchiveBtn = document.getElementById("openArchiveBtn");
+        const closeArchiveBtn = document.getElementById("closeArchiveBtn");
+        const archivePanel = document.getElementById("archivePanel");
+        
+        const archiveForm = document.getElementById("archiveForm");
+        const uploadFeedback = document.getElementById("uploadFeedback");
+        
+        const tenderSubmitForm = document.getElementById("tenderSubmitForm");
+        const resultsSection = document.getElementById("resultsSection");
+        const topNav = document.getElementById("topNav");
+        const companiesGrid = document.getElementById("companiesGrid");
+        const addFirstCompanyCard = document.getElementById("addFirstCompanyCard");
+
+        // Clear file upload selectors logic
+        const bidFileInput = document.getElementById("bid_file");
+        const clearBidFileBtn = document.getElementById("clear_bid_file");
+        const tenderFileInput = document.getElementById("tender_file");
+        const clearTenderFileBtn = document.getElementById("clear_tender_file");
+
+        bidFileInput.addEventListener("change", () => {
+            if (bidFileInput.files.length > 0) {
+                clearBidFileBtn.style.display = "block";
+            } else {
+                clearBidFileBtn.style.display = "none";
+            }
+        });
+
+        clearBidFileBtn.addEventListener("click", () => {
+            bidFileInput.value = "";
+            clearBidFileBtn.style.display = "none";
+        });
+
+        tenderFileInput.addEventListener("change", () => {
+            if (tenderFileInput.files.length > 0) {
+                clearTenderFileBtn.style.display = "block";
+            } else {
+                clearTenderFileBtn.style.display = "none";
+            }
+        });
+
+        clearTenderFileBtn.addEventListener("click", () => {
+            tenderFileInput.value = "";
+            clearTenderFileBtn.style.display = "none";
+        });
+
+        const targetCompanyIndicator = document.getElementById("targetCompanyIndicator");
+        const targetCompanyName = document.getElementById("targetCompanyName");
+
+        function openUploadMissing(companyName) {
+            targetCompanyName.textContent = companyName;
+            targetCompanyIndicator.style.display = "block";
+            archivePanel.classList.add("active");
+        }        function clearTargetCompany() {
+            targetCompanyName.textContent = "";
+            targetCompanyIndicator.style.display = "none";
+        }
+
+        function toggleDropdown(btn, companyName) {
+            const id = "dropdown-" + companyName.replace(/\s+/g, '-');
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.toggle("active");
+                btn.classList.toggle("active");
+            }
+        }
+
+        async function deleteCompany(companyName) {
+            const confirmed = confirm(`Are you sure you want to permanently delete "${companyName}" from the archive? This will also remove any parsed documents associated with it.`);
+            if (!confirmed) return;
+            
+            try {
+                const response = await fetch(`/api/companies/${encodeURIComponent(companyName)}`, {
+                    method: "DELETE"
+                });
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || "Failed to delete company from archive");
+                }
+                
+                fetchArchive();
+            } catch (err) {
+                alert("Error: " + err.message);
+            }
+        }
+
+        // Load companies from API archive
+        async function fetchArchive() {
+            try {
+                const response = await fetch("/api/companies");
+                const data = await response.json();
+                
+                // Clear dynamic cards
+                document.querySelectorAll(".company-card").forEach(el => el.remove());
+                
+                if (data.length > 0) {
+                    addFirstCompanyCard.style.display = "none";
+                    data.forEach(c => {
+                        const card = document.createElement("div");
+                        card.className = "profile-card company-card";
+                        card.style.position = "relative";
+                        card.onclick = () => {
+                            // Autofill convenience when clicking an archived company
+                            document.getElementById("supplier_name").value = c.company_name;
+                            bidPanel.classList.add("active");
+                        };
+                        
+                        // Form completeness warning logic
+                        let cipcCount = c.cipc_count || (c.cipc_uploaded ? 1 : 0);
+                        let csdCount = c.csd_count || (c.csd_uploaded ? 1 : 0);
+                        
+                        let missingCipcCount = Math.max(0, 4 - cipcCount);
+                        let missingCsdCount = Math.max(0, 2 - csdCount);
+                        
+                        let statusText = "COMPLETE";
+                        let statusColor = "#999999";
+                        let statusHtml = ``;
+                        
+                        if (missingCipcCount > 0 && missingCsdCount > 0) {
+                            statusText = `MISSING ${missingCipcCount} CIPC & ${missingCsdCount} CSD`;
+                            statusColor = "#e05c5c";
+                        } else if (missingCipcCount > 0) {
+                            statusText = `MISSING ${missingCipcCount} CIPC`;
+                            statusColor = "var(--accent-gold)";
+                        } else if (missingCsdCount > 0) {
+                            statusText = `MISSING ${missingCsdCount} CSD`;
+                            statusColor = "var(--accent-gold)";
+                        }
+                        
+                        if (statusText !== "COMPLETE") {
+                            statusHtml = `<span style="color: ${statusColor}">${statusText}</span> <button type="button" onclick="event.stopPropagation(); openUploadMissing('${c.company_name}')" style="background: rgba(197, 168, 128, 0.1); border: 1px solid var(--accent-gold); color: var(--accent-gold); font-size: 8px; font-family: inherit; font-weight: 600; letter-spacing: 1px; padding: 2px 6px; cursor: pointer; margin-left: 8px; outline: none; transition: transform 0.1s ease;">ADD FILE</button>`;
+                        } else {
+                            statusHtml = `<span style="color: ${statusColor}">${statusText}</span>`;
+                        }
+                        
+                        // Render files list
+                        let filesHtml = "";
+                        const filesList = c.files || [];
+                        if (filesList.length > 0) {
+                            filesHtml = filesList.map(f => {
+                                return `<a href="/api/files/${encodeURIComponent(f)}" target="_blank" onclick="event.stopPropagation();" class="file-link">
+                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" style="stroke: currentColor; stroke-width: 1.2;">
+                                        <path d="M2.5 1H7.5L9.5 3V11H2.5V1Z"/>
+                                        <path d="M7 1V3.5H9.5"/>
+                                    </svg>
+                                    ${f}
+                                </a>`;
+                            }).join("");
+                        } else {
+                            filesHtml = `<span style="font-size: 11px; color: var(--text-muted);">NO DOCUMENTS ASSOCIATED</span>`;
+                        }
+                        
+                        card.innerHTML = `
+                            <button type="button" onclick="event.stopPropagation(); deleteCompany('${c.company_name}')" style="position: absolute; top: 16px; right: 20px; background: transparent; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; transition: color 0.3s ease; line-height: 1; outline: none;" onmouseover="this.style.color='#e05c5c'" onmouseout="this.style.color='var(--text-muted)'">&times;</button>
+                            <span class="card-tag">LEVEL ${c.bbbee_level} B-BBEE &bull; ${statusHtml}</span>
+                            <h3 class="card-title" style="padding-right: 20px;">${c.company_name}</h3>
+                            <p class="card-desc" style="min-height: auto; margin-bottom: 12px;">
+                                Reg: ${c.registration_number}<br>
+                                CSD Supplier No: ${c.supplier_number}
+                            </p>
+                            <button type="button" class="dropdown-toggle" onclick="event.stopPropagation(); toggleDropdown(this, '${c.company_name}')">
+                                <span>FILES (${filesList.length})</span>
+                                <span class="arrow-icon">▼</span>
+                            </button>
+                            <div class="files-dropdown" id="dropdown-${c.company_name.replace(/\s+/g, '-')}">
+                                ${filesHtml}
+                            </div>
+                            <span class="card-action" style="margin-top: 16px;">SUBMIT BID FOR THIS PROFILE &rarr;</span>
+                        `;
+                        companiesGrid.insertBefore(card, addFirstCompanyCard);
+                    });
+                } else {
+                    addFirstCompanyCard.style.display = "flex";
+                }
+            } catch (err) {
+                console.error("Failed to fetch company archive: ", err);
+            }
+        }
+
+        // Initialize lists
+        fetchArchive();
+
+        // Scroll Blur Navigation Effect
+        window.addEventListener("scroll", () => {
+            if (window.scrollY > 20) {
+                topNav.classList.add("scrolled");
+            } else {
+                topNav.classList.remove("scrolled");
+            }
+        });
+
+        // Toggle drawers
+        openBidBtn.addEventListener("click", () => { bidPanel.classList.add("active"); });
+        closeBidBtn.addEventListener("click", () => { bidPanel.classList.remove("active"); });
+        
+        openArchiveBtn.addEventListener("click", () => { archivePanel.classList.add("active"); });
+        closeArchiveBtn.addEventListener("click", () => { archivePanel.classList.remove("active"); });
+
+        let accumulatedCompanyFiles = [];
+        const addMoreCompanyFilesBtn = document.getElementById('addMoreCompanyFilesBtn');
+        const companyFile = document.getElementById('company_file');
+        const clearCompanyFilesBtn = document.getElementById('clear_company_files');
+        const companyFilesList = document.getElementById('company_files_list');
+
+        if(addMoreCompanyFilesBtn) {
+            addMoreCompanyFilesBtn.addEventListener('click', () => {
+                companyFile.click();
+            });
+        }
+
+        function renderCompanyFileList() {
+            companyFilesList.innerHTML = '';
+            if (accumulatedCompanyFiles.length > 0) {
+                clearCompanyFilesBtn.style.display = 'block';
+                accumulatedCompanyFiles.forEach((file, index) => {
+                    const row = document.createElement('div');
+                    row.style.display = 'flex';
+                    row.style.justifyContent = 'space-between';
+                    row.style.padding = '4px 8px';
+                    row.style.background = 'rgba(255,255,255,0.05)';
+                    row.style.borderRadius = '2px';
+                    
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = file.name;
+                    
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.innerHTML = '&times;';
+                    removeBtn.style.background = 'transparent';
+                    removeBtn.style.border = 'none';
+                    removeBtn.style.color = '#e05c5c';
+                    removeBtn.style.cursor = 'pointer';
+                    removeBtn.style.fontSize = '14px';
+                    removeBtn.addEventListener('click', () => {
+                        accumulatedCompanyFiles.splice(index, 1);
+                        renderCompanyFileList();
+                    });
+                    
+                    row.appendChild(nameSpan);
+                    row.appendChild(removeBtn);
+                    companyFilesList.appendChild(row);
+                });
+            } else {
+                clearCompanyFilesBtn.style.display = 'none';
+                companyFilesList.innerHTML = 'No files selected.';
+            }
+        }
+
+        if(companyFile) {
+            companyFile.addEventListener('change', () => {
+                if (companyFile.files.length > 0) {
+                    for (let i = 0; i < companyFile.files.length; i++) {
+                        accumulatedCompanyFiles.push(companyFile.files[i]);
+                    }
+                    companyFile.value = '';
+                    renderCompanyFileList();
+                }
+            });
+        }
+
+        if(clearCompanyFilesBtn) {
+            clearCompanyFilesBtn.addEventListener('click', () => {
+                accumulatedCompanyFiles = [];
+                companyFile.value = '';
+                renderCompanyFileList();
+            });
+        }
+
+        // Handle CIPC/CSD upload form submission
+        archiveForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            if(accumulatedCompanyFiles.length === 0) {
+                alert("Please select at least one file.");
+                return;
+            }
+            uploadFeedback.style.display = "block";
+            uploadFeedback.textContent = "Processing and parsing company profile... Please wait.";
+            
+            const formData = new FormData();
+            for (let i = 0; i < accumulatedCompanyFiles.length; i++) {
+                formData.append("file", accumulatedCompanyFiles[i]);
+            }
+            
+            const targetCompany = document.getElementById("targetCompanyName").textContent;
+            if (targetCompany && document.getElementById("targetCompanyIndicator").style.display !== "none") {
+                formData.append("target_company", targetCompany);
+            }
+            
+            try {
+                const response = await fetch("/api/companies/upload", {
+                    method: "POST",
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || "Failed to upload and parse PDF");
+                }
+                
+                uploadFeedback.textContent = data.message;
+                
+                // Clear array properly
+                accumulatedCompanyFiles = [];
+                renderCompanyFileList();
+                archiveForm.reset();
+                clearTargetCompany();
+                
+                // Refresh list
+                fetchArchive();
+                
+                setTimeout(() => {
+                    archivePanel.classList.remove("active");
+                    uploadFeedback.style.display = "none";
+                }, 2500);
+                
+            } catch (err) {
+                uploadFeedback.textContent = "Error: " + err.message;
+            }
+        });
+
+        // Handle Tender & Bid PDF Form Submission
+        
+        const addTenderFileBtn = document.getElementById("addTenderFileBtn");
+        const tenderFile = document.getElementById("tender_file");
+        const tenderFileList = document.getElementById("tender_file_list");
+        const clearTenderFileBtn = document.getElementById("clear_tender_file");
+
+        if(addTenderFileBtn) {
+            addTenderFileBtn.addEventListener("click", () => tenderFile.click());
+        }
+        
+        if(tenderFile) {
+            tenderFile.addEventListener("change", () => {
+                if(tenderFile.files.length > 0) {
+                    tenderFileList.innerHTML = tenderFile.files[0].name;
+                    clearTenderFileBtn.style.display = "inline-block";
+                } else {
+                    tenderFileList.innerHTML = "";
+                    clearTenderFileBtn.style.display = "none";
+                }
+            });
+        }
+        
+        if(clearTenderFileBtn) {
+            clearTenderFileBtn.addEventListener("click", () => {
+                tenderFile.value = "";
+                tenderFileList.innerHTML = "";
+                clearTenderFileBtn.style.display = "none";
+            });
+        }
+
+        const addBidFileBtn = document.getElementById("addBidFileBtn");
+        const bidFile = document.getElementById("bid_file");
+        const bidFileList = document.getElementById("bid_file_list");
+        const clearBidFileBtn = document.getElementById("clear_bid_file");
+
+        if(addBidFileBtn) {
+            addBidFileBtn.addEventListener("click", () => bidFile.click());
+        }
+        
+        if(bidFile) {
+            bidFile.addEventListener("change", () => {
+                if(bidFile.files.length > 0) {
+                    bidFileList.innerHTML = bidFile.files[0].name;
+                    clearBidFileBtn.style.display = "inline-block";
+                } else {
+                    bidFileList.innerHTML = "";
+                    clearBidFileBtn.style.display = "none";
+                }
+            });
+        }
+        
+        if(clearBidFileBtn) {
+            clearBidFileBtn.addEventListener("click", () => {
+                bidFile.value = "";
+                bidFileList.innerHTML = "";
+                clearBidFileBtn.style.display = "none";
+            });
+        }
+
+        tenderSubmitForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            
+            bidPanel.classList.remove("active");
+            resultsSection.style.display = "block";
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+            
+            document.getElementById("resSupplier").textContent = "Analysing document...";
+            document.getElementById("resMatchedArchive").textContent = "...";
+            document.getElementById("resBaseProb").textContent = "Calculating...";
+            document.getElementById("resRecommendation").textContent = "PENDING";
+            document.getElementById("resConfidence").textContent = "RUNNING";
+            
+            document.querySelectorAll(".sa-only").forEach(el => el.style.display = "none");
+            
+            const formData = new FormData(tenderSubmitForm);
+            
+            try {
+                const response = await fetch("/api/tender/submit", {
+                    method: "POST",
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || "Model evaluation failed.");
+                }
+                
+                // Bind outputs
+                document.getElementById("resSupplier").textContent = data.supplier;
+                document.getElementById("resMatchedArchive").textContent = data.matched_from_archive ? "Yes" : "No (Temporary Profile)";
+                document.getElementById("resBbbee").textContent = data.bbbee_level;
+                document.getElementById("resTenderId").textContent = data.tender_id;
+                document.getElementById("resBaseProb").textContent = (data.base_probability * 100).toFixed(1) + "%";
+                document.getElementById("resRecommendation").textContent = data.recommendation;
+                document.getElementById("resConfidence").textContent = data.confidence;
+                document.getElementById("resThreshold").textContent = (data.threshold * 100).toFixed(1) + "%";
+                
+                if (data.sa_analysis) {
+                    document.querySelectorAll(".sa-only").forEach(el => el.style.display = "table-row");
+                    document.getElementById("adviceBlock").style.display = "block";
+                    
+                    document.getElementById("resSaSystem").textContent = data.sa_analysis.evaluation_system;
+                    document.getElementById("resSaPriceScore").textContent = data.sa_analysis.price_score.toFixed(1) + " / " + (data.sa_analysis.evaluation_system === "80/20" ? "80" : "90");
+                    document.getElementById("resSaBbeeScore").textContent = data.sa_analysis.bbbee_points.toFixed(1) + " / " + (data.sa_analysis.evaluation_system === "80/20" ? "20" : "10");
+                    document.getElementById("resSaTotalScore").textContent = data.sa_analysis.total_score.toFixed(1) + " / 100";
+                    document.getElementById("resSaPosition").textContent = data.sa_analysis.competitive_position;
+                    document.getElementById("resSaFinalProb").textContent = (data.sa_analysis.final_probability * 100).toFixed(1) + "%";
+                    document.getElementById("resAdviceText").textContent = data.sa_analysis.bbbee_advice;
+                    
+                    // Bind parsed document prices
+                    const formatZar = (val) => "R " + val.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    document.getElementById("resParsedTenderValue").textContent = formatZar(data.sa_analysis.parsed_tender_value);
+                    document.getElementById("resParsedBidPrice").textContent = formatZar(data.sa_analysis.parsed_supplier_price);
+                    document.getElementById("resParsedLowestPrice").textContent = formatZar(data.sa_analysis.parsed_lowest_price);
+                }
+                
+            } catch (err) {
+                console.error(err);
+                document.getElementById("resSupplier").textContent = "Error";
+                document.getElementById("resConfidence").textContent = err.message;
+            }
+        });
+    
+        // Mark outcome dropdown logic
+        const markOutcomeBtn = document.getElementById('markOutcomeBtn');
+        const markOutcomeDropdown = document.getElementById('markOutcomeDropdown');
+        const markOutcomeForm = document.getElementById('markOutcomeForm');
+        
+        if(markOutcomeBtn) {
+            markOutcomeBtn.addEventListener('click', () => {
+                markOutcomeDropdown.style.display = markOutcomeDropdown.style.display === 'none' ? 'block' : 'none';
+            });
+            
+            markOutcomeForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const fd = new FormData(markOutcomeForm);
+                try {
+                    await fetch('/api/track-outcome', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(Object.fromEntries(fd.entries()))
+                    });
+                    markOutcomeDropdown.style.display = 'none';
+                    markOutcomeBtn.querySelector('span').textContent = 'SAVED ✓';
+                    setTimeout(() => markOutcomeBtn.querySelector('span').textContent = 'MARK OUTCOME ▾', 3000);
+                } catch(err) {
+                    alert('Error saving outcome');
+                }
+            });
+        }
+
+
+        

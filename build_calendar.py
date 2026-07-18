@@ -1,0 +1,217 @@
+html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donington Vale — Tender Calendar</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@200;300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="static/style.css">
+    <style>
+        .page-container { padding-top: 80px; max-width: 1200px; margin: 0 auto; display: flex; gap: 40px; }
+        .main-column { flex: 3; }
+        .side-column { flex: 1; }
+        
+        .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+        .month-title { font-family: 'Outfit', sans-serif; font-size: 24px; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.1em; }
+        
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); border: 1px solid rgba(255,255,255,0.05); }
+        .weekday-header { text-align: center; padding: 12px; font-size: 11px; color: #999; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .day-cell { min-height: 120px; padding: 8px; border-right: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.2); cursor: pointer; position: relative; }
+        .day-cell:hover { background: rgba(255,255,255,0.02); }
+        .day-cell.conflict { border: 1px solid #e05c5c; }
+        .day-cell.other-month { opacity: 0.3; }
+        .day-number { font-size: 12px; color: #666; margin-bottom: 8px; }
+        .day-number.today { color: var(--accent-gold); font-weight: 600; }
+        
+        .event-dots { display: flex; flex-wrap: wrap; gap: 4px; }
+        .dot { width: 6px; height: 6px; border-radius: 50%; }
+        .dot-briefing { background-color: var(--accent-gold); }
+        .dot-closing { background-color: #e05c5c; }
+        .dot-award { background-color: #999; }
+        
+        .side-title { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
+        .upcoming-list { list-style: none; padding: 0; margin: 0; }
+        .upcoming-item { padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 11px; }
+        .upcoming-date { color: var(--accent-gold); margin-bottom: 4px; font-weight: 600; }
+        .upcoming-title { color: #fff; margin-bottom: 2px; }
+        .upcoming-type { color: #666; text-transform: uppercase; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <nav class="top-nav">
+        <div class="nav-left">
+            <a href="/" class="back-link">
+                <svg class="back-arrow" width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 1L1 6M1 6L6 11M1 6H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>BACK TO MAIN</span>
+            </a>
+        </div>
+        <div class="nav-center">
+            <span class="logo">DONINGTON VALE</span>
+        </div>
+        <div class="nav-right" style="display:flex; justify-content:flex-end;">
+            <a href="/system" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span>SYSTEM</span>
+            </a>
+            <a href="/calendar" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span style="color:var(--accent-gold)">CALENDAR</span>
+            </a>
+            <a href="/vault" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span>COMPLIANCE</span>
+            </a>
+            <a href="/accuracy" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span>ACCURACY</span>
+            </a>
+            <a href="/sort" class="back-link" style="flex-direction:row-reverse;">
+                <span>SORT TENDERS</span>
+                <svg class="back-arrow" width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(180deg); margin-right:0; margin-left:8px;">
+                    <path d="M6 1L1 6M1 6L6 11M1 6H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </a>
+        </div>
+    </nav>
+
+    <main class="page-container" style="display:block;">
+        <div style="margin-bottom: 32px;">
+            <span class="category-label">SCHEDULING OVERVIEW</span>
+            <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">TENDER CALENDAR.</h1>
+            <div id="conflictBanner" style="display:none; color:#e05c5c; font-size:12px; font-weight:600; text-transform:uppercase;"></div>
+        </div>
+        
+        <div style="display:flex; gap: 40px;">
+            <div class="main-column">
+                <div class="month-nav">
+                    <button class="corner-btn" id="prevMonth" style="padding: 4px 12px;">
+                        <span>&lt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                    </button>
+                    <div class="month-title" id="monthDisplay">JULY 2026</div>
+                    <button class="corner-btn" id="nextMonth" style="padding: 4px 12px;">
+                        <span>&gt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                    </button>
+                </div>
+                
+                <div class="calendar-grid">
+                    <div class="weekday-header">SUN</div><div class="weekday-header">MON</div>
+                    <div class="weekday-header">TUE</div><div class="weekday-header">WED</div>
+                    <div class="weekday-header">THU</div><div class="weekday-header">FRI</div>
+                    <div class="weekday-header">SAT</div>
+                </div>
+                <div class="calendar-grid" id="calendarBody">
+                    <!-- Days injected here -->
+                </div>
+            </div>
+            
+            <div class="side-column">
+                <div class="side-title">UPCOMING — NEXT 14 DAYS</div>
+                <div class="profile-card" id="emptySide" style="border-style: dashed; padding: 24px; text-align: center; display: none;">
+                    <span class="card-tag">NO UPCOMING EVENTS</span>
+                </div>
+                <ul class="upcoming-list" id="upcomingList"></ul>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+        let currentDate = new Date();
+        let events = [];
+        
+        async function loadCalendar() {
+            try {
+                // We'd pass current month in real prod, but pulling all for now
+                const res = await fetch('/api/calendar-events');
+                events = await res.json();
+                renderCalendar();
+                renderUpcoming();
+            } catch(e) { console.error(e); }
+        }
+        
+        function renderCalendar() {
+            const y = currentDate.getFullYear();
+            const m = currentDate.getMonth();
+            document.getElementById('monthDisplay').textContent = `${monthNames[m]} ${y}`;
+            
+            const firstDay = new Date(y, m, 1).getDay();
+            const daysInMonth = new Date(y, m + 1, 0).getDate();
+            
+            const tbody = document.getElementById('calendarBody');
+            tbody.innerHTML = '';
+            
+            let html = '';
+            for(let i=0; i<firstDay; i++) {
+                html += `<div class="day-cell other-month"></div>`;
+            }
+            
+            const today = new Date();
+            
+            for(let i=1; i<=daysInMonth; i++) {
+                const isToday = i === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+                
+                // Find events for this day
+                const dayEvents = events.filter(e => {
+                    const d = new Date(e.date);
+                    return d.getDate() === i && d.getMonth() === m && d.getFullYear() === y;
+                });
+                
+                let dots = '';
+                dayEvents.forEach(ev => {
+                    dots += `<div class="dot dot-${ev.event_type}"></div>`;
+                });
+                
+                html += `
+                    <div class="day-cell" onclick="alert('Day ${i}: ${dayEvents.length} events')">
+                        <div class="day-number ${isToday ? 'today' : ''}">${i}</div>
+                        <div class="event-dots">${dots}</div>
+                    </div>
+                `;
+            }
+            
+            const totalCells = firstDay + daysInMonth;
+            const remaining = Math.ceil(totalCells / 7) * 7 - totalCells;
+            for(let i=0; i<remaining; i++) {
+                html += `<div class="day-cell other-month"></div>`;
+            }
+            
+            tbody.innerHTML = html;
+        }
+        
+        function renderUpcoming() {
+            const list = document.getElementById('upcomingList');
+            list.innerHTML = '';
+            
+            if(events.length === 0) {
+                document.getElementById('emptySide').style.display = 'block';
+                return;
+            }
+            
+            events.slice(0, 10).forEach(e => {
+                list.innerHTML += `
+                    <li class="upcoming-item">
+                        <div class="upcoming-date">${e.date}</div>
+                        <div class="upcoming-title">${e.tender_identifier} - ${e.filename}</div>
+                        <div class="upcoming-type">${e.event_type}</div>
+                    </li>
+                `;
+            });
+        }
+        
+        document.getElementById('prevMonth').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        });
+        document.getElementById('nextMonth').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        });
+        
+        window.addEventListener('DOMContentLoaded', loadCalendar);
+    </script>
+</body>
+</html>
+"""
+
+with open('static/calendar.html', 'w') as f:
+    f.write(html)

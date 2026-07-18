@@ -1,0 +1,13 @@
+data/
+__pycache__/
+*.pyc
+.env
+venv/
+env/
+.pytest_cache/
+.hypothesis/
+.DS_Store
+catboost_info/
+*.log
+*.sqlite
+*.db

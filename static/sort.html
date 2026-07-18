@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donington Vale — Batch Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@200;300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="static/style.css">
+    <style>
+        .page-container {
+            padding-top: 80px;
+        }
+        .hero-section {
+            margin-bottom: 40px;
+        }
+        /* Override panel styles so they appear inline rather than absolute/fixed slide-overs */
+        #bulkSortPanel {
+            position: relative;
+            top: auto;
+            right: auto;
+            width: 100%;
+            height: auto;
+            transform: none;
+            display: block; /* Always visible */
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(197, 168, 128, 0.1);
+            margin-bottom: 40px;
+        }
+        #bulkSortPanel .panel-container {
+            padding: 40px;
+        }
+        #bulkSortPanel .close-btn {
+            display: none; /* No close button since it's a page */
+        }
+        #sortResultsSection {
+            display: block !important; /* Always visible block but empty state shows by default */
+        }
+    </style>
+</head>
+<body>
+    <nav class="top-nav">
+        <div class="nav-left">
+            <a href="/" class="back-link">
+                <svg class="back-arrow" width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 1L1 6M1 6L6 11M1 6H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>BACK TO MAIN</span>
+            </a>
+        </div>
+        <div class="nav-center">
+            <span class="logo">DONINGTON VALE</span>
+        </div>
+        <div class="nav-right"></div>
+    </nav>
+
+    <main class="page-container">
+        <section class="hero-section">
+            <div class="hero-content" style="max-width: 800px; margin: 0 auto; text-align: center;">
+                <span class="category-label">BATCH PROCUREMENT PIPELINE</span>
+                <h1 class="hero-title" style="font-size: 48px; margin-top: 12px; margin-bottom: 24px;">SORT TENDERS.</h1>
+                <p class="hero-subtitle" style="font-size: 16px; margin: 0 auto 32px auto; max-width: 600px;">
+                    Upload multiple tender documents at once. Our engine will read each document, run the hard eligibility screening, and process it through the ML ensemble to rank your best opportunities.
+                </p>
+            </div>
+        </section>
+
+        <!-- Batch Sort Drawer (Glassmorphic Slide-over) -->
+        <section class="prediction-panel" id="bulkSortPanel">
+            <div class="panel-container">
+                <div class="panel-header">
+                    <span class="category-label">BATCH TENDER ANALYSIS</span>
+                    <h2 class="section-title">SORT TENDERS BY PROBABILITY</h2>
+                    <button class="close-btn" id="closeSortBtn" style="display:none;">CLOSE</button>
+                </div>
+                
+                <p class="column-desc" style="margin-bottom: 24px;">
+                    Upload multiple tender documents at once. Each will be automatically matched against your archive and ranked by estimated win probability.
+                </p>
+                
+                <form id="bulkSortForm" class="predict-form" enctype="multipart/form-data">
+                    <div class="form-group" style="position: relative;">
+                        <label>Upload Tender Documents (PDF/DOCX)</label>
+                        
+                        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                            <button type="button" id="addMoreFilesBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
+                                <span>+ ADD FILES</span>
+                                <span class="bracket bracket-tr"></span>
+                                <span class="bracket bracket-bl"></span>
+                            </button>
+                            <input type="file" id="batch_tender_files" accept=".pdf,.docx" multiple style="display: none;">
+                            <button type="button" id="clear_batch_files" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR ALL]</button>
+                        </div>
+                        
+                        <!-- Accumulated file list -->
+                        <div id="batch_files_list" style="margin-top:12px; font-size:12px; color:#ccc; display:flex; flex-direction:column; gap:4px; max-height: 150px; overflow-y: auto;"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="batch_supplier_name">Assess as (Supplier Name)</label>
+                        <select id="batch_supplier_select" style="width:100%; margin-bottom:8px; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px; display:none;">
+                            <option value="">-- Manual Entry --</option>
+                        </select>
+                        <input type="text" id="batch_supplier_name" name="supplier_name" placeholder="Enter supplier name">
+                        <small style="color:#666; font-size: 11px; margin-top: 4px;">This is the single supplier profile the batch will be evaluated against.</small>
+                    </div>
+
+                    <button type="submit" class="submit-btn corner-btn" id="runBatchBtn">
+                        <span>RUN BATCH ANALYSIS</span>
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                    </button>
+                </form>
+                
+                <div id="batchProgressContainer" style="margin-top: 24px; display: none;">
+                    <div style="font-size: 13px; color: var(--accent-gold); margin-bottom: 8px;" id="batchProgressText">Processing 0 of 0 tenders...</div>
+                    <div style="width: 100%; height: 2px; background: rgba(255,255,255,0.1); position: relative;">
+                        <div id="batchProgressBar" style="height: 100%; width: 0%; background: var(--accent-gold); transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Sort Results Section -->
+        <section class="results-section" id="sortResultsSection" style="display: none; margin-bottom: 40px;">
+            <div style="display:flex; justify-content: space-between; align-items:flex-end; margin-bottom:24px;">
+                <div>
+                    <span class="category-label">BATCH RESULTS</span>
+                    <h2 class="column-title" style="margin-bottom:0;">TENDERS RANKED BY PROBABILITY.</h2>
+                </div>
+                <div>
+                    <button class="corner-btn" id="exportCsvBtn" style="padding: 12px 24px; font-size: 11px; display:none;">
+                        <span>EXPORT RANKING</span>
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                    </button>
+                </div>
+            </div>
+            
+            <p class="category-label" id="batchSummaryText" style="color:#999; margin-bottom:16px; display:none;">0 tenders analyzed</p>
+            
+            <div class="profile-card" id="emptyBatchState" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 120px;">
+                <div style="text-align: center;">
+                    <span class="card-tag">NO BATCH RESULTS YET</span>
+                    <h3 class="card-title" style="font-size:14px;">UPLOAD TENDER DOCUMENTS TO BEGIN</h3>
+                </div>
+            </div>
+
+            <div class="specs-table-wrapper" style="width:100%; display:none;" id="sortResultsTableWrapper">
+                <table class="specs-table" id="sortResultsTable" style="width:100%; text-align:left;">
+                    <thead>
+                        <tr>
+                            <th class="spec-label" style="cursor:pointer; width:60px;" onclick="sortBatchTable('rank')">Rank ▾</th>
+                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('filename')">Tender / Filename</th>
+                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('recommendation')">Recommendation</th>
+                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('win_prob')">Win Probability ▾</th>
+                            <th class="spec-label">SA-Adjusted</th>
+                            <th class="spec-label">Position</th>
+                            <th class="spec-label">Framework</th>
+<th class="spec-label">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sortResultsBody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+    <script>
+        // Fake fetchArchive for standalone page since it's used in JS
+        async function fetchArchive() { return []; }
+        
+        // --- BATCH SORT LOGIC ---
+const openSortBtn = document.getElementById('openSortBtn');
+const closeSortBtn = document.getElementById('closeSortBtn');
+const bulkSortPanel = document.getElementById('bulkSortPanel');
+const sortResultsSection = document.getElementById('sortResultsSection');
+const bulkSortForm = document.getElementById('bulkSortForm');
+const batchTenderFiles = document.getElementById('batch_tender_files');
+const clearBatchFilesBtn = document.getElementById('clear_batch_files');
+const batchFilesList = document.getElementById('batch_files_list');
+const batchProgressContainer = document.getElementById('batchProgressContainer');
+const batchProgressBar = document.getElementById('batchProgressBar');
+const batchProgressText = document.getElementById('batchProgressText');
+const runBatchBtn = document.getElementById('runBatchBtn');
+const sortResultsBody = document.getElementById('sortResultsBody');
+const sortResultsTableWrapper = document.getElementById('sortResultsTableWrapper');
+const emptyBatchState = document.getElementById('emptyBatchState');
+const batchSummaryText = document.getElementById('batchSummaryText');
+const exportCsvBtn = document.getElementById('exportCsvBtn');
+
+let currentBatchResults = [];
+let currentSortColumn = 'win_prob';
+let currentSortAsc = false;
+
+if(openSortBtn) {
+    openSortBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        bulkSortPanel.classList.add('active');
+        sortResultsSection.style.display = 'block';
+    });
+}
+if(closeSortBtn) {
+    closeSortBtn.addEventListener('click', () => {
+        bulkSortPanel.classList.remove('active');
+    });
+}
+
+let accumulatedFiles = [];
+const addMoreFilesBtn = document.getElementById('addMoreFilesBtn');
+
+addMoreFilesBtn.addEventListener('click', () => {
+    batchTenderFiles.click();
+});
+
+function renderFileList() {
+    batchFilesList.innerHTML = '';
+    if (accumulatedFiles.length > 0) {
+        clearBatchFilesBtn.style.display = 'block';
+        accumulatedFiles.forEach((file, index) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.justifyContent = 'space-between';
+            row.style.padding = '4px 8px';
+            row.style.background = 'rgba(255,255,255,0.05)';
+            row.style.borderRadius = '2px';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = file.name;
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.innerHTML = '&times;';
+            removeBtn.style.background = 'transparent';
+            removeBtn.style.border = 'none';
+            removeBtn.style.color = '#e05c5c';
+            removeBtn.style.cursor = 'pointer';
+            removeBtn.style.fontSize = '14px';
+            removeBtn.addEventListener('click', () => {
+                accumulatedFiles.splice(index, 1);
+                renderFileList();
+            });
+            
+            row.appendChild(nameSpan);
+            row.appendChild(removeBtn);
+            batchFilesList.appendChild(row);
+        });
+    } else {
+        clearBatchFilesBtn.style.display = 'none';
+        batchFilesList.innerHTML = 'No files selected.';
+    }
+}
+
+batchTenderFiles.addEventListener('change', () => {
+    if (batchTenderFiles.files.length > 0) {
+        // Append new files to our accumulated list
+        for (let i = 0; i < batchTenderFiles.files.length; i++) {
+            accumulatedFiles.push(batchTenderFiles.files[i]);
+        }
+        // Reset the input so the same file can be selected again if needed
+        batchTenderFiles.value = '';
+        renderFileList();
+    }
+});
+
+clearBatchFilesBtn.addEventListener('click', () => {
+    accumulatedFiles = [];
+    batchTenderFiles.value = '';
+    renderFileList();
+});
+
+
+// Intercept fetchArchive to populate the batch supplier select
+const originalFetchArchive = fetchArchive;
+fetchArchive = async function() {
+    await originalFetchArchive();
+    const select = document.getElementById('batch_supplier_select');
+    if(!select) return;
+    
+    // Clear except first option
+    while (select.options.length > 1) {
+        select.remove(1);
+    }
+    
+    const cards = document.querySelectorAll('.company-card');
+    if (cards.length > 0) {
+        select.style.display = 'block';
+        // The API response is not directly accessible here easily without global var, 
+        // but we can extract names from the DOM or just fetch again
+        fetch("/api/companies").then(r => r.json()).then(data => {
+            data.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.company_name;
+                opt.textContent = c.company_name;
+                select.appendChild(opt);
+            });
+        });
+    }
+};
+
+document.getElementById('batch_supplier_select').addEventListener('change', (e) => {
+    const textInput = document.getElementById('batch_supplier_name');
+    if(e.target.value) {
+        textInput.value = e.target.value;
+        textInput.style.display = 'none';
+    } else {
+        textInput.value = '';
+        textInput.style.display = 'block';
+    }
+});
+
+bulkSortForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if(accumulatedFiles.length === 0) {
+        alert("Please select at least one file.");
+        return;
+    }
+    
+    runBatchBtn.style.opacity = '0.5';
+    runBatchBtn.style.pointerEvents = 'none';
+    batchProgressContainer.style.display = 'block';
+    batchProgressText.textContent = `Initializing batch job...`;
+    batchProgressBar.style.width = '0%';
+    
+    const formData = new FormData();
+    for(let i=0; i<accumulatedFiles.length; i++){
+        formData.append("files", accumulatedFiles[i]);
+    }
+    formData.append("supplier_name", document.getElementById('batch_supplier_name').value);
+    
+    try {
+        const res = await fetch("/api/batch-sort", {
+            method: "POST",
+            body: formData
+        });
+        const data = await res.json();
+        
+        if(!res.ok) throw new Error(data.detail || "Upload failed");
+        
+        pollBatchStatus(data.job_id);
+    } catch(err) {
+        alert(err.message);
+        runBatchBtn.style.opacity = '1';
+        runBatchBtn.style.pointerEvents = 'auto';
+        batchProgressContainer.style.display = 'none';
+    }
+});
+
+async function pollBatchStatus(job_id) {
+    try {
+        const res = await fetch(`/api/batch-status/${job_id}`);
+        const data = await res.json();
+        
+        if(data.total > 0) {
+            const pct = (data.processed / data.total) * 100;
+            batchProgressBar.style.width = `${pct}%`;
+            batchProgressText.textContent = `Processing ${data.processed} of ${data.total} tenders...`;
+        }
+        
+        if(data.status === "complete") {
+            currentBatchResults = data.results;
+            renderBatchTable();
+            runBatchBtn.style.opacity = '1';
+            runBatchBtn.style.pointerEvents = 'auto';
+            setTimeout(() => { batchProgressContainer.style.display = 'none'; }, 2000);
+            
+            // Auto-close drawer
+            bulkSortPanel.classList.remove('active');
+            
+            // Show summary
+            let pursue = 0, pass = 0, disq = 0;
+            currentBatchResults.forEach(r => {
+                if(r.recommendation === 'PURSUE') pursue++;
+                else if(r.recommendation === 'DISQUALIFIED') disq++;
+                else pass++;
+            });
+            batchSummaryText.textContent = `${data.total} tenders analyzed — ${pursue} PURSUE, ${pass} PASS, ${disq} DISQUALIFIED`;
+            batchSummaryText.style.display = 'block';
+            emptyBatchState.style.display = 'none';
+            sortResultsTableWrapper.style.display = 'block';
+            exportCsvBtn.style.display = 'block';
+            
+        } else {
+            setTimeout(() => pollBatchStatus(job_id), 1500);
+        }
+    } catch(err) {
+        console.error("Polling error", err);
+        setTimeout(() => pollBatchStatus(job_id), 3000);
+    }
+}
+
+function sortBatchTable(column) {
+    if(currentSortColumn === column) {
+        currentSortAsc = !currentSortAsc;
+    } else {
+        currentSortColumn = column;
+        currentSortAsc = false;
+    }
+    
+    const headers = document.querySelectorAll('#sortResultsTable th');
+    headers.forEach(h => h.innerHTML = h.innerHTML.replace(' ▾', '').replace(' ▴', ''));
+    const targetTh = Array.from(headers).find(h => h.getAttribute('onclick').includes(column));
+    if(targetTh) targetTh.innerHTML += currentSortAsc ? ' ▴' : ' ▾';
+    
+    renderBatchTable();
+}
+
+function renderBatchTable() {
+    sortResultsBody.innerHTML = '';
+    
+    // Sort logic
+    let sorted = [...currentBatchResults];
+    sorted.sort((a, b) => {
+        // Disqualified always at bottom
+        if (a.disqualified && !b.disqualified) return 1;
+        if (!a.disqualified && b.disqualified) return -1;
+        
+        let valA, valB;
+        if (currentSortColumn === 'win_prob') {
+            valA = a.win_probability || 0;
+            valB = b.win_probability || 0;
+        } else if (currentSortColumn === 'filename') {
+            valA = a.filename;
+            valB = b.filename;
+        } else if (currentSortColumn === 'recommendation') {
+            valA = a.recommendation;
+            valB = b.recommendation;
+        } else if (currentSortColumn === 'rank') {
+            // Rank relies on default sorting (win prob desc)
+            valA = a.win_probability || 0;
+            valB = b.win_probability || 0;
+        }
+        
+        if (valA < valB) return currentSortAsc ? -1 : 1;
+        if (valA > valB) return currentSortAsc ? 1 : -1;
+        return 0;
+    });
+    
+    sorted.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+        
+        // Colors
+        let recColor = '#999';
+        if(r.recommendation === 'PURSUE') recColor = 'var(--accent-gold)';
+        if(r.recommendation === 'DISQUALIFIED') recColor = '#e05c5c';
+        
+        let rankColor = (idx < 3 && r.recommendation !== 'DISQUALIFIED' && !currentSortAsc && currentSortColumn === 'win_prob') ? 'var(--accent-gold)' : '#fff';
+        
+        let prob = r.win_probability ? (r.win_probability*100).toFixed(1)+'%' : '—';
+        let saProb = r.sa_adjusted_probability ? (r.sa_adjusted_probability*100).toFixed(1)+'%' : '—';
+        
+        if(r.processing_error) {
+            recColor = '#e05c5c';
+            r.recommendation = 'ERROR';
+        }
+
+        tr.innerHTML = `
+            <td style="color:${rankColor}; padding: 12px 0;">#${idx+1}</td>
+            <td style="color:#fff;">${r.filename}<br><small style="color:#666;">${r.tender_identifier || 'Unknown ID'}</small></td>
+            <td style="color:${recColor}; font-weight:600;">${r.recommendation}</td>
+            <td>${prob}</td>
+            <td>${saProb}</td>
+            <td>${r.competitive_position || '—'}</td>
+            <td>${r.preferential_framework || '—'}</td>
+            <td>
+                ${!r.processing_error ? `<button class="corner-btn mark-outcome-row-btn" data-id="${r.prediction_id}" style="padding:4px 8px; font-size:10px;">
+                    <span>MARK</span><span class="bracket bracket-tr" style="width:4px; height:4px;"></span><span class="bracket bracket-bl" style="width:4px; height:4px;"></span>
+                </button>` : ''}
+            </td>
+        `;
+        
+        tr.addEventListener('click', () => {
+            const nextRow = tr.nextElementSibling;
+            if(nextRow && nextRow.classList.contains('expanded-row')) {
+                nextRow.remove();
+                tr.style.backgroundColor = 'transparent';
+            } else {
+                tr.style.backgroundColor = 'rgba(255,255,255,0.02)';
+                const exp = document.createElement('tr');
+                exp.className = 'expanded-row';
+                let expContent = '';
+                
+                if(r.disqualified) {
+                    expContent = `<div style="padding: 16px; color: #e05c5c;">
+                        <strong>HARD FAILURES:</strong><br>
+                        ${r.hard_failures.map(f => `✗ ${f}`).join('<br>')}
+                    </div>`;
+                } else if(r.processing_error) {
+                    expContent = `<div style="padding: 16px; color: #e05c5c;">
+                        <strong>PROCESSING ERROR:</strong><br>${r.processing_error}
+                    </div>`;
+                } else {
+                    expContent = `<div style="padding: 16px; color: var(--accent-gold);">
+                        Detailed metrics parsing succeeded. (In full version, this embeds the entire results-section table for this specific tender).
+                    </div>`;
+                }
+                
+                exp.innerHTML = `<td colspan="7" style="border-bottom: 1px solid rgba(255,255,255,0.05);">${expContent}</td>`;
+                tr.after(exp);
+            }
+        });
+        
+        
+        const markBtn = tr.querySelector('.mark-outcome-row-btn');
+        if(markBtn) {
+            markBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                const actual = prompt("Enter outcome for this tender (won/lost/withdrawn):");
+                if (actual && ['won','lost','withdrawn'].includes(actual.toLowerCase())) {
+                    fetch('/api/track-outcome', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            prediction_id: markBtn.dataset.id,
+                            actual_outcome: actual.toLowerCase()
+                        })
+                    }).then(() => markBtn.querySelector('span').textContent = '✓');
+                }
+            });
+        }
+        sortResultsBody.appendChild(tr);
+    });
+}
+
+exportCsvBtn.addEventListener('click', () => {
+    let csvContent = "data:text/csv;charset=utf-8,Filename,Tender_ID,Recommendation,Win_Probability,SA_Probability,Framework\n";
+    currentBatchResults.forEach(r => {
+        let row = [
+            r.filename,
+            r.tender_identifier || '',
+            r.recommendation,
+            r.win_probability || '',
+            r.sa_adjusted_probability || '',
+            r.preferential_framework || ''
+        ].join(",");
+        csvContent += row + "\n";
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "batch_results.csv");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+});
+
+        // Remove drawer sliding behavior that was copied from index
+        if(openSortBtn) openSortBtn.remove();
+        if(closeSortBtn) closeSortBtn.remove();
+        
+        // Initial setup for empty state visibility
+        document.getElementById('sortResultsTableWrapper').style.display = 'none';
+        
+        // Initialize companies dropdown manually
+        window.addEventListener('DOMContentLoaded', () => {
+            const select = document.getElementById('batch_supplier_select');
+            if(select) {
+                fetch("/api/companies").then(r => r.json()).then(data => {
+                    if (data.length > 0) {
+                        select.style.display = 'block';
+                        data.forEach(c => {
+                            const opt = document.createElement('option');
+                            opt.value = c.company_name;
+                            opt.textContent = c.company_name;
+                            select.appendChild(opt);
+                        });
+                    }
+                }).catch(err => console.error(err));
+            }
+        });
+    </script>
+</body>
+</html>

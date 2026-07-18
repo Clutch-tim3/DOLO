@@ -1,0 +1,140 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-8.0.2, pluggy-1.6.0
+rootdir: /Users/harry/Documents/Data set V2/tender_ml
+configfile: pytest.ini
+plugins: asyncio-0.23.5, cov-7.1.0, hypothesis-6.141.1, anyio-3.7.1
+asyncio: mode=auto
+collected 2 items
+
+tests/advanced/test_ml_invariance.py F.                                  [100%]
+
+=================================== FAILURES ===================================
+____________ test_ml_invariance_higher_bid_price_lowers_probability ____________
+
+base_bid = 41283.43710319537, multiplier = 1.8565313034078048
+
+    @settings(deadline=None)
+    @given(
+        base_bid=st.floats(min_value=1000, max_value=1_000_000, allow_nan=False, allow_infinity=False),
+        multiplier=st.floats(min_value=1.1, max_value=10.0, allow_nan=False, allow_infinity=False)
+    )
+    def test_ml_invariance_higher_bid_price_lowers_probability(base_bid, multiplier):
+        """
+        Metamorphic invariant: If everything is exactly identical, a higher bid price
+        should NEVER result in a higher win probability. It must be <= base_prob.
+        """
+        higher_bid = base_bid * multiplier
+    
+        df1_dict = {
+            "bid_priceUsd": base_bid,
+            "tender_estimatedpriceUsd": 500_000,
+            "tender_description_length": 200,
+            "deadline_days": 30,
+            "bbbee_level": 1
+        }
+    
+        df2_dict = {
+            "bid_priceUsd": higher_bid,
+            "tender_estimatedpriceUsd": 500_000,
+            "tender_description_length": 200,
+            "deadline_days": 30,
+            "bbbee_level": 1
+        }
+    
+        df1 = _prepare_df(df1_dict, ml_artifacts)
+        df2 = _prepare_df(df2_dict, ml_artifacts)
+    
+        try:
+            prob1 = predict(ml_artifacts, df1).get("win_probability", predict(ml_artifacts, df1).get("probability"))
+            prob2 = predict(ml_artifacts, df2).get("win_probability", predict(ml_artifacts, df2).get("probability"))
+    
+>           assert prob2 <= prob1 + 0.001
+E           assert np.float64(0.16396925531780068) <= (np.float64(0.14707183883120273) + 0.001)
+
+tests/advanced/test_ml_invariance.py:54: AssertionError
+
+During handling of the above exception, another exception occurred:
+
+    @settings(deadline=None)
+>   @given(
+        base_bid=st.floats(min_value=1000, max_value=1_000_000, allow_nan=False, allow_infinity=False),
+        multiplier=st.floats(min_value=1.1, max_value=10.0, allow_nan=False, allow_infinity=False)
+    )
+
+tests/advanced/test_ml_invariance.py:20: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+base_bid = 41283.43710319537, multiplier = 1.8565313034078048
+
+    @settings(deadline=None)
+    @given(
+        base_bid=st.floats(min_value=1000, max_value=1_000_000, allow_nan=False, allow_infinity=False),
+        multiplier=st.floats(min_value=1.1, max_value=10.0, allow_nan=False, allow_infinity=False)
+    )
+    def test_ml_invariance_higher_bid_price_lowers_probability(base_bid, multiplier):
+        """
+        Metamorphic invariant: If everything is exactly identical, a higher bid price
+        should NEVER result in a higher win probability. It must be <= base_prob.
+        """
+        higher_bid = base_bid * multiplier
+    
+        df1_dict = {
+            "bid_priceUsd": base_bid,
+            "tender_estimatedpriceUsd": 500_000,
+            "tender_description_length": 200,
+            "deadline_days": 30,
+            "bbbee_level": 1
+        }
+    
+        df2_dict = {
+            "bid_priceUsd": higher_bid,
+            "tender_estimatedpriceUsd": 500_000,
+            "tender_description_length": 200,
+            "deadline_days": 30,
+            "bbbee_level": 1
+        }
+    
+        df1 = _prepare_df(df1_dict, ml_artifacts)
+        df2 = _prepare_df(df2_dict, ml_artifacts)
+    
+        try:
+            prob1 = predict(ml_artifacts, df1).get("win_probability", predict(ml_artifacts, df1).get("probability"))
+            prob2 = predict(ml_artifacts, df2).get("win_probability", predict(ml_artifacts, df2).get("probability"))
+    
+            assert prob2 <= prob1 + 0.001
+        except Exception as e:
+>           pytest.fail(f"Prediction failed on synthetic data: {e}")
+E           Failed: Prediction failed on synthetic data: assert np.float64(0.16396925531780068) <= (np.float64(0.14707183883120273) + 0.001)
+E           Falsifying example: test_ml_invariance_higher_bid_price_lowers_probability(
+E               base_bid=41283.43710319537,
+E               multiplier=1.8565313034078048,
+E           )
+
+tests/advanced/test_ml_invariance.py:56: Failed
+=============================== warnings summary ===============================
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:64
+  /Users/harry/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:64: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+    prop = Group((name + Suppress("=") + comma_separated(value)) | oneOf(_CONSTANTS))
+
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85
+  /Users/harry/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:85: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+    parse = parser.parseString(pattern)
+
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+../../../Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89
+  /Users/harry/Library/Python/3.9/lib/python/site-packages/matplotlib/_fontconfig_pattern.py:89: PyparsingDeprecationWarning: 'resetCache' deprecated - use 'reset_cache'
+    parser.resetCache()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/advanced/test_ml_invariance.py::test_ml_invariance_higher_bid_price_lowers_probability
+================== 1 failed, 1 passed, 13 warnings in 19.41s ===================
