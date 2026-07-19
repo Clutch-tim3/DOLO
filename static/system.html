@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@200;300;400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="static/style.css">
+    <link rel="stylesheet" href="static/style.css?v=3.0">
     <style>
         .page-container { padding-top: 80px; max-width: 1200px; margin: 0 auto; padding-bottom: 60px; }
         .section-title { font-family: 'Outfit', sans-serif; font-size: 20px; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
@@ -73,9 +73,18 @@
     </nav>
 
     <main class="page-container">
-        <div style="margin-bottom: 40px;">
-            <span class="category-label">SYSTEM TRANSPARENCY</span>
-            <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 24px; text-align: left;">MODEL & CONFIGURATION.</h1>
+        <div style="margin-bottom: 40px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 20px;">
+            <div>
+                <span class="category-label">SYSTEM TRANSPARENCY</span>
+                <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 0; text-align: left;">MODEL & CONFIGURATION.</h1>
+            </div>
+            <div>
+                <label for="modelSelector" style="font-size: 11px; letter-spacing: 2px; color: var(--accent-gold); font-weight: 600; display: block; margin-bottom: 8px; text-transform: uppercase;">Select Active Model</label>
+                <select id="modelSelector" style="background: rgba(0,0,0,0.8); color: #fff; border: 1px solid rgba(197,168,128,0.3); padding: 8px 16px; font-family: 'Outfit'; font-size: 13px; min-width: 250px; cursor: pointer; outline: none; transition: border-color 0.3s; border-radius: 4px;">
+                    <option value="sailor">Sailor (Default)</option>
+                    <option value="conquest">Conquest (Ensemble - Strongest)</option>
+                </select>
+            </div>
         </div>
 
         <div class="section-title">MODEL OVERVIEW</div>
@@ -106,13 +115,13 @@
     </main>
 
     <script>
-        async function loadSystem() {
+        async function loadSystem(model = "sailor") {
             try {
-                const res = await fetch('/api/system-status');
+                const res = await fetch(`/api/system-status?model_version=${model}`);
                 const data = await res.json();
                 
                 document.getElementById('model_version').textContent = data.model_version;
-                document.getElementById('last_trained_at').textContent = data.last_trained_at.split('T')[0];
+                document.getElementById('last_trained_at').textContent = data.last_trained_at.includes('T') ? data.last_trained_at.split('T')[0] : data.last_trained_at;
                 document.getElementById('test_auc').textContent = data.test_auc.toFixed(4);
                 document.getElementById('current_threshold').textContent = (data.current_threshold * 100).toFixed(2) + '%';
                 document.getElementById('threshold_precision').textContent = (data.threshold_precision * 100).toFixed(1) + '%';
@@ -169,7 +178,17 @@
             } catch(e) { console.error(e); }
         }
         
-        window.addEventListener('DOMContentLoaded', loadSystem);
+        window.addEventListener('DOMContentLoaded', () => {
+            const selector = document.getElementById('modelSelector');
+            if (selector) {
+                selector.addEventListener('change', () => {
+                    loadSystem(selector.value);
+                });
+                loadSystem(selector.value);
+            } else {
+                loadSystem();
+            }
+        });
     </script>
 </body>
 </html>
