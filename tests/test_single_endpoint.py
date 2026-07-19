@@ -9,7 +9,7 @@ def test_single_prediction_full_flow(fixtures_dir):
     with open(file_path, "rb") as f:
         response = client.post(
             "/api/tender/submit",
-            files={"document": ("alfred_duma.pdf", f, "application/pdf")},
+            files={"tender_file": ("alfred_duma.pdf", f, "application/pdf")},
             data={"supplier_name": "TEST SUPPLIER", "bbbee_level": 1}
         )
         
@@ -23,7 +23,7 @@ def test_single_prediction_eligible_tender(fixtures_dir):
     with open(file_path, "rb") as f:
         response = client.post(
             "/api/tender/submit",
-            files={"document": ("lv_cabling_tender.pdf", f, "application/pdf")},
+            files={"tender_file": ("lv_cabling_tender.pdf", f, "application/pdf")},
             data={"supplier_name": "TEST SUPPLIER", "bbbee_level": 1}
         )
         
@@ -33,4 +33,4 @@ def test_single_prediction_eligible_tender(fixtures_dir):
     assert res["disqualified"] is False
     assert res["win_probability"] is not None
     assert res["sa_analysis"]["adjusted_probability"] is not None
-    assert res["recommendation"] in ["PURSUE", "WEAK POSITION", "NO BID"]
+    assert res["recommendation"] in ["PURSUE", "PASS"]

@@ -6,7 +6,7 @@ from pathlib import Path
 from app import process_batch_job, BATCH_JOBS
 
 @pytest.mark.asyncio
-async def test_high_concurrency_state_isolation(tmp_path):
+async def test_high_concurrency_state_isolation(tmp_path, loaded_models):
     """
     Simulates 20 concurrent batch job submissions to ensure the BATCH_JOBS
     dictionary and file I/O operations do not contaminate state across users.
@@ -40,7 +40,8 @@ async def test_high_concurrency_state_isolation(tmp_path):
             [dest],
             [f"tender_{job_index}.pdf"],
             supplier_name,
-            1
+            1,
+            loaded_models
         )
         
         return job_id, supplier_name

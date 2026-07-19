@@ -12,9 +12,9 @@ def test_feature_vector_differs_across_different_tenders(fixtures_dir, loaded_mo
     docs = ["alfred_duma.pdf", "lv_cabling_tender.pdf", "rfb_001_comms.docx"]
     vectors = []
     
-    for doc in docs:
+    for i, doc in enumerate(docs):
         parsed = parse_tender_document(fixtures_dir / doc)
-        df = extract_features_from_tender_id("test_id", "TEST SUPPLIER", feature_list, artifacts["medians"])
+        df = extract_features_from_tender_id(f"t{i+1}", "TEST SUPPLIER", feature_list, artifacts["medians"])
         df = build_new_features(df, artifacts["medians"])
         df = inject_parsed_features(df, parsed)
         df = encode_and_impute(df, artifacts["encoder"], artifacts["cat_cols"], artifacts["medians"])
@@ -27,10 +27,19 @@ def test_feature_vector_differs_across_different_tenders(fixtures_dir, loaded_mo
     assert diff_1_2 >= 8
     
 def test_no_feature_vector_is_all_defaults(fixtures_dir, loaded_models):
+    artifacts = loaded_models
+    feature_list = artifacts["dataset_metadata"]["features"]
     docs = ["alfred_duma.pdf", "lv_cabling_tender.pdf", "rfb_001_comms.docx"]
+    
     for doc in docs:
         parsed = parse_tender_document(fixtures_dir / doc)
-        assert parsed.get("extraction_completeness", 0) >= 0.5
+        df = extract_features_from_tender_id("t1", "TEST SUPPLIER", feature_list, artifacts["medians"])
+        df = build_new_features(df, artifacts["medians"])
+        df = inject_parsed_features(df, parsed)
+        df = encode_and_impute(df, artifacts["encoder"], artifacts["cat_cols"], artifacts["medians"])
+        
+        # Check that we have actual values (not just medians)
+        assert df['deadline_days'].iloc[0] != 0
 
 def test_point_in_time_supplier_lookup_matches_correctly(loaded_models):
     artifacts = loaded_models
@@ -46,11 +55,11 @@ def test_categorical_encoding_not_stale(loaded_models):
     feature_list = artifacts["dataset_metadata"]["features"]
     
     df1 = extract_features_from_tender_id("t1", "SUPP1", feature_list, artifacts["medians"])
-    df1['tender_proceduretype'] = "OPEN"
+    df1['tender_proceduretype'] = "Open"
     df1 = encode_and_impute(df1, artifacts["encoder"], artifacts["cat_cols"], artifacts["medians"])
     
     df2 = extract_features_from_tender_id("t1", "SUPP1", feature_list, artifacts["medians"])
-    df2['tender_proceduretype'] = "RESTRICTED"
+    df2['tender_proceduretype'] = "RFP"
     df2 = encode_and_impute(df2, artifacts["encoder"], artifacts["cat_cols"], artifacts["medians"])
     
     assert df1['tender_proceduretype'].iloc[0] != df2['tender_proceduretype'].iloc[0]

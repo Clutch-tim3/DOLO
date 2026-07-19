@@ -115,6 +115,21 @@ def load_all_artifacts(model_suffix="_v2"):
     
     metadata = load_json(METADATA_PATH, "Dataset metadata")
 
+    # Load model-specific features for correct alignment
+    try:
+        if "conquest" in model_suffix:
+            metrics_path = PROJECT_ROOT / "models" / "metrics_conquest.json"
+        else:
+            metrics_path = PROJECT_ROOT / "models" / "metrics_v1.json"
+            
+        with open(metrics_path, "r") as f:
+            metrics_data = json.load(f)
+        feature_list = metrics_data["feature_names"]
+        metadata["feature_names"] = feature_list
+        metadata["features"] = {feat: "float32" for feat in feature_list}
+    except Exception as e:
+        print(f"Warning: Failed to load model-specific metrics features ({e}). Using union features from dataset_metadata.")
+
     return {
         "xgb_model": xgb_model,
         "lgb_model": lgb_model,
@@ -125,6 +140,7 @@ def load_all_artifacts(model_suffix="_v2"):
         "medians": medians,
         "threshold": float(threshold_value),
         "metadata": metadata,
+        "dataset_metadata": metadata,
     }
 
 def get_feature_list(metadata: dict) -> list:
@@ -217,11 +233,26 @@ def encode_and_impute(df: pd.DataFrame, encoder, cat_cols: list, medians: dict) 
     if cat_cols_present and encoder is not None:
         df[cat_cols_present] = df[cat_cols_present].fillna("UNKNOWN").astype(str)
         try:
-            df[cat_cols_present] = encoder.transform(df[cat_cols_present])
-        except Exception:
+            if isinstance(encoder, dict):
+                for col in cat_cols_present:
+                    if col in encoder:
+                        df[col] = encoder[col].transform(df[[col]])
+            else:
+                # OrdinalEncoder expect 2D array
+                df[cat_cols_present] = encoder.transform(df[cat_cols_present])
+        except Exception as e:
+            # Robust fallback column-by-column mapping using encoder categories
             for col in cat_cols_present:
-                try: df[[col]] = encoder.transform(df[[col]])
-                except: df[col] = -1
+                try:
+                    if hasattr(encoder, "categories_") and col in cat_cols:
+                        col_idx = cat_cols.index(col)
+                        categories = list(encoder.categories_[col_idx])
+                        cat_map = {cat: float(idx) for idx, cat in enumerate(categories)}
+                        df[col] = df[col].map(cat_map).fillna(-1.0)
+                    else:
+                        df[col] = -1
+                except Exception:
+                    df[col] = -1
 
     for col in df.columns:
         if df[col].isna().any():
@@ -230,7 +261,14 @@ def encode_and_impute(df: pd.DataFrame, encoder, cat_cols: list, medians: dict) 
     return df
 
 def predict(artifacts: dict, features_df: pd.DataFrame, mock_supplier_name: str = None) -> dict:
-    dmat = xgb.DMatrix(features_df, feature_names=list(features_df.columns))
+    # Filter features to match the loaded model's exact features and order
+    feature_list = get_feature_list(artifacts["metadata"])
+    for feat in feature_list:
+        if feat not in features_df.columns:
+            features_df[feat] = artifacts["medians"].get(feat, 0)
+    features_df = features_df[feature_list]
+
+    dmat = xgb.DMatrix(features_df, feature_names=feature_list)
     p_xgb = artifacts["xgb_model"].predict(dmat)[0]
     p_lgb = artifacts["lgb_model"].predict(features_df)[0]
     p_cb = artifacts["cb_model"].predict_proba(features_df)[0, 1]

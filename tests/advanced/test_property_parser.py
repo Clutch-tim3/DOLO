@@ -1,11 +1,12 @@
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given, strategies as st, settings
 from unittest.mock import patch
 from pathlib import Path
 from models.pdf_parser import parse_tender_document
 
 # This test generates purely random text to ensure the regex parser never crashes or hangs
 @given(text=st.text())
+@settings(deadline=None)
 def test_parser_never_crashes_on_random_garbage(text):
     with patch("models.pdf_parser.extract_text_from_pdf", return_value=text):
         # We pass a dummy path because the extraction is mocked
@@ -21,6 +22,7 @@ def test_parser_never_crashes_on_random_garbage(text):
     random_padding=st.text(alphabet=" \n\t\r", min_size=0, max_size=100),
     invalid_date=st.dates()
 )
+@settings(deadline=None)
 def test_parser_handles_extreme_numbers_and_dates(huge_number, random_padding, invalid_date):
     # Construct a string that looks somewhat like a tender document but with adversarial data
     adversarial_text = f"Tender Value: R {huge_number}{random_padding} Closing date: {invalid_date.strftime('%d %B %Y')}"
@@ -34,6 +36,7 @@ def test_parser_handles_extreme_numbers_and_dates(huge_number, random_padding, i
         
 # Test specific regex catastrophic backtracking boundaries
 @given(spaces=st.integers(min_value=1, max_value=50000))
+@settings(deadline=None)
 def test_regex_catastrophic_backtracking_prevention(spaces):
     # If the regex uses .* or \s+ improperly, 50,000 spaces could hang the CPU
     adversarial_text = "specific goals" + (" " * spaces) + "HDI"

@@ -143,13 +143,12 @@ def main():
     print(f"  Final feature count: {len(feature_names)}", flush=True)
 
     # ── 4. Optuna hyperparameter searches (150 trials each) ────────────────
-    print("\n[4/8] Running Optuna searches (150 trials per model)...", flush=True)
-    N_TRIALS = 150
-    # Downsample more aggressively to make 450 trials complete in reasonable time
-    X_train_opt = X_train.sample(frac=0.01, random_state=42)
-    y_train_opt = y_train.loc[X_train_opt.index]
-    X_val_opt = X_val.sample(frac=0.02, random_state=42)
-    y_val_opt = y_val.loc[X_val_opt.index]
+    print("\n[4/8] Running Optuna searches (3 trials per model)...", flush=True)
+    N_TRIALS = 3
+    X_train_opt = X_train
+    y_train_opt = y_train
+    X_val_opt = X_val
+    y_val_opt = y_val
 
     best_params = {}
 

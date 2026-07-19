@@ -8,7 +8,7 @@ from app import app
 from models.pdf_parser import parse_tender_document
 
 @pytest.mark.asyncio
-async def test_batch_three_different_tenders_produce_different_results(fixtures_dir, tmp_path):
+async def test_batch_three_different_tenders_produce_different_results(fixtures_dir, tmp_path, loaded_models):
     job_id = str(uuid.uuid4())
     BATCH_JOBS[job_id] = {
         "status": "processing",
@@ -27,7 +27,7 @@ async def test_batch_three_different_tenders_produce_different_results(fixtures_
         files.append(dest)
     filenames = ["alfred_duma.pdf", "lv_cabling_tender.pdf", "rfb_001_comms.docx"]
     
-    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1)
+    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models)
     
     results = BATCH_JOBS[job_id]["results"]
     assert len(results) == 3
@@ -58,7 +58,7 @@ async def test_batch_three_different_tenders_produce_different_results(fixtures_
         assert r["extraction_completeness"] >= 0.8
 
 @pytest.mark.asyncio
-async def test_batch_no_shared_state_between_files(fixtures_dir, tmp_path):
+async def test_batch_no_shared_state_between_files(fixtures_dir, tmp_path, loaded_models):
     job_id = str(uuid.uuid4())
     BATCH_JOBS[job_id] = {
         "status": "processing",
@@ -76,7 +76,7 @@ async def test_batch_no_shared_state_between_files(fixtures_dir, tmp_path):
         files.append(dest)
     filenames = ["alfred_duma.pdf", "lv_cabling_tender.pdf"]
     
-    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1)
+    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models)
     
     results = BATCH_JOBS[job_id]["results"]
     assert len(results) == 2
@@ -89,7 +89,7 @@ async def test_batch_no_shared_state_between_files(fixtures_dir, tmp_path):
     assert r1.get("parsed_tender_value") != r2.get("parsed_tender_value")
 
 @pytest.mark.asyncio
-async def test_batch_partial_failure_does_not_kill_other_results(fixtures_dir, tmp_path):
+async def test_batch_partial_failure_does_not_kill_other_results(fixtures_dir, tmp_path, loaded_models):
     job_id = str(uuid.uuid4())
     BATCH_JOBS[job_id] = {
         "status": "processing",
@@ -107,7 +107,7 @@ async def test_batch_partial_failure_does_not_kill_other_results(fixtures_dir, t
         files.append(dest)
     filenames = ["lv_cabling_tender.pdf", "malformed.pdf", "rfb_001_comms.docx"]
     
-    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1)
+    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models)
     
     results = BATCH_JOBS[job_id]["results"]
     assert len(results) == 3
@@ -119,7 +119,7 @@ async def test_batch_partial_failure_does_not_kill_other_results(fixtures_dir, t
     assert valid_res["win_probability"] is not None
 
 @pytest.mark.asyncio
-async def test_batch_docx_pdf_mixed_no_crash(fixtures_dir, tmp_path):
+async def test_batch_docx_pdf_mixed_no_crash(fixtures_dir, tmp_path, loaded_models):
     job_id = str(uuid.uuid4())
     BATCH_JOBS[job_id] = {
         "status": "processing",
@@ -138,7 +138,7 @@ async def test_batch_docx_pdf_mixed_no_crash(fixtures_dir, tmp_path):
     filenames = ["lv_cabling_tender.pdf", "rfb_001_comms.docx"]
     
     # Should not raise exception
-    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1)
+    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models)
     results = BATCH_JOBS[job_id]["results"]
     assert len(results) == 2
     assert results[0]["win_probability"] is not None
@@ -146,7 +146,8 @@ async def test_batch_docx_pdf_mixed_no_crash(fixtures_dir, tmp_path):
 
 client = TestClient(app)
 
-def test_batch_result_matches_single_prediction_result(fixtures_dir, tmp_path):
+@pytest.mark.asyncio
+async def test_batch_result_matches_single_prediction_result(fixtures_dir, tmp_path, loaded_models):
     file_path = fixtures_dir / "lv_cabling_tender.pdf"
     
     # Call single endpoint
@@ -173,9 +174,7 @@ def test_batch_result_matches_single_prediction_result(fixtures_dir, tmp_path):
     dest = tmp_path / "lv_cabling_tender.pdf"
     shutil.copy(file_path, dest)
     
-    # Async to sync
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(process_batch_job(job_id, [dest], ["lv_cabling_tender.pdf"], "TEST SUPPLIER", 1))
+    await process_batch_job(job_id, [dest], ["lv_cabling_tender.pdf"], "TEST SUPPLIER", 1, loaded_models)
     
     batch_res = BATCH_JOBS[job_id]["results"][0]
     

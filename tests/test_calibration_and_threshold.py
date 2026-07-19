@@ -19,7 +19,7 @@ def test_calibrated_probabilities_improve_or_maintain_auc(loaded_models):
     # Assume we mock raw scores or we have them? Let's just create fake raw scores that correlate perfectly with did_win
     raw = sample['did_win'].values * 0.8 + 0.1
     
-    calibrated = artifacts["calibrator"].predict_proba(raw.reshape(-1, 1))[:, 1]
+    calibrated = artifacts["calibrator"].predict(raw)
     
     auc_raw = roc_auc_score(sample['did_win'], raw)
     auc_calibrated = roc_auc_score(sample['did_win'], calibrated)
@@ -30,8 +30,8 @@ def test_threshold_matches_documented_precision_recall():
     with open("models/threshold.json", "r") as f:
         threshold_config = json.load(f)
     
-    assert abs(threshold_config.get("precision", 0) - 0.4167) < 0.05
-    assert abs(threshold_config.get("recall", 0) - 0.7744) < 0.05
+    assert abs(threshold_config.get("precision_at_business", 0) - 0.4167) < 0.05
+    assert abs(threshold_config.get("recall_at_business", 0) - 0.7744) < 0.05
 
 def test_no_train_val_leakage_in_split():
     df = pd.read_parquet("data/processed/master_training_dataset.parquet")
@@ -39,9 +39,9 @@ def test_no_train_val_leakage_in_split():
     val = df[df['split'] == 'val']
     test = df[df['split'] == 'test']
     
-    max_train = train['tender_year'].max()
-    min_val = val['tender_year'].min()
-    min_test = test['tender_year'].min()
+    max_train = train['publish_year'].max()
+    min_val = val['publish_year'].min()
+    min_test = test['publish_year'].min()
     
     assert max_train < min_val
     assert min_val <= min_test

@@ -1,290 +1,300 @@
 {
   "train": {
-    "roc_auc": 0.931837,
-    "log_loss": 0.237791,
+    "roc_auc": 0.853878,
+    "log_loss": 0.693032,
     "precision_at_20": null,
-    "n_samples": 4280734,
+    "n_samples": 70,
     "calibration": [
       {
         "bin": "0.0-0.1",
-        "count": 2628088,
-        "mean_predicted": 0.01567403279599151,
-        "actual_rate": 0.014361010742410451
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.1-0.2",
-        "count": 350701,
-        "mean_predicted": 0.15364962109076644,
-        "actual_rate": 0.1189702909315913
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.2-0.3",
-        "count": 323825,
-        "mean_predicted": 0.23967918393067766,
-        "actual_rate": 0.16810623021693816
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.3-0.4",
-        "count": 147890,
-        "mean_predicted": 0.34549685639737154,
-        "actual_rate": 0.21291500439515856
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.4-0.5",
-        "count": 103762,
-        "mean_predicted": 0.4497985878994348,
-        "actual_rate": 0.3017867812879474
+        "count": 62,
+        "mean_predicted": 0.4998352170776888,
+        "actual_rate": 0.43548387096774194
       },
       {
         "bin": "0.5-0.6",
-        "count": 113838,
-        "mean_predicted": 0.5506187557839433,
-        "actual_rate": 0.43423110033556456
+        "count": 8,
+        "mean_predicted": 0.5000155428971279,
+        "actual_rate": 1.0
       },
       {
         "bin": "0.6-0.7",
-        "count": 135923,
-        "mean_predicted": 0.6532958168198347,
-        "actual_rate": 0.5532029163570551
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.7-0.8",
-        "count": 185381,
-        "mean_predicted": 0.7521947296175141,
-        "actual_rate": 0.6716707753221743
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.8-0.9",
-        "count": 208024,
-        "mean_predicted": 0.8486091263984026,
-        "actual_rate": 0.7820588009075876
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.9-1.0",
-        "count": 83302,
-        "mean_predicted": 0.9163289755003603,
-        "actual_rate": 0.9622097908813714
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       }
     ]
   },
   "val": {
-    "roc_auc": 0.868864,
-    "log_loss": 0.326331,
+    "roc_auc": 0.722222,
+    "log_loss": 0.693158,
     "precision_at_20": null,
-    "n_samples": 930936,
+    "n_samples": 15,
     "calibration": [
       {
         "bin": "0.0-0.1",
-        "count": 585065,
-        "mean_predicted": 0.020604535212834837,
-        "actual_rate": 0.04108261475220702
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.1-0.2",
-        "count": 95816,
-        "mean_predicted": 0.14951488275678618,
-        "actual_rate": 0.1958232445520581
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.2-0.3",
-        "count": 58362,
-        "mean_predicted": 0.24432850908790107,
-        "actual_rate": 0.2343305575545732
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.3-0.4",
-        "count": 40148,
-        "mean_predicted": 0.3497595884180783,
-        "actual_rate": 0.27792168974793263
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.4-0.5",
-        "count": 21501,
-        "mean_predicted": 0.4468262966391325,
-        "actual_rate": 0.37263383098460534
+        "count": 15,
+        "mean_predicted": 0.49995429941822744,
+        "actual_rate": 0.6
       },
       {
         "bin": "0.5-0.6",
-        "count": 18443,
-        "mean_predicted": 0.5449540949805823,
-        "actual_rate": 0.4232500135552784
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.6-0.7",
-        "count": 18756,
-        "mean_predicted": 0.6537118810228368,
-        "actual_rate": 0.4430049050970356
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.7-0.8",
-        "count": 25300,
-        "mean_predicted": 0.7549892081428681,
-        "actual_rate": 0.45280632411067195
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.8-0.9",
-        "count": 39295,
-        "mean_predicted": 0.8529615098872089,
-        "actual_rate": 0.5409085125334012
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.9-1.0",
-        "count": 28250,
-        "mean_predicted": 0.9179535192939583,
-        "actual_rate": 0.9342300884955752
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       }
     ]
   },
   "test": {
-    "roc_auc": 0.833405,
-    "log_loss": 0.395345,
+    "roc_auc": 0.666667,
+    "log_loss": 0.693251,
     "precision_at_20": null,
-    "n_samples": 465517,
+    "n_samples": 15,
     "calibration": [
       {
         "bin": "0.0-0.1",
-        "count": 300976,
-        "mean_predicted": 0.014515034948112543,
-        "actual_rate": 0.04279078730530009
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.1-0.2",
-        "count": 29522,
-        "mean_predicted": 0.14442737169871203,
-        "actual_rate": 0.3333784973917756
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.2-0.3",
-        "count": 19181,
-        "mean_predicted": 0.24571786092108894,
-        "actual_rate": 0.3021218914550858
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.3-0.4",
-        "count": 15801,
-        "mean_predicted": 0.34703606111745844,
-        "actual_rate": 0.31934687677995066
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.4-0.5",
-        "count": 13948,
-        "mean_predicted": 0.44819937352598,
-        "actual_rate": 0.3318038428448523
+        "count": 15,
+        "mean_predicted": 0.4998811612728304,
+        "actual_rate": 0.8
       },
       {
         "bin": "0.5-0.6",
-        "count": 17976,
-        "mean_predicted": 0.5504938234876964,
-        "actual_rate": 0.3727191811303961
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.6-0.7",
-        "count": 15485,
-        "mean_predicted": 0.6513249897025423,
-        "actual_rate": 0.3471746851792057
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.7-0.8",
-        "count": 22296,
-        "mean_predicted": 0.7519112159485665,
-        "actual_rate": 0.3657606745604593
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.8-0.9",
-        "count": 27346,
-        "mean_predicted": 0.8500857595831434,
-        "actual_rate": 0.4638338331017333
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.9-1.0",
-        "count": 2986,
-        "mean_predicted": 0.9126965302780755,
-        "actual_rate": 0.5478901540522438
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       }
     ]
   },
   "best_hyperparameters": {
     "xgb": {
-      "learning_rate": 0.08784413551899566,
-      "max_depth": 8,
-      "subsample": 0.6624672701012956,
-      "colsample_bytree": 0.585852457739792,
-      "min_child_weight": 33
+      "learning_rate": 0.026557858612820947,
+      "max_depth": 5,
+      "subsample": 0.9502902622497692,
+      "colsample_bytree": 0.7418031341448776,
+      "min_child_weight": 9
     },
     "lgb": {
-      "learning_rate": 0.00552520412267382,
-      "num_leaves": 167,
-      "max_depth": 0,
-      "subsample": 0.7622455284386309,
-      "colsample_bytree": 0.6824858841445465,
-      "min_child_samples": 48
+      "learning_rate": 0.019461441078305247,
+      "num_leaves": 232,
+      "max_depth": -1,
+      "subsample": 0.8611158776277197,
+      "colsample_bytree": 0.7689332068703698,
+      "min_child_samples": 25
     },
     "cb": {
-      "learning_rate": 0.05719387609077119,
-      "depth": 8,
-      "l2_leaf_reg": 9.376233275117015,
-      "subsample": 0.9754764729832717
+      "learning_rate": 0.005963941803323786,
+      "depth": 3,
+      "l2_leaf_reg": 8.18346768853445,
+      "subsample": 0.7972066576585105
     }
   },
-  "n_features": 58,
+  "n_features": 68,
   "feature_names": [
-    "publish_year",
-    "publish_month",
-    "publish_quarter",
-    "deadline_days",
-    "contract_duration_days",
-    "buyer_country",
-    "tender_proceduretype",
-    "tender_supplytype",
-    "tender_selectionmethod",
-    "tender_lotscount",
-    "tender_recordedbidscount",
-    "lot_bidscount",
-    "tender_awardcriteria_count",
-    "tender_description_length",
-    "lot_description_length",
-    "tender_personalrequirements_length",
-    "tender_technicalrequirements_length",
-    "tender_economicrequirements_length",
-    "tender_corrections_count",
-    "bid_priceUsd",
-    "tender_digiwhist_price",
+    "actual_num_competitors",
     "bid_digiwhist_price",
-    "tender_estimatedpriceUsd",
-    "tender_finalpriceUsd",
-    "submission_period",
-    "corr_singleb",
+    "bid_priceUsd",
+    "buyer_avg_competitors",
+    "buyer_avg_contract_value",
+    "buyer_buyertype",
+    "buyer_country",
+    "buyer_loyalty_score",
+    "buyer_openness_score",
+    "buyer_specialisation",
+    "buyer_total_past_awards",
+    "category_hhi",
+    "competition_baseline",
+    "contract_duration_days",
+    "corr_buyer_concentration",
     "corr_proc",
+    "corr_singleb",
     "corr_subm",
     "cri",
-    "corr_buyer_concentration",
-    "lot_status",
-    "buyer_buyertype",
-    "filter_ok",
+    "deadline_days",
+    "experience_tier",
     "filter_losingbids",
+    "filter_ok",
+    "functionality_threshold_pct",
+    "had_functionality_gate",
+    "lot_bidscount",
+    "lot_description_length",
+    "lot_status",
+    "mandatory_cert_count",
+    "pit_avg_contract_value",
+    "pit_buyer_entry_count",
+    "pit_buyer_win_count",
+    "pit_country_count",
+    "pit_experience_score",
+    "pit_is_incumbent",
+    "pit_is_international",
+    "pit_last_win_years_ago",
+    "pit_recency_score",
     "pit_total_entries",
     "pit_total_wins",
-    "pit_win_rate_overall",
-    "pit_win_rate_country",
-    "pit_avg_contract_value",
-    "pit_last_win_years_ago",
-    "pit_experience_score",
-    "pit_recency_score",
-    "pit_is_incumbent",
-    "pit_country_count",
-    "pit_is_international",
-    "pit_buyer_win_count",
-    "pit_buyer_entry_count",
     "pit_win_rate_buyer",
-    "buyer_loyalty_score",
-    "category_hhi",
-    "tender_size_ratio",
+    "pit_win_rate_country",
+    "pit_win_rate_overall",
+    "publish_month",
+    "publish_quarter",
+    "publish_year",
+    "requires_local_presence",
+    "requires_past_contract_proof",
     "source",
-    "actual_num_competitors",
-    "competition_baseline",
-    "buyer_total_past_awards",
-    "buyer_avg_contract_value",
-    "buyer_avg_competitors",
-    "buyer_specialisation"
+    "submission_period",
+    "supplier_matches_required_locality",
+    "supplier_momentum",
+    "tender_awardcriteria_count",
+    "tender_corrections_count",
+    "tender_description_length",
+    "tender_digiwhist_price",
+    "tender_economicrequirements_length",
+    "tender_estimatedpriceUsd",
+    "tender_finalpriceUsd",
+    "tender_lotscount",
+    "tender_personalrequirements_length",
+    "tender_proceduretype",
+    "tender_recordedbidscount",
+    "tender_selectionmethod",
+    "tender_size_ratio",
+    "tender_supplytype",
+    "tender_technicalrequirements_length",
+    "win_momentum"
   ]
 }

@@ -62,12 +62,12 @@ def test_no_orphaned_debug_prints_in_production():
     found_issues = []
     
     for py_file in project_root.rglob("*.py"):
-        if "tests" in py_file.parts or ".venv" in py_file.parts or "patch_" in py_file.name or py_file.name == "app.py" or py_file.name == "predict.py":
-            # For app.py and predict.py we know they use standard print in some places instead of logging,
-            # but let's check specifically for "print(features_df" or "print(parsed"
+        if "tests" in py_file.parts or ".venv" in py_file.parts or "patch_" in py_file.name:
+            continue
+            
+        if py_file.name in ["app.py", "predict.py"]:
             text = py_file.read_text(errors='ignore')
             if "print(features_df" in text or "print(parsed" in text or "print(tender_text)" in text:
                 found_issues.append(f"Found orphaned debug print in {py_file.name}")
-            continue
             
     assert len(found_issues) == 0, "\\n".join(found_issues)

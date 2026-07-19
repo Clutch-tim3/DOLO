@@ -481,6 +481,68 @@ async def api_tender_submit(
                 if feat not in features_df.columns:
                     features_df[feat] = target_artifacts["medians"].get(feat, 0)
             features_df = features_df[target_artifacts["xgb_model"].feature_names]
+
+        # Run eligibility check if tender_text is present
+        disqualified = False
+        hard_failures = []
+        logistics_warnings = []
+        if tender_text:
+            supplier_profile = {
+                'pit_total_wins': features_df['pit_total_wins'].iloc[0] if 'pit_total_wins' in features_df.columns else 0,
+                'province': 'Unknown',
+                'registered_municipality': 'Unknown',
+                'has_csd': True,
+                'has_cidb': True,
+                'has_tax_clearance': True
+            }
+            eligibility_result = check_hard_eligibility(tender_text, supplier_profile)
+            if eligibility_result and not eligibility_result['eligible']:
+                disqualified = True
+                hard_failures = [f['reason'] for f in eligibility_result['hard_failures']]
+                logistics_warnings = [w['reason'] for w in eligibility_result['logistics_warnings']]
+
+        if disqualified:
+            prediction_id = str(uuid.uuid4())
+            # Save to tracked_outcomes
+            conn = sqlite3.connect(str(DB_PATH))
+            c = conn.cursor()
+            now = datetime.now().isoformat()
+            c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                        (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, None, None, "DISQUALIFIED", "pending", None, "", now, now))
+            conn.commit()
+            conn.close()
+            return {
+                "prediction_id": prediction_id,
+                "tender_id": tender_id,
+                "supplier": name_to_use,
+                "matched_from_archive": matched_company is not None,
+                "registration_number": matched_company.get("registration_number", "Pending") if matched_company else "Pending",
+                "bbbee_level": bbbee_to_use,
+                "win_probability": None,
+                "base_probability": None,
+                "recommendation": "DISQUALIFIED",
+                "confidence": "PASS",
+                "threshold": target_artifacts["threshold"],
+                "disqualified": True,
+                "hard_failures": hard_failures,
+                "logistics_warnings": logistics_warnings,
+                "sa_analysis": {
+                    "evaluation_system": "80/20",
+                    "price_score": 0.0,
+                    "bbbee_points": 0.0,
+                    "total_score": 0.0,
+                    "competitive_position": 0,
+                    "base_probability": None,
+                    "final_probability": None,
+                    "adjusted_probability": None,
+                    "uplift": 0.0,
+                    "bbbee_advice": "",
+                    "parsed_supplier_price": supplier_price,
+                    "parsed_lowest_price": lowest_price,
+                    "parsed_tender_value": tender_value
+                }
+            }
             
         pred_res = predict(target_artifacts, features_df, mock_supplier_name=name_to_use)
         base_prob = pred_res["probability"]
@@ -511,6 +573,7 @@ async def api_tender_submit(
             "competitive_position": sa_score["competitive_position"],
             "base_probability": base_prob,
             "final_probability": final_probability,
+            "adjusted_probability": final_probability,
             "uplift": uplift,
             "bbbee_advice": bbbee_advice,
             "parsed_supplier_price": supplier_price,
@@ -556,6 +619,7 @@ async def api_tender_submit(
             "recommendation": recommendation,
             "confidence": confidence,
             "threshold": threshold,
+            "disqualified": False,
             "sa_analysis": sa_analysis
         }
         
