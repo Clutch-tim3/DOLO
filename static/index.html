@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@200;300;400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="static/style.css?v=2.0">
+    <link rel="stylesheet" href="static/style.css?v=3.0">
 </head>
 <body>
 
@@ -140,10 +140,49 @@
                     <h2 class="section-title">SUBMIT NEW BID</h2>
                     <button class="close-btn" id="closeBidBtn">CLOSE</button>
                 </div>
+
+                <!-- Bulk Drop Zone -->
+                <div style="margin-bottom: 32px;">
+                    <label style="font-size: 11px; letter-spacing: 2px; color: var(--accent-gold); font-weight: 600; display: block; margin-bottom: 12px;">BULK TENDER ANALYSIS</label>
+                    <div class="drop-zone" id="bulk_drop_zone" style="min-height: 140px; border-style: dashed;">
+                        <span class="drop-zone-icon" style="font-size: 32px;">⬇</span>
+                        <span class="drop-zone-title" style="font-size: 14px;">Drop multiple Tender PDFs here for batch analysis</span>
+                        <span class="drop-zone-desc">Drag & drop up to 20 tender documents — no quotation needed</span>
+                        <span class="drop-zone-desc" style="margin-top: 2px; color: var(--accent-gold);">System will generate mock quotations automatically</span>
+                        <input type="file" id="bulk_tender_files" accept=".pdf" multiple style="display: none;">
+                    </div>
+                    <div id="bulk_files_list" style="margin-top: 12px; font-size: 12px; color: #ccc; display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto;"></div>
+                    <div style="display: flex; gap: 12px; align-items: center; margin-top: 8px;">
+                        <button type="button" id="addBulkFilesBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
+                            <span>+ ADD TENDERS</span>
+                            <span class="bracket bracket-tr"></span>
+                            <span class="bracket bracket-bl"></span>
+                        </button>
+                        <button type="button" id="clear_bulk_files" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR ALL]</button>
+                        <button type="button" id="submitBulkBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px; display: none; background: rgba(197,168,128,0.15); border-color: var(--accent-gold);">
+                            <span>ANALYSE ALL</span>
+                            <span class="bracket bracket-tr"></span>
+                            <span class="bracket bracket-bl"></span>
+                        </button>
+                    </div>
+                    <!-- Bulk progress -->
+                    <div id="bulkProgress" style="display: none; margin-top: 16px;">
+                        <div style="font-size: 12px; color: var(--accent-gold); margin-bottom: 8px;">Processing batch...</div>
+                        <div style="background: rgba(255,255,255,0.05); height: 4px; border-radius: 2px; overflow: hidden;">
+                            <div id="bulkProgressBar" style="width: 0%; height: 100%; background: var(--accent-gold); transition: width 0.5s ease;"></div>
+                        </div>
+                        <div id="bulkStatusText" style="font-size: 11px; color: #888; margin-top: 4px;">0 / 0 tenders processed</div>
+                    </div>
+                </div>
+
+                <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 24px; margin-bottom: 8px;">
+                    <label style="font-size: 11px; letter-spacing: 2px; color: var(--accent-gold); font-weight: 600;">SINGLE TENDER ANALYSIS</label>
+                    <small style="color: #666; font-size: 11px; display: block; margin-top: 4px;">Upload a tender PDF. Bid document is optional — a mock quotation will be generated if omitted.</small>
+                </div>
                 
                 <form id="tenderSubmitForm" class="predict-form" enctype="multipart/form-data">
                     <div class="form-group" style="position: relative;">
-                        <label>Upload Tender Document (PDF)</label>
+                        <label>Upload Tender Document (PDF) <span style="color: var(--accent-gold);">*</span></label>
                         <div class="drop-zone" id="tender_drop_zone">
                             <span class="drop-zone-icon">↓</span>
                             <span class="drop-zone-title">Drag & drop Tender PDF here</span>
@@ -163,11 +202,11 @@
                     </div>
 
                     <div class="form-group" style="position: relative; margin-top: 24px;">
-                        <label>Upload Your Bid Document (PDF)</label>
+                        <label>Upload Your Bid Document (PDF) <span style="color: #666; font-weight: 400;">— Optional</span></label>
                         <div class="drop-zone" id="bid_drop_zone">
                             <span class="drop-zone-icon">↓</span>
                             <span class="drop-zone-title">Drag & drop Bid PDF here</span>
-                            <span class="drop-zone-desc">or click to browse files</span>
+                            <span class="drop-zone-desc">or click to browse — leave empty to auto-generate mock quotation</span>
                             <input type="file" id="bid_file" name="bid_file" accept=".pdf" style="display: none;">
                         </div>
                         <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
@@ -798,6 +837,141 @@
         setupDropZone("tender_drop_zone", tenderFile);
         setupDropZone("bid_drop_zone", bidFile);
 
+        // ── Bulk Tender Drop Zone Logic ──
+        const bulkInput = document.getElementById("bulk_tender_files");
+        const bulkDropZone = document.getElementById("bulk_drop_zone");
+        const bulkFilesList = document.getElementById("bulk_files_list");
+        const addBulkFilesBtn = document.getElementById("addBulkFilesBtn");
+        const clearBulkBtn = document.getElementById("clear_bulk_files");
+        const submitBulkBtn = document.getElementById("submitBulkBtn");
+        const bulkProgress = document.getElementById("bulkProgress");
+        const bulkProgressBar = document.getElementById("bulkProgressBar");
+        const bulkStatusText = document.getElementById("bulkStatusText");
+        let bulkFiles = [];
+
+        function renderBulkFileList() {
+            bulkFilesList.innerHTML = "";
+            bulkFiles.forEach((f, idx) => {
+                const row = document.createElement("div");
+                row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(255,255,255,0.03);border-radius:6px;border:1px solid rgba(255,255,255,0.06);";
+                row.innerHTML = `
+                    <span style="flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📄 ${f.name}</span>
+                    <span style="color:#666; font-size:10px;">${(f.size / 1024).toFixed(0)} KB</span>
+                    <button type="button" data-idx="${idx}" style="background:transparent;border:none;color:#e05c5c;cursor:pointer;font-size:14px;padding:0 4px;" title="Remove">✕</button>
+                `;
+                row.querySelector("button").addEventListener("click", () => {
+                    bulkFiles.splice(idx, 1);
+                    renderBulkFileList();
+                });
+                bulkFilesList.appendChild(row);
+            });
+            clearBulkBtn.style.display = bulkFiles.length > 0 ? "inline-block" : "none";
+            submitBulkBtn.style.display = bulkFiles.length > 0 ? "inline-flex" : "none";
+        }
+
+        function addBulkFiles(fileList) {
+            for (let i = 0; i < fileList.length; i++) {
+                if (bulkFiles.length >= 20) break;
+                const f = fileList[i];
+                if (f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")) {
+                    const alreadyAdded = bulkFiles.some(existing => existing.name === f.name && existing.size === f.size);
+                    if (!alreadyAdded) bulkFiles.push(f);
+                }
+            }
+            renderBulkFileList();
+        }
+
+        setupDropZone("bulk_drop_zone", bulkInput, (files) => addBulkFiles(files));
+
+        if (addBulkFilesBtn) {
+            addBulkFilesBtn.addEventListener("click", () => bulkInput.click());
+        }
+        if (bulkInput) {
+            bulkInput.addEventListener("change", () => {
+                addBulkFiles(bulkInput.files);
+                bulkInput.value = "";
+            });
+        }
+        if (clearBulkBtn) {
+            clearBulkBtn.addEventListener("click", () => {
+                bulkFiles = [];
+                renderBulkFileList();
+            });
+        }
+
+        if (submitBulkBtn) {
+            submitBulkBtn.addEventListener("click", async () => {
+                if (bulkFiles.length === 0) return;
+
+                submitBulkBtn.disabled = true;
+                submitBulkBtn.querySelector("span").textContent = "PROCESSING...";
+                bulkProgress.style.display = "block";
+                bulkProgressBar.style.width = "0%";
+                bulkStatusText.textContent = `0 / ${bulkFiles.length} tenders processed`;
+
+                const formData = new FormData();
+                bulkFiles.forEach(f => formData.append("files", f));
+
+                const supplierInput = document.getElementById("supplier_name");
+                if (supplierInput && supplierInput.value.trim()) {
+                    formData.append("supplier_name", supplierInput.value.trim());
+                }
+
+                const modelSelector = document.getElementById("modelSelector");
+                if (modelSelector) {
+                    formData.append("model_version", modelSelector.value);
+                }
+
+                try {
+                    const res = await fetch("/api/batch-sort", {
+                        method: "POST",
+                        body: formData
+                    });
+                    const data = await res.json();
+
+                    if (!res.ok) {
+                        throw new Error(data.detail || "Batch submission failed");
+                    }
+
+                    const jobId = data.job_id;
+                    const totalFiles = bulkFiles.length;
+
+                    // Poll for batch status
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const statusRes = await fetch(`/api/batch-status/${jobId}`);
+                            const statusData = await statusRes.json();
+                            const processed = statusData.processed || 0;
+                            const pct = Math.round((processed / totalFiles) * 100);
+                            bulkProgressBar.style.width = pct + "%";
+                            bulkStatusText.textContent = `${processed} / ${totalFiles} tenders processed`;
+
+                            if (statusData.status === "done" || processed >= totalFiles) {
+                                clearInterval(pollInterval);
+                                bulkProgressBar.style.width = "100%";
+                                bulkStatusText.textContent = `${totalFiles} / ${totalFiles} tenders processed — Complete!`;
+                                submitBulkBtn.disabled = false;
+                                submitBulkBtn.querySelector("span").textContent = "ANALYSE ALL";
+
+                                // Show results in the sort page
+                                if (statusData.results && statusData.results.length > 0) {
+                                    window.location.href = "/sort";
+                                }
+                            }
+                        } catch (pollErr) {
+                            console.error("Polling error:", pollErr);
+                        }
+                    }, 2000);
+
+                } catch (err) {
+                    bulkStatusText.textContent = "Error: " + err.message;
+                    bulkStatusText.style.color = "#e05c5c";
+                    submitBulkBtn.disabled = false;
+                    submitBulkBtn.querySelector("span").textContent = "ANALYSE ALL";
+                }
+            });
+        }
+
         tenderSubmitForm.addEventListener("submit", async (e) => {
             e.preventDefault();
             
@@ -833,10 +1007,14 @@
                 
                 // Bind outputs
                 const estimateBtn = document.getElementById("estimateCostBtn");
+                const bidFileUploaded = document.getElementById("bid_file")?.files?.length > 0;
                 if (estimateBtn) {
                     estimateBtn.style.display = "block";
                     estimateBtn.dataset.tenderId = data.tender_id;
                     document.getElementById("estimatePanel").style.display = "none";
+                    if (!bidFileUploaded) {
+                        estimateBtn.click();
+                    }
                 }
 
                 document.getElementById("resSupplier").textContent = data.supplier;

@@ -643,3 +643,36 @@ h1, h2, h3, .logo, .back-link, .category-label {
     color: #666;
     margin-top: 4px;
 }
+
+/* Bulk Drop Zone - enhanced styling */
+#bulk_drop_zone {
+    min-height: 140px;
+    border: 2px dashed rgba(197, 168, 128, 0.25);
+    background: rgba(197, 168, 128, 0.03);
+    position: relative;
+    overflow: hidden;
+}
+
+#bulk_drop_zone::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(135deg, rgba(197, 168, 128, 0.02) 0%, transparent 50%, rgba(197, 168, 128, 0.02) 100%);
+    pointer-events: none;
+}
+
+#bulk_drop_zone:hover,
+#bulk_drop_zone.dragover {
+    border-color: var(--accent-gold);
+    background: rgba(197, 168, 128, 0.08);
+    box-shadow: 0 0 24px rgba(197, 168, 128, 0.08);
+}
+
+#bulk_drop_zone.dragover .drop-zone-icon {
+    animation: bulkBounce 0.6s ease infinite alternate;
+}
+
+@keyframes bulkBounce {
+    from { transform: translateY(0); }
+    to { transform: translateY(-8px); }
+}
