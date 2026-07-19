@@ -188,27 +188,27 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def serve_index():
-    return FileResponse("static/index.html")
+    return FileResponse("static/index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/sort")
 async def serve_sort_page():
-    return FileResponse("static/sort.html")
+    return FileResponse("static/sort.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/accuracy")
 async def serve_accuracy_page():
-    return FileResponse("static/accuracy.html")
+    return FileResponse("static/accuracy.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/vault")
 async def serve_vault_page():
-    return FileResponse("static/vault.html")
+    return FileResponse("static/vault.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/calendar")
 async def serve_calendar_page():
-    return FileResponse("static/calendar.html")
+    return FileResponse("static/calendar.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/system")
 async def serve_system_page():
-    return FileResponse("static/system.html")
+    return FileResponse("static/system.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/api/companies")
 async def api_get_companies():
