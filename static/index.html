@@ -102,13 +102,18 @@
                 <form id="archiveForm" class="predict-form">
                     <div class="form-group" style="position: relative;">
                         <label>Upload CIPC / CSD Documents (PDFs)</label>
+                        <div class="drop-zone" id="company_drop_zone">
+                            <span class="drop-zone-icon">↓</span>
+                            <span class="drop-zone-title">Drag & drop Company PDFs here</span>
+                            <span class="drop-zone-desc">or click to browse files</span>
+                            <input type="file" id="company_file" name="file" accept=".pdf" multiple style="display: none;">
+                        </div>
                         <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
                             <button type="button" id="addMoreCompanyFilesBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
                                 <span>+ ADD FILES</span>
                                 <span class="bracket bracket-tr"></span>
                                 <span class="bracket bracket-bl"></span>
                             </button>
-                            <input type="file" id="company_file" name="file" accept=".pdf" multiple style="display: none;">
                             <button type="button" id="clear_company_files" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR ALL]</button>
                         </div>
                         <!-- Accumulated file list -->
@@ -139,13 +144,18 @@
                 <form id="tenderSubmitForm" class="predict-form" enctype="multipart/form-data">
                     <div class="form-group" style="position: relative;">
                         <label>Upload Tender Document (PDF)</label>
+                        <div class="drop-zone" id="tender_drop_zone">
+                            <span class="drop-zone-icon">↓</span>
+                            <span class="drop-zone-title">Drag & drop Tender PDF here</span>
+                            <span class="drop-zone-desc">or click to browse files</span>
+                            <input type="file" id="tender_file" name="tender_file" accept=".pdf" style="display: none;">
+                        </div>
                         <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
                             <button type="button" id="addTenderFileBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
                                 <span>+ ADD TENDER</span>
                                 <span class="bracket bracket-tr"></span>
                                 <span class="bracket bracket-bl"></span>
                             </button>
-                            <input type="file" id="tender_file" name="tender_file" accept=".pdf" style="display: none;">
                             <button type="button" id="clear_tender_file" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR]</button>
                         </div>
                         <div id="tender_file_list" style="margin-top:12px; font-size:12px; color:#ccc; display:flex; flex-direction:column; gap:4px;"></div>
@@ -154,13 +164,18 @@
 
                     <div class="form-group" style="position: relative; margin-top: 24px;">
                         <label>Upload Your Bid Document (PDF)</label>
+                        <div class="drop-zone" id="bid_drop_zone">
+                            <span class="drop-zone-icon">↓</span>
+                            <span class="drop-zone-title">Drag & drop Bid PDF here</span>
+                            <span class="drop-zone-desc">or click to browse files</span>
+                            <input type="file" id="bid_file" name="bid_file" accept=".pdf" style="display: none;">
+                        </div>
                         <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
                             <button type="button" id="addBidFileBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
                                 <span>+ ADD BID</span>
                                 <span class="bracket bracket-tr"></span>
                                 <span class="bracket bracket-bl"></span>
                             </button>
-                            <input type="file" id="bid_file" name="bid_file" accept=".pdf" style="display: none;">
                             <button type="button" id="clear_bid_file" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR]</button>
                         </div>
                         <div id="bid_file_list" style="margin-top:12px; font-size:12px; color:#ccc; display:flex; flex-direction:column; gap:4px;"></div>
@@ -731,6 +746,57 @@
                 clearBidFileBtn.style.display = "none";
             });
         }
+
+        // Setup Drag and Drop functionality
+        function setupDropZone(dropZoneId, fileInput, onFileDrop) {
+            const dropZone = document.getElementById(dropZoneId);
+            if (!dropZone || !fileInput) return;
+
+            dropZone.addEventListener("click", (e) => {
+                if (e.target !== fileInput) {
+                    fileInput.click();
+                }
+            });
+
+            ["dragenter", "dragover", "dragleave", "drop"].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            ["dragenter", "dragover"].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.add("dragover"), false);
+            });
+
+            ["dragleave", "dragend", "drop"].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => dropZone.classList.remove("dragover"), false);
+            });
+
+            dropZone.addEventListener("drop", (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    if (onFileDrop) {
+                        onFileDrop(files);
+                    } else {
+                        const dataTransfer = new DataTransfer();
+                        dataTransfer.items.add(files[0]);
+                        fileInput.files = dataTransfer.files;
+                        fileInput.dispatchEvent(new Event("change"));
+                    }
+                }
+            });
+        }
+
+        setupDropZone("company_drop_zone", companyFile, (files) => {
+            for (let i = 0; i < files.length; i++) {
+                accumulatedCompanyFiles.push(files[i]);
+            }
+            renderCompanyFileList();
+        });
+        setupDropZone("tender_drop_zone", tenderFile);
+        setupDropZone("bid_drop_zone", bidFile);
 
         tenderSubmitForm.addEventListener("submit", async (e) => {
             e.preventDefault();

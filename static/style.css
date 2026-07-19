@@ -598,3 +598,48 @@ h1, h2, h3, .logo, .back-link, .category-label {
         padding: 0 30px;
     }
 }
+
+/* Drag and Drop Zone Styling */
+.drop-zone {
+    border: 1px dashed rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    padding: 24px 16px;
+    text-align: center;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.02);
+    transition: all 0.3s ease;
+    margin-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+}
+
+.drop-zone:hover, .drop-zone.dragover {
+    border-color: var(--accent-gold);
+    background: rgba(197, 168, 128, 0.05);
+}
+
+.drop-zone-icon {
+    font-size: 24px;
+    color: var(--accent-gold);
+    margin-bottom: 8px;
+    transition: transform 0.3s ease;
+}
+
+.drop-zone.dragover .drop-zone-icon {
+    transform: translateY(-4px);
+}
+
+.drop-zone-title {
+    font-size: 13px;
+    color: var(--text-white);
+    font-weight: 500;
+}
+
+.drop-zone-desc {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+}
