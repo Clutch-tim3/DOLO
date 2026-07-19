@@ -58,6 +58,13 @@
                 <p class="hero-subtitle">
                     Predicting win margins and bid success criteria by matching automated bid documents with your central company archive.
                 </p>
+                <div style="margin-top: 24px; display: flex; flex-direction: column; gap: 8px;">
+                    <label style="font-size: 11px; letter-spacing: 2px; color: var(--accent-gold); font-weight: 600;">ACTIVE MODEL ENGINE</label>
+                    <select id="modelSelector" style="background: rgba(255,255,255,0.05); color: var(--text-white); border: 1px solid var(--border-faint); padding: 12px 16px; font-size: 13px; font-family: inherit; outline: none; width: 300px; cursor: pointer; transition: border-color 0.3s ease;">
+                        <option value="sailor">SAILOR (Legacy V2)</option>
+                        <option value="conquest">CONQUEST (New Ensemble)</option>
+                    </select>
+                </div>
                 <div style="display: flex; gap: 24px; margin-top: 40px;">
                     <button class="corner-btn" id="openBidBtn">
                         <span>NEW BID SUBMISSION</span>
@@ -178,7 +185,11 @@
 
         <!-- Prediction Results & Capabilities Layout -->
         <section class="results-section" id="resultsSection" style="display: none;">
-            <div style="display:flex; justify-content: flex-end; margin-bottom:16px;" id="markOutcomeContainer">
+            <div style="display:flex; justify-content: flex-end; margin-bottom:16px; gap: 12px;" id="markOutcomeContainer">
+                <button type="button" class="corner-btn" id="estimateCostBtn" style="padding:8px 16px; font-size:11px; display: none;">
+                    <span>ESTIMATE COST</span>
+                    <span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                </button>
                 <div style="position:relative;">
                     <button type="button" class="corner-btn" id="markOutcomeBtn" style="padding:8px 16px; font-size:11px;">
                         <span>MARK OUTCOME ▾</span>
@@ -317,6 +328,23 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Gemini Estimate Panel -->
+            <div id="estimatePanel" style="display:none; margin-top: 40px; padding: 24px; border: 1px solid rgba(197, 168, 128, 0.3); background: rgba(0,0,0,0.5);">
+                <h3 style="color: var(--accent-gold); margin-bottom: 16px; font-family: 'Outfit'; font-weight: 400; letter-spacing: 1px;">GEMINI COST ESTIMATION</h3>
+                
+                <div id="estimateLoading" style="display: none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                        <p style="color: #ccc; font-size: 13px; margin: 0;" id="estimateStatusText">Analyzing tender document and searching market prices...</p>
+                        <span id="estimatePctText" style="color: var(--accent-gold); font-size: 12px; font-weight: 600;">0%</span>
+                    </div>
+                    <div style="width: 100%; height: 2px; background: rgba(255,255,255,0.1); position: relative;">
+                        <div id="estimateProgressBar" style="height: 100%; width: 0%; background: var(--accent-gold); transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+                
+                <div id="estimateResults" style="display: none; color: #fff; font-size: 14px; line-height: 1.6;"></div>
+            </div>
         </section>
 
         
@@ -360,37 +388,7 @@
         const companiesGrid = document.getElementById("companiesGrid");
         const addFirstCompanyCard = document.getElementById("addFirstCompanyCard");
 
-        // Clear file upload selectors logic
-        const bidFileInput = document.getElementById("bid_file");
-        const clearBidFileBtn = document.getElementById("clear_bid_file");
-        const tenderFileInput = document.getElementById("tender_file");
-        const clearTenderFileBtn = document.getElementById("clear_tender_file");
 
-        bidFileInput.addEventListener("change", () => {
-            if (bidFileInput.files.length > 0) {
-                clearBidFileBtn.style.display = "block";
-            } else {
-                clearBidFileBtn.style.display = "none";
-            }
-        });
-
-        clearBidFileBtn.addEventListener("click", () => {
-            bidFileInput.value = "";
-            clearBidFileBtn.style.display = "none";
-        });
-
-        tenderFileInput.addEventListener("change", () => {
-            if (tenderFileInput.files.length > 0) {
-                clearTenderFileBtn.style.display = "block";
-            } else {
-                clearTenderFileBtn.style.display = "none";
-            }
-        });
-
-        clearTenderFileBtn.addEventListener("click", () => {
-            tenderFileInput.value = "";
-            clearTenderFileBtn.style.display = "none";
-        });
 
         const targetCompanyIndicator = document.getElementById("targetCompanyIndicator");
         const targetCompanyName = document.getElementById("targetCompanyName");
@@ -544,6 +542,11 @@
         
         openArchiveBtn.addEventListener("click", () => { archivePanel.classList.add("active"); });
         closeArchiveBtn.addEventListener("click", () => { archivePanel.classList.remove("active"); });
+
+        if(addFirstCompanyCard) {
+            addFirstCompanyCard.addEventListener("click", () => { archivePanel.classList.add("active"); });
+            addFirstCompanyCard.style.cursor = "pointer";
+        }
 
         let accumulatedCompanyFiles = [];
         const addMoreCompanyFilesBtn = document.getElementById('addMoreCompanyFilesBtn');
@@ -744,6 +747,10 @@
             document.querySelectorAll(".sa-only").forEach(el => el.style.display = "none");
             
             const formData = new FormData(tenderSubmitForm);
+            const modelSelector = document.getElementById("modelSelector");
+            if(modelSelector) {
+                formData.append("model_version", modelSelector.value);
+            }
             
             try {
                 const response = await fetch("/api/tender/submit", {
@@ -758,6 +765,13 @@
                 }
                 
                 // Bind outputs
+                const estimateBtn = document.getElementById("estimateCostBtn");
+                if (estimateBtn) {
+                    estimateBtn.style.display = "block";
+                    estimateBtn.dataset.tenderId = data.tender_id;
+                    document.getElementById("estimatePanel").style.display = "none";
+                }
+
                 document.getElementById("resSupplier").textContent = data.supplier;
                 document.getElementById("resMatchedArchive").textContent = data.matched_from_archive ? "Yes" : "No (Temporary Profile)";
                 document.getElementById("resBbbee").textContent = data.bbbee_level;
@@ -820,6 +834,79 @@
                 }
             });
         }
-
-
         
+        // Estimate Cost Logic
+        const estimateCostBtn = document.getElementById("estimateCostBtn");
+        const estimatePanel = document.getElementById("estimatePanel");
+        const estimateLoading = document.getElementById("estimateLoading");
+        const estimateProgressBar = document.getElementById("estimateProgressBar");
+        const estimateStatusText = document.getElementById("estimateStatusText");
+        const estimatePctText = document.getElementById("estimatePctText");
+        const estimateResults = document.getElementById("estimateResults");
+        
+        if (estimateCostBtn) {
+            estimateCostBtn.addEventListener("click", async () => {
+                const tenderId = estimateCostBtn.dataset.tenderId;
+                if (!tenderId) return;
+                
+                estimatePanel.style.display = "block";
+                estimateLoading.style.display = "block";
+                estimateResults.style.display = "none";
+                
+                // Simulate loading animation
+                let progress = 0;
+                estimateProgressBar.style.width = "0%";
+                estimatePctText.textContent = "0%";
+                
+                const progressInterval = setInterval(() => {
+                    progress += Math.random() * 8;
+                    if (progress > 95) progress = 95;
+                    estimateProgressBar.style.width = progress + "%";
+                    estimatePctText.textContent = Math.floor(progress) + "%";
+                    
+                    if (progress > 20) estimateStatusText.textContent = "Extracting products from tender text...";
+                    if (progress > 50) estimateStatusText.textContent = "Searching web for market prices...";
+                    if (progress > 80) estimateStatusText.textContent = "Compiling estimation report...";
+                }, 500);
+                
+                try {
+                    const res = await fetch("/api/estimate", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ tender_id: tenderId })
+                    });
+                    const data = await res.json();
+                    
+                    clearInterval(progressInterval);
+                    estimateProgressBar.style.width = "100%";
+                    estimatePctText.textContent = "100%";
+                    estimateStatusText.textContent = "Complete!";
+                    
+                    setTimeout(() => {
+                        estimateLoading.style.display = "none";
+                        estimateResults.style.display = "block";
+                        if (!res.ok) {
+                            estimateResults.innerHTML = `<span style="color:#e05c5c;">Error: ${data.detail || "Failed to estimate"}</span>`;
+                        } else {
+                            let formattedHtml = data.result
+                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                                .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" style="color:var(--accent-gold); text-decoration:underline;">$1</a>')
+                                .replace(/\n/g, '<br>');
+                            estimateResults.innerHTML = formattedHtml;
+                        }
+                    }, 600);
+                    
+                } catch (err) {
+                    clearInterval(progressInterval);
+                    estimateLoading.style.display = "none";
+                    estimateResults.style.display = "block";
+                    estimateResults.innerHTML = `<span style="color:#e05c5c;">Network error: ${err.message}</span>`;
+                }
+            });
+        }
+
+
+        </script>
+</body>
+</html>

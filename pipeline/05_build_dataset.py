@@ -120,8 +120,8 @@ def build_dataset():
     """).fetchone()[0]
     print(f"       Joined rows: {joined_count:,}  (matched supplier features: {matched:,})", flush=True)
 
-    # Add tender_size_ratio
-    print("       Computing tender_size_ratio...", flush=True)
+    # Add tender_size_ratio and source
+    print("       Computing tender_size_ratio and source...", flush=True)
     con.execute("""
         ALTER TABLE joined ADD COLUMN tender_size_ratio DOUBLE;
     """)
@@ -130,6 +130,14 @@ def build_dataset():
             CASE WHEN pit_avg_contract_value > 0 AND COALESCE(TRY_CAST(tender_estimatedpriceUsd AS DOUBLE), TRY_CAST(bid_priceUsd AS DOUBLE)) IS NOT NULL
                  THEN COALESCE(TRY_CAST(tender_estimatedpriceUsd AS DOUBLE), TRY_CAST(bid_priceUsd AS DOUBLE)) / pit_avg_contract_value
                  ELSE NULL END
+    """)
+    con.execute("""
+        ALTER TABLE joined ADD COLUMN source VARCHAR;
+    """)
+    con.execute("""
+        UPDATE joined SET source =
+            CASE WHEN buyer_country = 'ZA' THEN 'SA'
+                 ELSE 'GPPD' END
     """)
 
     # ── 4. Competition features ────────────────────────────────────────────

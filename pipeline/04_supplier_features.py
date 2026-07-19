@@ -39,10 +39,11 @@ def main():
         print(f"ERROR: {RAW_CONTRACTS_PATH} not found. Run 02_ingest first.", flush=True)
         sys.exit(1)
 
-    # ── Initialise DuckDB ─────────────────────────────────────────────
-    con = duckdb.connect(":memory:")
-    con.execute("SET memory_limit = '4GB';")
-    con.execute("SET threads = 4;")
+    # ── Initialise DuckDB    # Setup DuckDB connection with strict memory limits but large spill-to-disk allowance
+    con = duckdb.connect(database=':memory:')
+    con.execute("PRAGMA threads=4;")
+    con.execute("PRAGMA memory_limit='4GB';")
+    con.execute("PRAGMA max_temp_directory_size='50GiB';")
 
     raw_contracts_sql = str(RAW_CONTRACTS_PATH).replace("'", "''")
     labeled_pairs_sql = str(LABELED_PAIRS_PATH).replace("'", "''")
@@ -54,7 +55,7 @@ def main():
         COPY (
             WITH raw_contracts_grouped AS (
                 SELECT
-                    bidder_masterid,
+                    COALESCE(bidder_name, 'UNKNOWN') as bidder_key,
                     tender_year::INTEGER as tender_year,
                     COUNT(*)::INTEGER as year_entries,
                     SUM(CASE WHEN bid_iswinning = TRUE THEN 1 ELSE 0 END)::INTEGER as year_wins,
@@ -62,140 +63,141 @@ def main():
                     COUNT(CASE WHEN bid_iswinning = TRUE AND bid_priceUsd IS NOT NULL THEN 1 END)::INTEGER as year_value_count,
                     MAX(CASE WHEN bid_iswinning = TRUE THEN tender_year END)::INTEGER as year_max_win_year
                 FROM read_parquet('{raw_contracts_sql}')
-                WHERE bidder_masterid IS NOT NULL AND tender_year IS NOT NULL
-                GROUP BY bidder_masterid, tender_year
+                WHERE tender_year IS NOT NULL
+                GROUP BY bidder_key, tender_year
             ),
             supplier_year_stats AS (
                 SELECT
-                    bidder_masterid,
+                    bidder_key,
                     tender_year,
                     COALESCE(SUM(year_entries) OVER (
-                        PARTITION BY bidder_masterid ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     ), 0)::INTEGER as cum_entries,
                     COALESCE(SUM(year_wins) OVER (
-                        PARTITION BY bidder_masterid ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     ), 0)::INTEGER as cum_wins,
                     COALESCE(SUM(year_value_sum) OVER (
-                        PARTITION BY bidder_masterid ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     ), 0.0)::DOUBLE as cum_value_sum,
                     COALESCE(SUM(year_value_count) OVER (
-                        PARTITION BY bidder_masterid ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     ), 0)::INTEGER as cum_value_count,
                     MAX(year_max_win_year) OVER (
-                        PARTITION BY bidder_masterid ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     )::INTEGER as last_win_year
                 FROM raw_contracts_grouped
             ),
             raw_country_grouped AS (
                 SELECT
-                    bidder_masterid,
+                    COALESCE(bidder_name, 'UNKNOWN') as bidder_key,
                     buyer_country,
                     tender_year::INTEGER as tender_year,
                     COUNT(*)::INTEGER as year_entries,
                     SUM(CASE WHEN bid_iswinning = TRUE THEN 1 ELSE 0 END)::INTEGER as year_wins
                 FROM read_parquet('{raw_contracts_sql}')
-                WHERE bidder_masterid IS NOT NULL AND tender_year IS NOT NULL AND buyer_country IS NOT NULL
-                GROUP BY bidder_masterid, buyer_country, tender_year
+                WHERE tender_year IS NOT NULL AND buyer_country IS NOT NULL
+                GROUP BY bidder_key, buyer_country, tender_year
             ),
             supplier_country_stats AS (
                 SELECT
-                    bidder_masterid,
+                    bidder_key,
                     buyer_country,
                     tender_year,
                     COALESCE(SUM(year_entries) OVER (
-                        PARTITION BY bidder_masterid, buyer_country ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key, buyer_country ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     ), 0)::INTEGER as cum_entries_country,
                     COALESCE(SUM(year_wins) OVER (
-                        PARTITION BY bidder_masterid, buyer_country ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key, buyer_country ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     ), 0)::INTEGER as cum_wins_country
                 FROM raw_country_grouped
             ),
             country_counts AS (
                 SELECT
-                    sy.bidder_masterid,
+                    sy.bidder_key,
                     sy.tender_year,
-                    COUNT(CASE WHEN scm.min_year < sy.tender_year THEN 1 END)::INTEGER as pit_country_count
+                    COUNT(CASE WHEN scm.min_year <= sy.tender_year THEN 1 END)::INTEGER as pit_country_count
                 FROM (
-                    SELECT DISTINCT bidder_masterid, tender_year::INTEGER as tender_year 
+                    SELECT DISTINCT COALESCE(bidder_name, 'UNKNOWN') as bidder_key, tender_year::INTEGER as tender_year 
                     FROM read_parquet('{raw_contracts_sql}')
-                    WHERE bidder_masterid IS NOT NULL AND tender_year IS NOT NULL
+                    WHERE tender_year IS NOT NULL
                 ) sy
                 LEFT JOIN (
-                    SELECT bidder_masterid, buyer_country, MIN(tender_year::INTEGER) as min_year
+                    SELECT COALESCE(bidder_name, 'UNKNOWN') as bidder_key, buyer_country, MIN(tender_year::INTEGER) as min_year
                     FROM read_parquet('{raw_contracts_sql}')
-                    WHERE bidder_masterid IS NOT NULL AND tender_year IS NOT NULL AND buyer_country IS NOT NULL
-                    GROUP BY bidder_masterid, buyer_country
+                    WHERE tender_year IS NOT NULL AND buyer_country IS NOT NULL
+                    GROUP BY bidder_key, buyer_country
                 ) scm
-                  ON sy.bidder_masterid = scm.bidder_masterid
-                GROUP BY sy.bidder_masterid, sy.tender_year
+                  ON sy.bidder_key = scm.bidder_key
+                GROUP BY sy.bidder_key, sy.tender_year
+
             ),
             raw_buyer_grouped AS (
                 SELECT
-                    bidder_masterid,
+                    COALESCE(bidder_name, 'UNKNOWN') as bidder_key,
                     buyer_masterid,
                     tender_year::INTEGER as tender_year,
                     COUNT(*)::INTEGER as year_entries,
                     SUM(CASE WHEN bid_iswinning = TRUE THEN 1 ELSE 0 END)::INTEGER as year_wins
                 FROM read_parquet('{raw_contracts_sql}')
-                WHERE bidder_masterid IS NOT NULL AND tender_year IS NOT NULL AND buyer_masterid IS NOT NULL
-                GROUP BY bidder_masterid, buyer_masterid, tender_year
+                WHERE tender_year IS NOT NULL AND buyer_masterid IS NOT NULL
+                GROUP BY bidder_key, buyer_masterid, tender_year
             ),
             supplier_buyer_stats AS (
                 SELECT
-                    bidder_masterid,
+                    bidder_key,
                     buyer_masterid,
                     tender_year,
                     COALESCE(SUM(year_entries) OVER (
-                        PARTITION BY bidder_masterid, buyer_masterid ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key, buyer_masterid ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     ), 0)::INTEGER as cum_entries_buyer,
                     COALESCE(SUM(year_wins) OVER (
-                        PARTITION BY bidder_masterid, buyer_masterid ORDER BY tender_year 
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        PARTITION BY bidder_key, buyer_masterid ORDER BY tender_year 
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
                     ), 0)::INTEGER as cum_wins_buyer
                 FROM raw_buyer_grouped
             ),
             supplier_hhi_prep AS (
                 SELECT 
-                    bidder_masterid,
+                    COALESCE(bidder_name, 'UNKNOWN') as bidder_key,
                     tender_year::INTEGER as win_year,
                     SUBSTRING(tender_cpvs, 1, 2) as cpv_division
                 FROM read_parquet('{raw_contracts_sql}')
-                WHERE bid_iswinning = TRUE AND bidder_masterid IS NOT NULL AND tender_cpvs IS NOT NULL AND tender_year IS NOT NULL
+                WHERE bid_iswinning = TRUE AND tender_cpvs IS NOT NULL AND tender_year IS NOT NULL
             ),
             supplier_hhi_counts AS (
                 SELECT 
-                    p.bidder_masterid,
+                    p.bidder_key,
                     p.tender_year,
                     h.cpv_division,
                     COUNT(*) as cpv_wins
-                FROM (SELECT DISTINCT bidder_masterid, publish_year::INTEGER as tender_year FROM read_parquet('{labeled_pairs_sql}')) p
+                FROM (SELECT DISTINCT COALESCE(bidder_name, 'UNKNOWN') as bidder_key, publish_year::INTEGER as tender_year FROM read_parquet('{labeled_pairs_sql}')) p
                 JOIN supplier_hhi_prep h
-                  ON p.bidder_masterid = h.bidder_masterid AND h.win_year < p.tender_year
-                GROUP BY p.bidder_masterid, p.tender_year, h.cpv_division
+                  ON p.bidder_key = h.bidder_key AND h.win_year < p.tender_year
+                GROUP BY p.bidder_key, p.tender_year, h.cpv_division
             ),
             supplier_hhi_totals AS (
                 SELECT 
-                    bidder_masterid,
+                    bidder_key,
                     tender_year,
                     cpv_wins,
-                    SUM(cpv_wins) OVER (PARTITION BY bidder_masterid, tender_year) as total_wins
+                    SUM(cpv_wins) OVER (PARTITION BY bidder_key, tender_year) as total_wins
                 FROM supplier_hhi_counts
             ),
             supplier_hhi AS (
                 SELECT 
-                    bidder_masterid,
+                    bidder_key,
                     tender_year,
                     SUM(POW(cpv_wins::DOUBLE / NULLIF(total_wins, 0), 2)) as category_hhi
                 FROM supplier_hhi_totals
-                GROUP BY bidder_masterid, tender_year
+                GROUP BY bidder_key, tender_year
             ),
             joined AS (
                 SELECT
@@ -231,17 +233,17 @@ def main():
                         ELSE 0.0 
                     END as buyer_loyalty_score,
                     COALESCE(sh.category_hhi, 0.0)::DOUBLE as category_hhi
-                FROM read_parquet('{labeled_pairs_sql}') p
-                LEFT JOIN supplier_year_stats sy
-                  ON p.bidder_masterid = sy.bidder_masterid AND p.publish_year::INTEGER = sy.tender_year
-                LEFT JOIN supplier_country_stats sc
-                  ON p.bidder_masterid = sc.bidder_masterid AND p.buyer_country = sc.buyer_country AND p.publish_year::INTEGER = sc.tender_year
-                LEFT JOIN country_counts cc
-                  ON p.bidder_masterid = cc.bidder_masterid AND p.publish_year::INTEGER = cc.tender_year
-                LEFT JOIN supplier_buyer_stats sb
-                  ON p.bidder_masterid = sb.bidder_masterid AND p.buyer_masterid = sb.buyer_masterid AND p.publish_year::INTEGER = sb.tender_year
+                FROM (SELECT *, COALESCE(bidder_name, 'UNKNOWN') as bidder_key FROM read_parquet('{labeled_pairs_sql}')) p
+                ASOF LEFT JOIN supplier_year_stats sy
+                  ON p.bidder_key = sy.bidder_key AND p.publish_year::INTEGER - 1 >= sy.tender_year
+                ASOF LEFT JOIN supplier_country_stats sc
+                  ON p.bidder_key = sc.bidder_key AND p.buyer_country = sc.buyer_country AND p.publish_year::INTEGER - 1 >= sc.tender_year
+                ASOF LEFT JOIN country_counts cc
+                  ON p.bidder_key = cc.bidder_key AND p.publish_year::INTEGER - 1 >= cc.tender_year
+                ASOF LEFT JOIN supplier_buyer_stats sb
+                  ON p.bidder_key = sb.bidder_key AND p.buyer_masterid = sb.buyer_masterid AND p.publish_year::INTEGER - 1 >= sb.tender_year
                 LEFT JOIN supplier_hhi sh
-                  ON p.bidder_masterid = sh.bidder_masterid AND p.publish_year::INTEGER = sh.tender_year
+                  ON p.bidder_key = sh.bidder_key AND p.publish_year::INTEGER = sh.tender_year
             )
             SELECT
                 pair_id,

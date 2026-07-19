@@ -106,6 +106,14 @@
                         <small style="color:#666; font-size: 11px; margin-top: 4px;">This is the single supplier profile the batch will be evaluated against.</small>
                     </div>
 
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label for="batch_model_version" style="color: var(--accent-gold); font-weight: 600;">Active Model Engine</label>
+                        <select id="batch_model_version" name="model_version" style="width:100%; background:rgba(255,255,255,0.05); color:var(--text-white); border:1px solid var(--border-faint); padding:12px 16px; font-size:13px; outline:none; transition: border-color 0.3s ease;">
+                            <option value="sailor">SAILOR (Legacy V2)</option>
+                            <option value="conquest">CONQUEST (New Ensemble)</option>
+                        </select>
+                    </div>
+
                     <button type="submit" class="submit-btn corner-btn" id="runBatchBtn">
                         <span>RUN BATCH ANALYSIS</span>
                         <span class="bracket bracket-tr"></span>
@@ -328,6 +336,11 @@ bulkSortForm.addEventListener('submit', async (e) => {
         formData.append("files", accumulatedFiles[i]);
     }
     formData.append("supplier_name", document.getElementById('batch_supplier_name').value);
+    
+    const modelSelector = document.getElementById("batch_model_version");
+    if(modelSelector) {
+        formData.append("model_version", modelSelector.value);
+    }
     
     try {
         const res = await fetch("/api/batch-sort", {

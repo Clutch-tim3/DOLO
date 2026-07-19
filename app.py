@@ -9,6 +9,8 @@ from typing import List, Optional
 import sqlite3
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+from google import genai
+from google.genai import types
 import uuid
 from fastapi import BackgroundTasks
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -89,16 +91,26 @@ if not ARCHIVE_JSON_PATH.exists():
     with open(ARCHIVE_JSON_PATH, "w") as f:
         json.dump([], f)
 
+artifacts_sailor = None
+artifacts_conquest = None
+feature_list = None
+
 # Load pipeline artifacts once when starting server
 try:
     print("── Loading model artifacts for Web API ──")
-    artifacts = load_all_artifacts()
-    feature_list = get_feature_list(artifacts["metadata"])
+    artifacts_sailor = load_all_artifacts("_v2")
+    try:
+        artifacts_conquest = load_all_artifacts("_conquest")
+    except Exception as e:
+        print(f"Warning: Conquest artifacts not found ({e}). Falling back to Sailor.")
+        artifacts_conquest = artifacts_sailor
+    
+    feature_list = get_feature_list(artifacts_sailor["metadata"])
     print("✓ Model artifacts successfully cached in memory")
 except Exception as e:
     print(f"Error loading model artifacts: {e}")
-    artifacts = None
-    feature_list = []
+    artifacts_sailor = None
+    artifacts_conquest = None
 
 def get_archived_companies():
     """Reads companies list from company_archive.json"""
@@ -364,7 +376,8 @@ async def api_tender_submit(
     bid_file: Optional[UploadFile] = File(None),
     tender_file: Optional[UploadFile] = File(None),
     supplier_name: Optional[str] = Form(None),
-    bbbee_level: Optional[int] = Form(None)
+    bbbee_level: Optional[int] = Form(None),
+    model_version: Optional[str] = Form("sailor")
 ):
     """
     Submits a Tender PDF & Bid PDF:
@@ -373,6 +386,10 @@ async def api_tender_submit(
     - If found, retrieves B-BBEE Level.
     - Queries prediction pipeline and preferential scoring logic.
     """
+    target_artifacts = artifacts_conquest if model_version.lower() == "conquest" else artifacts_sailor
+    if not target_artifacts:
+        raise HTTPException(status_code=500, detail="Model artifacts not loaded")
+
     # Initialize defaults
     bbbee_level_def = 9
     supplier_price = None
@@ -423,8 +440,8 @@ async def api_tender_submit(
             if id_match:
                 tender_id = id_match.group(1)
         finally:
-            if temp_path.exists():
-                temp_path.unlink()
+            # Not unlinking tender_file here so it can be used for estimation
+            pass
                 
     # 3. Fallback to manual supplier name
     if not matched_company and supplier_name:
@@ -450,23 +467,22 @@ async def api_tender_submit(
         
     try:
         # ML pipeline
-        tender_id = str(uuid.uuid4())
         features_df = extract_features_from_tender_id(
-            tender_id, name_to_use, feature_list, artifacts["medians"]
+            tender_id, name_to_use, feature_list, target_artifacts["medians"]
         )
-        features_df = inject_parsed_features(features_df, parsed_tender)
-        features_df = build_new_features(features_df, artifacts["medians"])
+        features_df = build_new_features(features_df, target_artifacts["medians"])
+        features_df = inject_parsed_features(features_df, parsed_tender, supplier_price)
         features_df = encode_and_impute(
-            features_df, artifacts["encoder"], artifacts["cat_cols"], artifacts["medians"]
+            features_df, target_artifacts["encoder"], target_artifacts["cat_cols"], target_artifacts["medians"]
         )
         
-        if artifacts["xgb_model"].feature_names is not None:
-            for feat in artifacts["xgb_model"].feature_names:
+        if target_artifacts["xgb_model"].feature_names is not None:
+            for feat in target_artifacts["xgb_model"].feature_names:
                 if feat not in features_df.columns:
-                    features_df[feat] = artifacts["medians"].get(feat, 0)
-            features_df = features_df[artifacts["xgb_model"].feature_names]
+                    features_df[feat] = target_artifacts["medians"].get(feat, 0)
+            features_df = features_df[target_artifacts["xgb_model"].feature_names]
             
-        pred_res = predict(artifacts, features_df, mock_supplier_name=name_to_use)
+        pred_res = predict(target_artifacts, features_df, mock_supplier_name=name_to_use)
         base_prob = pred_res["probability"]
         
         sa_score = calculate_total_sa_score(
@@ -502,7 +518,7 @@ async def api_tender_submit(
             "parsed_tender_value": tender_value
         }
                 
-        threshold = artifacts["threshold"]
+        threshold = target_artifacts["threshold"]
         recommendation = "PURSUE" if final_probability >= threshold else "PASS"
         
         if final_probability > threshold + 0.15:
@@ -526,8 +542,11 @@ async def api_tender_submit(
         conn.commit()
         conn.close()
 
+        
+        # Return tender_id so it can be used for estimation
         return {
             "prediction_id": prediction_id,
+            "tender_id": tender_id,
             "supplier": name_to_use,
             "matched_from_archive": matched_company is not None,
             "registration_number": matched_company.get("registration_number", "Pending") if matched_company else "Pending",
@@ -543,7 +562,7 @@ async def api_tender_submit(
     except Exception as err:
         raise HTTPException(status_code=500, detail=str(err))
 
-def inject_parsed_features(features_df, parsed_tender):
+def inject_parsed_features(features_df, parsed_tender, supplier_price=None):
     if parsed_tender:
         if 'deadline_days' in parsed_tender:
             features_df['deadline_days'] = parsed_tender['deadline_days']
@@ -551,17 +570,23 @@ def inject_parsed_features(features_df, parsed_tender):
             features_df['tender_proceduretype'] = parsed_tender['tender_proceduretype']
         if 'tender_supplytype' in parsed_tender:
             features_df['tender_supplytype'] = parsed_tender['tender_supplytype']
-        if 'tender_estimatedpriceUsd' in parsed_tender:
-            features_df['tender_estimatedpriceUsd'] = parsed_tender['tender_estimatedpriceUsd']
-        if 'bid_priceUsd' in parsed_tender:
-            features_df['bid_priceUsd'] = parsed_tender['bid_priceUsd']
+            
+        if 'tender_value' in parsed_tender and parsed_tender['tender_value']:
+            features_df['tender_estimatedpriceUsd'] = float(parsed_tender['tender_value']) * 0.053
+            
+        if supplier_price is not None:
+            features_df['bid_priceUsd'] = float(supplier_price) * 0.053
+        elif 'bid_price' in parsed_tender and parsed_tender['bid_price']:
+            features_df['bid_priceUsd'] = float(parsed_tender['bid_price']) * 0.053
+            
         if 'tender_description_length' in parsed_tender:
             features_df['tender_description_length'] = parsed_tender['tender_description_length']
         if 'functionality_threshold_pct' in parsed_tender:
             features_df['had_functionality_gate'] = parsed_tender['had_functionality_gate']
             features_df['functionality_threshold_pct'] = parsed_tender['functionality_threshold_pct']
     return features_df
-async def process_batch_job(job_id: str, file_paths: list, filenames: list, name_to_use: str, bbbee_to_use: int):
+
+async def process_batch_job(job_id: str, file_paths: list, filenames: list, name_to_use: str, bbbee_to_use: int, target_artifacts: dict):
     # Retrieve the job
     job = BATCH_JOBS.get(job_id)
     if not job:
@@ -637,21 +662,21 @@ async def process_batch_job(job_id: str, file_paths: list, filenames: list, name
                 
             # ML pipeline
             features_df = extract_features_from_tender_id(
-                tender_id, name_to_use, feature_list, artifacts["medians"]
+                tender_id, name_to_use, feature_list, target_artifacts["medians"]
             )
-            features_df = inject_parsed_features(features_df, parsed_tender)
-            features_df = build_new_features(features_df, artifacts["medians"])
+            features_df = build_new_features(features_df, target_artifacts["medians"])
+            features_df = inject_parsed_features(features_df, parsed_tender, supplier_price)
             features_df = encode_and_impute(
-                features_df, artifacts["encoder"], artifacts["cat_cols"], artifacts["medians"]
+                features_df, target_artifacts["encoder"], target_artifacts["cat_cols"], target_artifacts["medians"]
             )
             
-            if artifacts["xgb_model"].feature_names is not None:
-                for feat in artifacts["xgb_model"].feature_names:
+            if target_artifacts["xgb_model"].feature_names is not None:
+                for feat in target_artifacts["xgb_model"].feature_names:
                     if feat not in features_df.columns:
-                        features_df[feat] = artifacts["medians"].get(feat, 0)
-                features_df = features_df[artifacts["xgb_model"].feature_names]
+                        features_df[feat] = target_artifacts["medians"].get(feat, 0)
+                features_df = features_df[target_artifacts["xgb_model"].feature_names]
                 
-            pred_res = predict(artifacts, features_df, mock_supplier_name=name_to_use)
+            pred_res = predict(target_artifacts, features_df, mock_supplier_name=name_to_use)
             base_prob = pred_res["probability"]
             
             sa_score = calculate_total_sa_score(
@@ -669,7 +694,7 @@ async def process_batch_job(job_id: str, file_paths: list, filenames: list, name
             )
             
             final_probability = sa_adj["final_probability"]
-            threshold = artifacts["threshold"]
+            threshold = target_artifacts["threshold"]
             recommendation = "PURSUE" if final_probability >= threshold else "PASS"
             
             prediction_id = str(uuid.uuid4())
@@ -725,10 +750,15 @@ async def process_batch_job(job_id: str, file_paths: list, filenames: list, name
 async def api_batch_sort(
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
-    supplier_name: Optional[str] = Form(None)
+    supplier_name: Optional[str] = Form(None),
+    model_version: Optional[str] = Form("sailor")
 ):
     if not files or all(f.filename == "" for f in files):
         raise HTTPException(status_code=400, detail="No files uploaded")
+        
+    target_artifacts = artifacts_conquest if model_version.lower() == "conquest" else artifacts_sailor
+    if not target_artifacts:
+        raise HTTPException(status_code=500, detail="Model artifacts not loaded")
         
     bbbee_level_def = 9
     matched_company = None
@@ -768,7 +798,7 @@ async def api_batch_sort(
         file_paths.append(temp_path)
         filenames.append(f.filename)
         
-    background_tasks.add_task(process_batch_job, job_id, file_paths, filenames, name_to_use, bbbee_to_use)
+    background_tasks.add_task(process_batch_job, job_id, file_paths, filenames, name_to_use, bbbee_to_use, target_artifacts)
     
     return {"job_id": job_id}
 
@@ -777,8 +807,6 @@ async def api_batch_status(job_id: str):
     if job_id not in BATCH_JOBS:
         raise HTTPException(status_code=404, detail="Job not found")
     return BATCH_JOBS[job_id]
-
-
 
 @app.post("/api/track-outcome")
 async def track_outcome(req: TrackOutcomeRequest):
@@ -927,11 +955,78 @@ async def get_calendar_conflicts():
 
 @app.get("/api/system-status")
 async def get_system_status():
-    global artifacts
-    import json
+    global artifacts_sailor
     
-    threshold_val = artifacts["threshold"] if artifacts else 0.1763
-    meta = artifacts["metadata"] if artifacts and "metadata" in artifacts else {}
+    # We use Sailor artifacts as fallback for stats if needed
+    target = artifacts_sailor
+    threshold_val = target["threshold"] if target else 0.1763
+    meta = target["metadata"] if target and "metadata" in target else {}
+    
+class EstimateRequest(BaseModel):
+    tender_id: str
+
+@app.post("/api/estimate")
+async def api_estimate(req: EstimateRequest):
+    tender_id = req.tender_id
+    tender_file_path = UPLOAD_FOLDER / f"tender_{tender_id}.pdf"
+    
+    if not tender_file_path.exists():
+        raise HTTPException(status_code=404, detail="Tender document not found for estimation")
+        
+    try:
+        from predict.predict import extract_text_from_pdf
+        tender_text = extract_text_from_pdf(tender_file_path)
+        
+        # Using the API key from environment variables (fallback to hardcoded for local testing if needed, but removed for git)
+        try:
+            api_key = os.environ.get("GEMINI_API_KEY", "")
+            client = genai.Client(api_key=api_key)
+            
+            prompt = (
+                "You are an expert procurement analyst. I will provide the raw text extracted from a tender document. "
+                "Your task is to identify the physical products, goods, or items requested in this tender, and estimate their costs. "
+                "Use your Google Search tool to find these items on the web, determine their current market price, and provide a link to where you found them. "
+                "Format your response as a clear list. For each item, include: 1. The item name. 2. The estimated cost/price. 3. The source URL. "
+                f"\n\n--- TENDER TEXT ---\n{tender_text[:5000]}"
+            )
+            
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    tools=[{"google_search": {}}],
+                    temperature=0.2,
+                    max_output_tokens=800
+                )
+            )
+            result_text = response.text
+        except Exception as e:
+            print(f"Gemini failed: {e}. Falling back to Groq...")
+            from groq import Groq
+            groq_key = os.environ.get("GROQ_API_KEY", "")
+            groq_client = Groq(api_key=groq_key)
+            
+            groq_prompt = (
+                "You are an expert procurement analyst. I will provide the raw text extracted from a tender document. "
+                "Your task is to identify the physical products, goods, or items requested in this tender, and estimate their costs. "
+                "Use your expert knowledge to determine their current estimated market price. (Live web search is currently unavailable). "
+                "Format your response as a clear list. For each item, include: 1. The item name. 2. The estimated cost/price. "
+                f"\n\n--- TENDER TEXT ---\n{tender_text[:5000]}"
+            )
+            
+            chat_completion = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": groq_prompt}],
+                model="llama3-70b-8192",
+                max_tokens=800,
+                temperature=0.2
+            )
+            result_text = chat_completion.choices[0].message.content
+            result_text += "\n\n*(Note: Used Groq fallback. Web search links are unavailable.)*"
+        
+        return {"success": True, "result": result_text}
+    except Exception as e:
+        print(f"Estimation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
     
     top_features = [
         {"name": "pit_win_rate_buyer", "importance": 0.18, "plain_language_label": "Win Rate with this specific Buyer"},

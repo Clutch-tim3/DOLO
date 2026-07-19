@@ -10,13 +10,13 @@ from catboost import CatBoostClassifier
 from sklearn.isotonic import IsotonicRegression
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-MODEL_XGB_PATH = PROJECT_ROOT / "models" / "saved" / "model_xgb_v1.json"
-MODEL_LGB_PATH = PROJECT_ROOT / "models" / "saved" / "model_lgb_v1.txt"
-MODEL_CB_PATH = PROJECT_ROOT / "models" / "saved" / "model_cb_v1.cbm"
+MODEL_XGB_PATH = PROJECT_ROOT / "models" / "saved" / "model_xgb_conquest.json"
+MODEL_LGB_PATH = PROJECT_ROOT / "models" / "saved" / "model_lgb_conquest.txt"
+MODEL_CB_PATH = PROJECT_ROOT / "models" / "saved" / "model_cb_conquest.cbm"
 WEIGHTS_PATH = PROJECT_ROOT / "models" / "saved" / "ensemble_weights.json"
 X_VAL_PATH = PROJECT_ROOT / "data" / "splits" / "X_val.parquet"
 Y_VAL_PATH = PROJECT_ROOT / "data" / "splits" / "y_val.parquet"
-CALIBRATOR_PATH = PROJECT_ROOT / "models" / "saved" / "isotonic_calibrator.pkl"
+CALIBRATOR_PATH = PROJECT_ROOT / "models" / "saved" / "calibrator_conquest.pkl"
 
 def main():
     print("Loading validation data for calibration...")

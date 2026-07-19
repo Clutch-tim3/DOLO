@@ -51,10 +51,10 @@ except ImportError as e:
     parse_tender_document = None
     extract_text_from_pdf = None
 
-MODEL_XGB_PATH = PROJECT_ROOT / "models" / "saved" / "model_xgb_v1.json"
-MODEL_LGB_PATH = PROJECT_ROOT / "models" / "saved" / "model_lgb_v1.txt"
-MODEL_CB_PATH = PROJECT_ROOT / "models" / "saved" / "model_cb_v1.cbm"
-CALIBRATOR_PATH = PROJECT_ROOT / "models" / "saved" / "calibrator_v1.pkl"
+MODEL_XGB_PATH = PROJECT_ROOT / "models" / "saved" / "model_xgb_v2.json"
+MODEL_LGB_PATH = PROJECT_ROOT / "models" / "saved" / "model_lgb_v2.txt"
+MODEL_CB_PATH = PROJECT_ROOT / "models" / "saved" / "model_cb_v2.cbm"
+CALIBRATOR_PATH = PROJECT_ROOT / "models" / "saved" / "calibrator_v2.pkl"
 ENCODER_PATH = PROJECT_ROOT / "data" / "processed" / "encoders.pkl"
 MEDIANS_PATH = PROJECT_ROOT / "data" / "processed" / "medians.pkl"
 NEW_MEDIANS_PATH = PROJECT_ROOT / "data" / "processed" / "new_feature_medians.pkl"
@@ -82,16 +82,22 @@ def load_json(path: Path, label: str) -> dict:
     print(f"  ✓ {label} loaded", flush=True)
     return data
 
-def load_all_artifacts():
-    print("\n── Loading artifacts ──────────────────────────────────", flush=True)
+def load_all_artifacts(model_suffix="_v2"):
+    print(f"\n── Loading artifacts ({model_suffix}) ──────────────────────────────────", flush=True)
     
     xgb_model = xgb.Booster()
-    if not MODEL_XGB_PATH.exists(): sys.exit(1)
-    xgb_model.load_model(str(MODEL_XGB_PATH))
+    xgb_path = PROJECT_ROOT / "models" / "saved" / f"model_xgb{model_suffix}.json"
+    if not xgb_path.exists(): sys.exit(1)
+    xgb_model.load_model(str(xgb_path))
     
-    lgb_model = lgb.Booster(model_file=str(MODEL_LGB_PATH))
-    cb_model = CatBoostClassifier().load_model(str(MODEL_CB_PATH))
-    calibrator = load_pickle(CALIBRATOR_PATH, "Calibrator")
+    lgb_path = PROJECT_ROOT / "models" / "saved" / f"model_lgb{model_suffix}.txt"
+    lgb_model = lgb.Booster(model_file=str(lgb_path))
+    
+    cb_path = PROJECT_ROOT / "models" / "saved" / f"model_cb{model_suffix}.cbm"
+    cb_model = CatBoostClassifier().load_model(str(cb_path))
+    
+    calibrator_path = PROJECT_ROOT / "models" / "saved" / f"calibrator{model_suffix}.pkl"
+    calibrator = load_pickle(calibrator_path, "Calibrator")
     
     encoder_data = load_pickle(ENCODER_PATH, "OrdinalEncoder")
     encoder = encoder_data.get("ordinal_encoder") if isinstance(encoder_data, dict) else encoder_data
@@ -232,18 +238,9 @@ def predict(artifacts: dict, features_df: pd.DataFrame, mock_supplier_name: str 
     uncal_prob = (p_xgb + p_lgb + p_cb) / 3.0
     base_calibrated = float(artifacts["calibrator"].transform([uncal_prob])[0])
     
-    # Isotonic Regression produces flat plateaus. We add a tiny micro-adjustment 
-    # based on the continuous uncalibrated score to preserve relative ranking.
-    # To prevent identical ML outputs for unknown suppliers, we also inject a deterministic tie-breaker
-    # based on the tender's own features (price and length). We use modulo to bound it to a small,
-    # safe variance (up to ~0.02) that is still large enough to visibly change the UI (which rounds to 0.1%).
-    raw_price = float(features_df.get('tender_estimatedpriceUsd', pd.Series([0])).iloc[0])
-    raw_length = float(features_df.get('tender_description_length', pd.Series([0])).iloc[0])
-    
-    price_variance = (raw_price % 100) * 0.0001
-    length_variance = (raw_length % 100) * 0.0001
-    
-    prob = base_calibrated + (uncal_prob - 0.5) * 0.015 + price_variance + length_variance
+    # The deterministic tie-breaker hack has been removed to reveal true model variance.
+    prob = base_calibrated + (uncal_prob - 0.5) * 0.015
+
     prob = max(0.01, min(0.99, prob))
 
             
