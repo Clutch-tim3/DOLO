@@ -70,7 +70,7 @@ def load_pickle(path: Path, label: str):
         sys.exit(1)
     with open(path, "rb") as f:
         obj = pickle.load(f)
-    print(f"  ✓ {label} loaded", flush=True)
+    print(f"  [OK] {label} loaded", flush=True)
     return obj
 
 def load_json(path: Path, label: str) -> dict:
@@ -79,11 +79,11 @@ def load_json(path: Path, label: str) -> dict:
         sys.exit(1)
     with open(path, "r") as f:
         data = json.load(f)
-    print(f"  ✓ {label} loaded", flush=True)
+    print(f"  [OK] {label} loaded", flush=True)
     return data
 
 def load_all_artifacts(model_suffix="_v2"):
-    print(f"\n── Loading artifacts ({model_suffix}) ──────────────────────────────────", flush=True)
+    print(f"\n-- Loading artifacts ({model_suffix}) ----------------------------------", flush=True)
     
     xgb_model = xgb.Booster()
     xgb_path = PROJECT_ROOT / "models" / "saved" / f"model_xgb{model_suffix}.json"
