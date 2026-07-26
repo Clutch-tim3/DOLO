@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donington Vale — Workspace Console</title>
+    <title>Donington Vale â€” Workspace Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
@@ -108,7 +108,7 @@
         .form-input, .form-select { background: var(--input-bg); border: 1px solid var(--input-border); color: var(--text-white); padding: 10px 14px; border-radius: 6px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; outline: none; transition: border-color 0.2s, background 0.3s ease; }
         .form-input:focus, .form-select:focus { border-color: var(--accent-gold); }
 
-        /* ── Signature Corner-Bracket Button ── */
+        /* â”€â”€ Signature Corner-Bracket Button â”€â”€ */
         .corner-btn {
           position: relative;
           display: inline-flex;
@@ -721,10 +721,10 @@
                 <table class="specs-table" id="sortResultsTable" style="width:100%; text-align:left;">
                     <thead>
                         <tr>
-                            <th class="spec-label" style="cursor:pointer; width:60px;" onclick="sortBatchTable('rank')">Rank ▾</th>
+                            <th class="spec-label" style="cursor:pointer; width:60px;" onclick="sortBatchTable('rank')">Rank â–¾</th>
                             <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('filename')">Tender / Filename</th>
                             <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('recommendation')">Recommendation</th>
-                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('win_prob')">Win Probability ▾</th>
+                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('win_prob')">Win Probability â–¾</th>
                             <th class="spec-label">SA-Adjusted</th>
                             <th class="spec-label">Position</th>
                             <th class="spec-label">Framework</th>
@@ -950,7 +950,7 @@ async function pollBatchStatus(job_id) {
                 else if(r.recommendation === 'DISQUALIFIED') disq++;
                 else pass++;
             });
-            batchSummaryText.textContent = `${data.total} tenders analyzed — ${pursue} PURSUE, ${pass} PASS, ${disq} DISQUALIFIED`;
+            batchSummaryText.textContent = `${data.total} tenders analyzed â€” ${pursue} PURSUE, ${pass} PASS, ${disq} DISQUALIFIED`;
             batchSummaryText.style.display = 'block';
             emptyBatchState.style.display = 'none';
             sortResultsTableWrapper.style.display = 'block';
@@ -974,9 +974,9 @@ function sortBatchTable(column) {
     }
     
     const headers = document.querySelectorAll('#sortResultsTable th');
-    headers.forEach(h => h.innerHTML = h.innerHTML.replace(' ▾', '').replace(' ▴', ''));
+    headers.forEach(h => h.innerHTML = h.innerHTML.replace(' â–¾', '').replace(' â–´', ''));
     const targetTh = Array.from(headers).find(h => h.getAttribute('onclick').includes(column));
-    if(targetTh) targetTh.innerHTML += currentSortAsc ? ' ▴' : ' ▾';
+    if(targetTh) targetTh.innerHTML += currentSortAsc ? ' â–´' : ' â–¾';
     
     renderBatchTable();
 }
@@ -1024,8 +1024,8 @@ function renderBatchTable() {
         
         let rankColor = (idx < 3 && r.recommendation !== 'DISQUALIFIED' && !currentSortAsc && currentSortColumn === 'win_prob') ? 'var(--accent-gold)' : '#fff';
         
-        let prob = r.win_probability ? (r.win_probability*100).toFixed(1)+'%' : '—';
-        let saProb = r.sa_adjusted_probability ? (r.sa_adjusted_probability*100).toFixed(1)+'%' : '—';
+        let prob = r.win_probability ? (r.win_probability*100).toFixed(1)+'%' : 'â€”';
+        let saProb = r.sa_adjusted_probability ? (r.sa_adjusted_probability*100).toFixed(1)+'%' : 'â€”';
         
         if(r.processing_error) {
             recColor = '#e05c5c';
@@ -1038,8 +1038,8 @@ function renderBatchTable() {
             <td style="color:${recColor}; font-weight:600;">${r.recommendation}</td>
             <td>${prob}</td>
             <td>${saProb}</td>
-            <td>${r.competitive_position || '—'}</td>
-            <td>${r.preferential_framework || '—'}</td>
+            <td>${r.competitive_position || 'â€”'}</td>
+            <td>${r.preferential_framework || 'â€”'}</td>
             <td>
                 ${!r.processing_error ? `<button class="corner-btn mark-outcome-row-btn" data-id="${r.prediction_id}" style="padding:4px 8px; font-size:10px;">
                     <span>MARK</span><span class="bracket bracket-tr" style="width:4px; height:4px;"></span><span class="bracket bracket-bl" style="width:4px; height:4px;"></span>
@@ -1061,7 +1061,7 @@ function renderBatchTable() {
                 if(r.disqualified) {
                     expContent = `<div style="padding: 16px; color: #e05c5c;">
                         <strong>HARD FAILURES:</strong><br>
-                        ${r.hard_failures.map(f => `✗ ${f}`).join('<br>')}
+                        ${r.hard_failures.map(f => `âœ— ${f}`).join('<br>')}
                     </div>`;
                 } else if(r.processing_error) {
                     expContent = `<div style="padding: 16px; color: #e05c5c;">
@@ -1092,7 +1092,7 @@ function renderBatchTable() {
                             prediction_id: markBtn.dataset.id,
                             actual_outcome: actual.toLowerCase()
                         })
-                    }).then(() => markBtn.querySelector('span').textContent = '✓');
+                    }).then(() => markBtn.querySelector('span').textContent = 'âœ“');
                 }
             });
         }
@@ -1240,7 +1240,7 @@ exportCsvBtn.addEventListener('click', () => {
             return false;
         });
         
-        summary.textContent = issues > 0 ? `${issues} COMPANIES REQUIRE ATTENTION — ${expiringCount} EXPIRING SOON, ${expiredCount} EXPIRED OR MISSING` : 'ALL COMPANIES COMPLIANT';
+        summary.textContent = issues > 0 ? `${issues} COMPANIES REQUIRE ATTENTION â€” ${expiringCount} EXPIRING SOON, ${expiredCount} EXPIRED OR MISSING` : 'ALL COMPANIES COMPLIANT';
         
         filtered.forEach(c => {
             const card = document.createElement('div');
@@ -1308,7 +1308,7 @@ exportCsvBtn.addEventListener('click', () => {
         </div>
         
         <div class="side-column">
-            <div class="side-title">UPCOMING — NEXT 14 DAYS</div>
+            <div class="side-title">UPCOMING â€” NEXT 14 DAYS</div>
             <div class="profile-card" id="emptySide" style="border-style: dashed; padding: 24px; text-align: center; display: none;">
                 <span class="card-tag">NO UPCOMING EVENTS</span>
             </div>
@@ -1458,7 +1458,7 @@ exportCsvBtn.addEventListener('click', () => {
                 <div id="quoteDownloadArea" style="margin-top: 24px; display: none; padding: 20px; background: rgba(76,175,80,0.1); border: 1px solid rgba(76,175,80,0.3); border-radius: 8px;">
                     <div style="color: #4CAF50; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#4CAF50" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Quotation PDF Generated Successfully!</div>
                     <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Includes LLM Proposal Summary, PPPFA 80/20 preference scorecard, and itemized pricing.</div>
-                    <a id="quoteDownloadLink" href="#" target="_blank" style="color: var(--accent-gold); font-size: 13px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: inline-block; margin-top: 12px;">Download Quotation PDF ➔</a>
+                    <a id="quoteDownloadLink" href="#" target="_blank" style="color: var(--accent-gold); font-size: 13px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: inline-block; margin-top: 12px;">Download Quotation PDF âž”</a>
                 </div>
             </div>
         </section>
@@ -1478,7 +1478,7 @@ exportCsvBtn.addEventListener('click', () => {
                     <option value="conquest">Conquest (Ensemble - Active)</option>
                 </select>
                 <div id="conquestServiceNote" style="color: #4CAF50; font-size: 11px; margin-top: 8px; display: none; max-width: 250px; line-height: 1.4; font-family: 'Outfit';">
-                    ✓ Conquest is fully active. Retrained & benchmarked on 5.67M rows.
+                    âœ“ Conquest is fully active. Retrained & benchmarked on 5.67M rows.
                 </div>
             </div>
         </div>
@@ -1637,7 +1637,7 @@ exportCsvBtn.addEventListener('click', () => {
                 <div>
                     <p class="kicker">Company-Aware Assistant</p>
                     <h1 class="hero-title">Agent</h1>
-                    <p class="hero-sub">Ask about your company profile, draft a tender quotation, or check what's due this week. Agent works from your archive � not assumptions.</p>
+                    <p class="hero-sub">Ask about your company profile, draft a tender quotation, or check what's due this week. Agent works from your archive — not assumptions.</p>
                 </div>
                 <div class="quota-line">
                     QUOTES TODAY <span id="agentQuotaCount">0 / 5</span><br>
@@ -1718,7 +1718,7 @@ exportCsvBtn.addEventListener('click', () => {
 
     <!-- TOAST NOTIFICATION FOR MISTAKE PREVENTION -->
     <div id="toastNotification" class="toast-notify">
-        <div id="toastTitle" style="font-weight: 600; font-size: 13px; color: var(--accent-gold); margin-bottom: 4px;">⚠️ Auto-Sorted Document</div>
+        <div id="toastTitle" style="font-weight: 600; font-size: 13px; color: var(--accent-gold); margin-bottom: 4px;">âš ï¸ Auto-Sorted Document</div>
         <div id="toastMessage" style="font-size: 12px; color: #ccc; line-height: 1.4;">Document classified and moved into proper compliance block.</div>
     </div>
 
@@ -1864,7 +1864,7 @@ exportCsvBtn.addEventListener('click', () => {
                 
                 let disclaimerHtml = '';
                 if (data.is_guidance) {
-                    disclaimerHtml = '<p class="disclaimer-line">General guidance based on document analysis � not a compliance audit. Verify against the original tender before submission.</p>';
+                    disclaimerHtml = '<p class="disclaimer-line">General guidance based on document analysis — not a compliance audit. Verify against the original tender before submission.</p>';
                 }
 
                 log.innerHTML += 
@@ -1891,33 +1891,7 @@ exportCsvBtn.addEventListener('click', () => {
             if (tabId === 'agent') {
                 loadAgentData();
             }
-        };;
-            const header = document.getElementById('tabTitleHeader');
-            if (header && titles[tabId]) header.textContent = titles[tabId];
-            
-            if (tabId === 'agent') {
-                checkSubscriptionStatus();
-            }
-        }
-
-        async function checkSubscriptionStatus() {
-            try {
-                const res = await fetch('/api/agent/status');
-                const data = await res.json();
-                document.getElementById('agentLockedState').style.display = data.pro ? 'none' : 'block';
-                document.getElementById('agentActiveState').style.display = data.pro ? 'flex' : 'none';
-            } catch(e) {}
-        }
-
-        async function sendAgentMessage() {
-            const input = document.getElementById('agentInput');
-            const msg = input.value;
-            if (!msg) return;
-            const log = document.getElementById('agentMessageLog');
-            log.innerHTML += `<div style="align-self: flex-end; background: var(--accent-gold); color: #000; border-radius: 8px; padding: 12px; font-size: 13px; max-width: 80%;">${msg}</div>`;
-            input.value = '';
-            // Handle chat response logic here
-        }
+        };
 
         function triggerBlockUpload(blockType) {
             currentTargetBlock = blockType;
@@ -1938,9 +1912,9 @@ exportCsvBtn.addEventListener('click', () => {
 
                 if (data.status === 'success') {
                     if (data.auto_sorted) {
-                        showToast('⚠️ Auto-Sorted Document', `You uploaded into ${data.intended_block_label}, but this document is a ${data.detected_label}. We automatically sorted it into ${data.detected_label} to prevent disqualification!`);
+                        showToast('âš ï¸ Auto-Sorted Document', `You uploaded into ${data.intended_block_label}, but this document is a ${data.detected_label}. We automatically sorted it into ${data.detected_label} to prevent disqualification!`);
                     } else {
-                        showToast('✓ Document Validated', `Saved directly into ${data.detected_label}.`);
+                        showToast('âœ“ Document Validated', `Saved directly into ${data.detected_label}.`);
                     }
 
                     // Highlight block
@@ -1975,7 +1949,7 @@ exportCsvBtn.addEventListener('click', () => {
 
         async function generateQuotationPDF() {
             if (!quoteSelectedTenderFile) {
-                showToast('⚠️ Missing Tender PDF', 'Please upload a Tender PDF file to generate the quotation.');
+                showToast('âš ï¸ Missing Tender PDF', 'Please upload a Tender PDF file to generate the quotation.');
                 return;
             }
 
@@ -1988,7 +1962,7 @@ exportCsvBtn.addEventListener('click', () => {
             formData.append('supplier_name', company);
 
             try {
-                showToast('⚙️ Processing PDF', 'Parsing tender requirements & generating official quotation...');
+                showToast('âš™ï¸ Processing PDF', 'Parsing tender requirements & generating official quotation...');
                 const res = await fetch('/api/generate-quotation', {
                     method: 'POST',
                     body: formData
@@ -1999,11 +1973,11 @@ exportCsvBtn.addEventListener('click', () => {
                     const link = document.getElementById('quoteDownloadLink');
                     link.href = data.pdf_url;
                     area.style.display = 'block';
-                    showToast('✓ Quotation Ready', 'Your official PDF quotation is ready to download.');
+                    showToast('âœ“ Quotation Ready', 'Your official PDF quotation is ready to download.');
                 }
             } catch(e) {
                 console.error(e);
-                showToast('❌ Generation Failed', 'An error occurred while generating the PDF.');
+                showToast('âŒ Generation Failed', 'An error occurred while generating the PDF.');
             }
         }
 
@@ -2035,12 +2009,12 @@ exportCsvBtn.addEventListener('click', () => {
 
         async function computeWsEvaluation() {
             if (!wsSelectedTenderFile) {
-                showToast('⚠️ Missing File', 'Please select a Tender PDF file to compute estimates.');
+                showToast('âš ï¸ Missing File', 'Please select a Tender PDF file to compute estimates.');
                 return;
             }
 
             const resPanel = document.getElementById('wsEvalResultPanel');
-            resPanel.innerHTML = '<div style="text-align:center; padding:60px 0; color:var(--accent-gold);"><div style="font-size:32px; margin-bottom:12px;">⚙️</div><div>Computing probability & PPPFA score via Conquest Engine...</div></div>';
+            resPanel.innerHTML = '<div style="text-align:center; padding:60px 0; color:var(--accent-gold);"><div style="font-size:32px; margin-bottom:12px;">âš™ï¸</div><div>Computing probability & PPPFA score via Conquest Engine...</div></div>';
 
             const formData = new FormData();
             formData.append('tender_file', wsSelectedTenderFile);
@@ -2104,7 +2078,7 @@ exportCsvBtn.addEventListener('click', () => {
         async function runWsBatchSort() {
             if (wsBatchFiles.length === 0) return;
 
-            showToast('⚙️ Scoring Batch', `Evaluating ${wsBatchFiles.length} tender documents via Conquest Engine...`);
+            showToast('âš™ï¸ Scoring Batch', `Evaluating ${wsBatchFiles.length} tender documents via Conquest Engine...`);
 
             for (let file of wsBatchFiles) {
                 const formData = new FormData();
@@ -2126,7 +2100,7 @@ exportCsvBtn.addEventListener('click', () => {
             }
 
             renderWsRankedTable();
-            showToast('✓ Batch Analysis Complete', `Ranked ${wsBatchFiles.length} newly uploaded tenders.`);
+            showToast('âœ“ Batch Analysis Complete', `Ranked ${wsBatchFiles.length} newly uploaded tenders.`);
         }
 
         async function loadWsRankedPipeline() {
@@ -2275,7 +2249,7 @@ exportCsvBtn.addEventListener('click', () => {
                 }).join('');
 
                 html += `
-                    <div style="min-height: 90px; padding: 8px; border-right: 1px solid var(--border-faint); border-bottom: 1px solid var(--border-faint); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(197,168,128,0.06)'" onmouseout="this.style.background='transparent'" onclick="showToast('📅 Date Info', 'Day ${i}: ${dayEvents.length} scheduled milestones.')">
+                    <div style="min-height: 90px; padding: 8px; border-right: 1px solid var(--border-faint); border-bottom: 1px solid var(--border-faint); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(197,168,128,0.06)'" onmouseout="this.style.background='transparent'" onclick="showToast('ðŸ“… Date Info', 'Day ${i}: ${dayEvents.length} scheduled milestones.')">
                         <div style="font-size: 12px; font-weight: ${isToday ? '700' : '400'}; color: ${isToday ? 'var(--accent-gold)' : 'var(--text-white)'}; margin-bottom: 6px;">${i}</div>
                         <div style="display: flex; flex-wrap: wrap; gap: 4px;">${dots}</div>
                     </div>
@@ -2505,6 +2479,7 @@ exportCsvBtn.addEventListener('click', () => {
 
 </body>
 </html>
+
 
 
 
