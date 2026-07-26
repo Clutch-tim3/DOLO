@@ -1,0 +1,10 @@
+{
+  "version": "Conquest-UK",
+  "region": "United Kingdom (GB)",
+  "governance_status": "STANDALONE_REGIONAL_BASELINE",
+  "auc_val": 0.69406,
+  "auc_test": 0.69406,
+  "model_artifact": "C:\\Users\\Thabang\\.gemini\\antigravity\\scratch\\DOLO\\models\\saved\\conquest_uk\\model_xgb_uk.json",
+  "dataset_rows": 567368,
+  "timestamp": "2026-07-25T12:47:01Z"
+}

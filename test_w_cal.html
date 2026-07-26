@@ -1,0 +1,145 @@
+
+<main class="page-container" style="display:block;">
+    <div style="margin-bottom: 32px;">
+        <span class="category-label">SCHEDULING OVERVIEW</span>
+        <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">TENDER CALENDAR.</h1>
+        <div id="conflictBanner" style="display:none; color:#e05c5c; font-size:12px; font-weight:600; text-transform:uppercase;"></div>
+    </div>
+    
+    <div style="display:flex; gap: 40px;">
+        <div class="main-column">
+            <div class="month-nav">
+                <button class="corner-btn" id="prevMonth" style="padding: 4px 12px;">
+                    <span>&lt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                </button>
+                <div class="month-title" id="monthDisplay">JULY 2026</div>
+                <button class="corner-btn" id="nextMonth" style="padding: 4px 12px;">
+                    <span>&gt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                </button>
+            </div>
+            
+            <div class="calendar-grid">
+                <div class="weekday-header">SUN</div><div class="weekday-header">MON</div>
+                <div class="weekday-header">TUE</div><div class="weekday-header">WED</div>
+                <div class="weekday-header">THU</div><div class="weekday-header">FRI</div>
+                <div class="weekday-header">SAT</div>
+            </div>
+            <div class="calendar-grid" id="calendarBody">
+                <!-- Days injected here -->
+            </div>
+        </div>
+        
+        <div class="side-column">
+            <div class="side-title">UPCOMING — NEXT 14 DAYS</div>
+            <div class="profile-card" id="emptySide" style="border-style: dashed; padding: 24px; text-align: center; display: none;">
+                <span class="card-tag">NO UPCOMING EVENTS</span>
+            </div>
+            <ul class="upcoming-list" id="upcomingList"></ul>
+        </div>
+    </div>
+</main>
+
+<script>
+    const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+    let currentDate = new Date();
+    let events = [];
+    
+    async function loadCalendar() {
+        // Render immediately with current state
+        renderCalendar();
+        renderUpcoming();
+        try {
+            const res = await fetch('/api/calendar-events');
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    events = data;
+                    renderCalendar();
+                    renderUpcoming();
+                }
+            }
+        } catch(e) { console.error(e); }
+    }
+    
+    function renderCalendar() {
+        const y = currentDate.getFullYear();
+        const m = currentDate.getMonth();
+        document.getElementById('monthDisplay').textContent = `${monthNames[m]} ${y}`;
+        
+        const firstDay = new Date(y, m, 1).getDay();
+        const daysInMonth = new Date(y, m + 1, 0).getDate();
+        
+        const tbody = document.getElementById('calendarBody');
+        tbody.innerHTML = '';
+        
+        let html = '';
+        for(let i=0; i<firstDay; i++) {
+            html += `<div class="day-cell other-month"></div>`;
+        }
+        
+        const today = new Date();
+        
+        for(let i=1; i<=daysInMonth; i++) {
+            const isToday = i === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+            
+            // Find events for this day
+            const dayEvents = events.filter(e => {
+                const d = new Date(e.date);
+                return d.getDate() === i && d.getMonth() === m && d.getFullYear() === y;
+            });
+            
+            let dots = '';
+            dayEvents.forEach(ev => {
+                dots += `<div class="dot dot-${ev.event_type}"></div>`;
+            });
+            
+            html += `
+                <div class="day-cell" onclick="alert('Day ${i}: ${dayEvents.length} events')">
+                    <div class="day-number ${isToday ? 'today' : ''}">${i}</div>
+                    <div class="event-dots">${dots}</div>
+                </div>
+            `;
+        }
+        
+        const totalCells = firstDay + daysInMonth;
+        const remaining = Math.ceil(totalCells / 7) * 7 - totalCells;
+        for(let i=0; i<remaining; i++) {
+            html += `<div class="day-cell other-month"></div>`;
+        }
+        
+        tbody.innerHTML = html;
+    }
+    
+    function renderUpcoming() {
+        const list = document.getElementById('upcomingList');
+        list.innerHTML = '';
+        
+        if(events.length === 0) {
+            document.getElementById('emptySide').style.display = 'block';
+            return;
+        }
+        
+        events.slice(0, 10).forEach(e => {
+            list.innerHTML += `
+                <li class="upcoming-item">
+                    <div class="upcoming-date">${e.date}</div>
+                    <div class="upcoming-title">${e.tender_identifier} - ${e.filename}</div>
+                    <div class="upcoming-type">${e.event_type}</div>
+                </li>
+            `;
+        });
+    }
+    
+    document.getElementById('prevMonth').addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() - 1);
+        renderCalendar();
+    });
+    document.getElementById('nextMonth').addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        renderCalendar();
+    });
+    
+    window.addEventListener('DOMContentLoaded', loadCalendar);
+</script>
+
+

@@ -391,9 +391,20 @@ def build_dataset():
         pct = 100 * cnt / total_rows
         print(f"         {yr}: {cnt:>10,} rows ({pct:5.1f}%)", flush=True)
 
-    # Strict year-based split: Train <= 2019, Val 2020, Test >= 2021
-    train_end_year = 2019
-    val_end_year = 2020
+    # Adaptive year-based split
+    years = [r[0] for r in year_dist if r[0] is not None]
+    min_year = min(years) if years else 2016
+    max_year = max(years) if years else 2024
+
+    if min_year <= 2019 and max_year >= 2021:
+        train_end_year = 2019
+        val_end_year = 2020
+    else:
+        span = max_year - min_year
+        train_end_year = min_year + int(span * 0.6)
+        val_end_year = min_year + int(span * 0.8)
+        if val_end_year <= train_end_year:
+            val_end_year = train_end_year + 1
 
     print(f"       Applying strict time split:", flush=True)
     print(f"         Train: <= {train_end_year}", flush=True)

@@ -1,0 +1,10 @@
+{
+  "version": "Conquest-ZA",
+  "region": "South Africa (ZA)",
+  "governance_status": "LOCKED_PRODUCTION_BASELINE",
+  "auc_val": 0.857833,
+  "auc_test": 0.857833,
+  "model_artifact": "C:\\Users\\Thabang\\.gemini\\antigravity\\scratch\\DOLO\\models\\saved\\conquest_za\\model_cb_za.cbm",
+  "dataset_rows": 1079,
+  "timestamp": "2026-07-25T12:40:14Z"
+}

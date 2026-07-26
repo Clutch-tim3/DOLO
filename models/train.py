@@ -45,7 +45,7 @@ def save_to_sqlite(df, table_name, db_path):
     conn = sqlite3.connect(db_path)
     df.to_sql(table_name, conn, if_exists="replace", index=False)
     conn.close()
-    print(f"  → SQLite: {table_name} table saved to {db_path}", flush=True)
+    print(f"  -> SQLite: {table_name} table saved to {db_path}", flush=True)
 
 # ── Precision@K ────────────────────────────────────────────────────────────
 def precision_at_k(y_true, y_pred, group_ids, k=20):
@@ -229,16 +229,41 @@ def main():
     final_lgb_params = {**best_params['lgb'], "objective": "binary", "metric": "auc", "n_estimators": 1000, "scale_pos_weight": scale_pos_weight, "verbose": -1}
     final_cb_params = {**best_params['cb'], "iterations": 1000, "eval_metric": "AUC", "scale_pos_weight": scale_pos_weight, "verbose": 0, "bootstrap_type": "Bernoulli"}
 
+    # ── Sort training data chronologically before CV ───────────────────
+    sort_cols = [c for c in ["publish_year", "publish_month", "publish_quarter"] if c in X_train.columns]
+    if sort_cols:
+        sort_idx = X_train.sort_values(by=sort_cols).index
+        X_train = X_train.loc[sort_idx].reset_index(drop=True)
+        y_train = y_train.loc[sort_idx].reset_index(drop=True)
+        if group_train is not None:
+            group_train = X_train[group_col].values if group_col else None
+
     # Initialize OOF prediction arrays
     oof_xgb = np.zeros(len(X_train))
     oof_lgb = np.zeros(len(X_train))
     oof_cb = np.zeros(len(X_train))
+    predicted_mask = np.zeros(len(X_train), dtype=bool)
 
-    kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    
-    print("  Running 5-fold CV for OOF predictions...", flush=True)
-    for fold, (train_idx, val_idx) in enumerate(kf.split(X_train, y_train)):
-        print(f"    Fold {fold+1}/5", flush=True)
+    # Determine time-based splits
+    unique_years = sorted(X_train["publish_year"].unique()) if "publish_year" in X_train.columns else []
+    folds = []
+    if len(unique_years) > 1:
+        for i in range(1, len(unique_years)):
+            val_year = unique_years[i]
+            train_idx = np.where(X_train["publish_year"] < val_year)[0]
+            val_idx = np.where(X_train["publish_year"] == val_year)[0]
+            if len(train_idx) > 0 and len(val_idx) > 0:
+                folds.append((train_idx, val_idx))
+
+    if not folds:
+        from sklearn.model_selection import TimeSeriesSplit
+        tscv = TimeSeriesSplit(n_splits=5)
+        for train_idx, val_idx in tscv.split(X_train):
+            folds.append((train_idx, val_idx))
+
+    print(f"  Running {len(folds)}-fold time-based CV for OOF predictions...", flush=True)
+    for fold, (train_idx, val_idx) in enumerate(folds):
+        print(f"    Fold {fold+1}/{len(folds)}", flush=True)
         X_tr, y_tr = X_train.iloc[train_idx], y_train.iloc[train_idx]
         X_v, y_v = X_train.iloc[val_idx], y_train.iloc[val_idx]
 
@@ -256,6 +281,8 @@ def main():
         m_cb = CatBoostClassifier(**final_cb_params)
         m_cb.fit(X_tr, y_tr, eval_set=(X_v, y_v), early_stopping_rounds=50, verbose=False)
         oof_cb[val_idx] = m_cb.predict_proba(X_v)[:, 1]
+        
+        predicted_mask[val_idx] = True
 
     print("  Training final base models on full train set...", flush=True)
     model_xgb = xgb.XGBClassifier(**final_xgb_params)
@@ -270,9 +297,10 @@ def main():
     # ── 6. Train Meta-Learner ──────────────────────────────────────────────
     print("\n[6/8] Training LogisticRegression meta-learner...", flush=True)
     
-    OOF_train = np.column_stack([oof_xgb, oof_lgb, oof_cb])
+    OOF_train = np.column_stack([oof_xgb[predicted_mask], oof_lgb[predicted_mask], oof_cb[predicted_mask]])
+    y_train_meta = y_train.iloc[predicted_mask]
     meta_model = LogisticRegression(random_state=42)
-    meta_model.fit(OOF_train, y_train)
+    meta_model.fit(OOF_train, y_train_meta)
 
     print(f"  Meta-learner coefficients: XGB={meta_model.coef_[0][0]:.4f}, LGB={meta_model.coef_[0][1]:.4f}, CB={meta_model.coef_[0][2]:.4f}", flush=True)
 

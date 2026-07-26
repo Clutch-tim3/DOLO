@@ -1,0 +1,119 @@
+<main class="page-container">
+    <div style="margin-bottom: 32px;">
+        <span class="category-label">REGULATORY STANDING</span>
+        <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">COMPLIANCE VAULT.</h1>
+        <div id="summaryBanner"></div>
+    </div>
+    
+    <div class="filter-bar">
+        <button class="filter-btn active" data-filter="all">ALL</button>
+        <button class="filter-btn" data-filter="expiring">EXPIRING SOON</button>
+        <button class="filter-btn" data-filter="expired">EXPIRED / MISSING</button>
+        <button class="filter-btn" data-filter="compliant">COMPLIANT</button>
+    </div>
+
+    <div class="profile-card" id="emptyState" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 120px; margin-bottom: 60px;">
+        <div style="text-align: center;">
+            <span class="card-tag">NO COMPANIES IN ARCHIVE</span>
+            <h3 class="card-title" style="font-size:14px; margin-top:8px;">COMPLIANCE TRACKING BEGINS ONCE COMPANIES ARE ADDED TO THE LEDGER</h3>
+        </div>
+    </div>
+
+    <div class="grid-container" id="vaultGrid" style="display:none;"></div>
+</main>
+
+<script>
+    const docNames = {
+        'tax_clearance': 'Tax Clearance',
+        'bbbee_certificate': 'B-BBEE Certificate',
+        'cidb_grading': 'CIDB Grading',
+        'csd_report': 'CSD Report',
+        'cipc_registration': 'CIPC Registration'
+    };
+    
+    function renderTag(doc) {
+        if(doc.status === 'valid') {
+            return `<span class="doc-tag tag-valid">Valid ${doc.expiry_date ? 'until ' + doc.expiry_date : ''}</span>`;
+        } else if(doc.status === 'expiring_soon') {
+            return `<span class="doc-tag tag-expiring">Expires in ${doc.days_until_expiry} days</span>`;
+        } else if(doc.status === 'expired') {
+            return `<span class="doc-tag tag-expired">EXPIRED ${Math.abs(doc.days_until_expiry)} days ago</span>`;
+        } else {
+            return `<span class="doc-tag tag-missing">Not on file</span>`;
+        }
+    }
+    
+    let allCompanies = [];
+    
+    async function loadVault() {
+        try {
+            const res = await fetch('/api/compliance-status');
+            allCompanies = await res.json();
+            renderGrid('all');
+        } catch(e) { console.error(e); }
+    }
+    
+    function renderGrid(filter) {
+        const grid = document.getElementById('vaultGrid');
+        const empty = document.getElementById('emptyState');
+        const summary = document.getElementById('summaryBanner');
+        grid.innerHTML = '';
+        
+        if(allCompanies.length === 0) {
+            empty.style.display = 'flex';
+            grid.style.display = 'none';
+            summary.textContent = '';
+            return;
+        }
+        
+        empty.style.display = 'none';
+        grid.style.display = 'grid';
+        
+        let issues = 0;
+        let expiredCount = 0;
+        let expiringCount = 0;
+        
+        const filtered = allCompanies.filter(c => {
+            if(c.overall_status === 'non_compliant') expiredCount++;
+            if(c.overall_status === 'attention_needed') expiringCount++;
+            if(c.overall_status !== 'compliant') issues++;
+            
+            if(filter === 'all') return true;
+            if(filter === 'compliant' && c.overall_status === 'compliant') return true;
+            if(filter === 'expiring' && c.overall_status === 'attention_needed') return true;
+            if(filter === 'expired' && c.overall_status === 'non_compliant') return true;
+            return false;
+        });
+        
+        summary.textContent = issues > 0 ? `${issues} COMPANIES REQUIRE ATTENTION — ${expiringCount} EXPIRING SOON, ${expiredCount} EXPIRED OR MISSING` : 'ALL COMPANIES COMPLIANT';
+        
+        filtered.forEach(c => {
+            const card = document.createElement('div');
+            card.className = `profile-card card-${c.overall_status}`;
+            
+            const docsHtml = c.documents.map(d => `
+                <li class="doc-item">
+                    <span style="color:#fff;">${docNames[d.type]}</span>
+                    ${renderTag(d)}
+                </li>
+            `).join('');
+            
+            card.innerHTML = `
+                <span class="card-tag">${c.company_id}</span>
+                <h3 class="card-title">${c.company_name}</h3>
+                <ul class="doc-list">${docsHtml}</ul>
+            `;
+            grid.appendChild(card);
+        });
+    }
+    
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            renderGrid(e.target.dataset.filter);
+        });
+    });
+    
+    window.addEventListener('DOMContentLoaded', loadVault);
+</script>

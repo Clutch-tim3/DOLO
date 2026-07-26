@@ -30,6 +30,8 @@ def extract_text_from_pdf(file_path: Path) -> str:
     ext = str(file_path).lower()
     if ext.endswith('.docx'):
         return extract_text_from_docx(file_path)
+    elif ext.endswith('.txt'):
+        return file_path.read_text()
         
     try:
         reader = PdfReader(str(file_path))
@@ -222,13 +224,21 @@ def parse_tender_document(file_path: Path) -> dict:
         results['award_date'] = award_match.group(1).strip()
         
     # 2. Preference system detection
+    # Try to find an explicit framework statement in the document first
     eval_sys_match = re.search(r'(?:applicable\s+preference\s+point\s+system|system\s+for\s+this\s+tender\s+is|will\s+be\s+evaluated\s+on\s+the)[\s\w]*(80/20|90/10)', text, re.IGNORECASE)
     if eval_sys_match:
         results['evaluation_system'] = eval_sys_match.group(1)
         results['low_confidence_evaluation_system'] = False
         extracted_fields.append('evaluation_system')
     else:
-        results['evaluation_system'] = '80/20'
+        # Fall back to PPPFA 2022 rule: derive from tender value
+        # 80/20 for tenders < R50M, 90/10 for tenders >= R50M
+        try:
+            from models.sa_scoring import get_evaluation_system
+            inferred_tv = results.get('tender_value')
+            results['evaluation_system'] = get_evaluation_system(float(inferred_tv) if inferred_tv else None)
+        except Exception:
+            results['evaluation_system'] = '80/20'
         results['low_confidence_evaluation_system'] = True
         extracted_fields.append('evaluation_system')
 
@@ -337,3 +347,54 @@ def parse_tender_document(file_path: Path) -> dict:
         results["extraction_incomplete"] = False
 
     return results
+
+def classify_document_type(text: str) -> dict:
+    """
+    Analyzes document text to classify its compliance category:
+    - CSD_CERT
+    - BBBEE_CERT
+    - TAX_CLEARANCE
+    - CIDB_CERT
+    - CIPC_COR14_3
+    - BANK_STATEMENT
+    - TRACK_RECORD_LETTER
+    - UNKNOWN
+    """
+    if not text:
+        return {"doc_type": "UNKNOWN", "confidence": 0.0, "label": "Unknown Document"}
+
+    lower_text = text.lower()
+
+    # Rule checks
+    csd_match = bool(re.search(r'central supplier database|maaa[0-9]{7}|csd supplier number|csd report', lower_text))
+    bbbee_match = bool(re.search(r'b-bbee|bbbee|broad-based black economic|sworn affidavit|eme|qse|black owned', lower_text))
+    tax_match = bool(re.search(r'sars|tax clearance|tax compliance status|tax pin', lower_text))
+    cidb_match = bool(re.search(r'cidb|construction industry development|crs number|grading designation', lower_text))
+    cipc_match = bool(re.search(r'cipc|cor14\.3|certificate of incorporation|registration of company|ck1|ck2', lower_text))
+    bank_match = bool(re.search(r'bank confirmation|account number|financial statement|bank letter|absa|fnb|standard bank|nedbank|capitec', lower_text))
+    track_match = bool(re.search(r'reference letter|appointment letter|testimonial|completion certificate|satisfactory performance|past contract', lower_text))
+
+    matches = {
+        "CSD_CERT": (csd_match, "CSD Registration Certificate"),
+        "BBBEE_CERT": (bbbee_match, "B-BBEE Certificate / Affidavit"),
+        "TAX_CLEARANCE": (tax_match, "Tax Clearance PIN / Certificate"),
+        "CIDB_CERT": (cidb_match, "CIDB Registration Certificate"),
+        "CIPC_COR14_3": (cipc_match, "CIPC / COR14.3 Company Registration"),
+        "BANK_STATEMENT": (bank_match, "Bank Confirmation / Financial Statements"),
+        "TRACK_RECORD_LETTER": (track_match, "Track Record / Reference Letter"),
+    }
+
+    # Find highest matching score
+    matched_types = [dtype for dtype, (is_match, label) in matches.items() if is_match]
+
+    if not matched_types:
+        return {"doc_type": "UNKNOWN", "confidence": 0.2, "label": "Unclassified Document"}
+
+    best_type = matched_types[0]
+    return {
+        "doc_type": best_type,
+        "confidence": 0.95 if len(matched_types) == 1 else 0.75,
+        "label": matches[best_type][1],
+        "all_matched_types": matched_types
+    }
+

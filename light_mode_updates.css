@@ -1,0 +1,124 @@
+
+/* ── AGGRESSIVE LIGHT MODE REFINEMENTS FOR CONSOLE & SYSTEM PAGES ── */
+
+html[data-theme="light"] .stat-cell,
+html[data-theme="light"] .model-card,
+body.light-theme .stat-cell,
+body.light-theme .model-card {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+html[data-theme="light"] .feature-item,
+body.light-theme .feature-item {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+html[data-theme="light"] select,
+html[data-theme="light"] option,
+body.light-theme select,
+body.light-theme option {
+    background: #ffffff !important;
+    color: #111115 !important;
+    border-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+html[data-theme="light"] .bulk-sort-panel,
+body.light-theme .bulk-sort-panel {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    border-right: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+html[data-theme="light"] .specs-table th,
+html[data-theme="light"] .specs-table td,
+body.light-theme .specs-table th,
+body.light-theme .specs-table td {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Force light backgrounds for inline styled dark divs (Workspace & System) */
+html[data-theme="light"] div[style*="background: rgba(15,15,20,0.6)"],
+html[data-theme="light"] div[style*="background: rgba(0,0,0,0.3)"],
+html[data-theme="light"] div[style*="background: rgba(0,0,0,0.2)"],
+html[data-theme="light"] div[style*="background: #0a0a0a"],
+html[data-theme="light"] div[style*="background: rgba(255,255,255,0.05)"],
+html[data-theme="light"] div[style*="background: rgba(0,0,0,0.8)"],
+body.light-theme div[style*="background: rgba(15,15,20,0.6)"],
+body.light-theme div[style*="background: rgba(0,0,0,0.3)"],
+body.light-theme div[style*="background: rgba(0,0,0,0.2)"],
+body.light-theme div[style*="background: #0a0a0a"],
+body.light-theme div[style*="background: rgba(255,255,255,0.05)"],
+body.light-theme div[style*="background: rgba(0,0,0,0.8)"] {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    border-color: rgba(0, 0, 0, 0.12) !important;
+}
+
+html[data-theme="light"] .ds-card,
+body.light-theme .ds-card {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+html[data-theme="light"] .ws-card,
+html[data-theme="light"] .profile-card,
+html[data-theme="light"] .doc-block,
+body.light-theme .ws-card,
+body.light-theme .profile-card,
+body.light-theme .doc-block {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    border-color: rgba(0, 0, 0, 0.12) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Force dark text for inline styled gray/white text (Workspace & System) */
+html[data-theme="light"] span[style*="color: #aaa"],
+html[data-theme="light"] span[style*="color: #ccc"],
+html[data-theme="light"] span[style*="color: #999"],
+html[data-theme="light"] div[style*="color: #aaa"],
+html[data-theme="light"] div[style*="color: #ccc"],
+html[data-theme="light"] div[style*="color: #999"],
+html[data-theme="light"] p[style*="color: #aaa"],
+html[data-theme="light"] p[style*="color: #ccc"],
+html[data-theme="light"] p[style*="color: #999"],
+body.light-theme span[style*="color: #aaa"],
+body.light-theme span[style*="color: #ccc"],
+body.light-theme span[style*="color: #999"],
+body.light-theme div[style*="color: #aaa"],
+body.light-theme div[style*="color: #ccc"],
+body.light-theme div[style*="color: #999"],
+body.light-theme p[style*="color: #aaa"],
+body.light-theme p[style*="color: #ccc"],
+body.light-theme p[style*="color: #999"] {
+    color: #555562 !important;
+}
+
+html[data-theme="light"] div[style*="color: #fff"],
+html[data-theme="light"] span[style*="color: #fff"],
+html[data-theme="light"] div[style*="color:#fff"],
+html[data-theme="light"] span[style*="color:#fff"],
+body.light-theme div[style*="color: #fff"],
+body.light-theme span[style*="color: #fff"],
+body.light-theme div[style*="color:#fff"],
+body.light-theme span[style*="color:#fff"] {
+    color: #111115 !important;
+}
+
+/* Hardcoded Table Rows in sort logic */
+html[data-theme="light"] .specs-table tbody tr,
+body.light-theme .specs-table tbody tr {
+    background: #ffffff !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Hardcoded Batch Sorting Panel File list */
+html[data-theme="light"] #batch_files_list > div,
+body.light-theme #batch_files_list > div {
+    background: #ffffff !important;
+    border: 1px solid rgba(0, 0, 0, 0.12) !important;
+    color: #111115 !important;
+}

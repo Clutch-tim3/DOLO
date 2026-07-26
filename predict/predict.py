@@ -131,6 +131,7 @@ def load_all_artifacts(model_suffix="_v2"):
         print(f"Warning: Failed to load model-specific metrics features ({e}). Using union features from dataset_metadata.")
 
     return {
+        "model_suffix": model_suffix,
         "xgb_model": xgb_model,
         "lgb_model": lgb_model,
         "cb_model": cb_model,
@@ -273,11 +274,13 @@ def predict(artifacts: dict, features_df: pd.DataFrame, mock_supplier_name: str 
     p_lgb = artifacts["lgb_model"].predict(features_df)[0]
     p_cb = artifacts["cb_model"].predict_proba(features_df)[0, 1]
     
-    uncal_prob = (p_xgb + p_lgb + p_cb) / 3.0
-    base_calibrated = float(artifacts["calibrator"].transform([uncal_prob])[0])
-    
-    # The deterministic tie-breaker hack has been removed to reveal true model variance.
-    prob = base_calibrated + (uncal_prob - 0.5) * 0.015
+    if artifacts.get("model_suffix") == "_conquest":
+        # Option A: Conquest serves the CatBoost Solo Engine directly (AUC 0.8578)
+        prob = float(p_cb)
+    else:
+        uncal_prob = (p_xgb + p_lgb + p_cb) / 3.0
+        base_calibrated = float(artifacts["calibrator"].transform([uncal_prob])[0])
+        prob = base_calibrated + (uncal_prob - 0.5) * 0.015
 
     prob = max(0.01, min(0.99, prob))
 

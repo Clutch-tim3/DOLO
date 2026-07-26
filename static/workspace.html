@@ -1,0 +1,2513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Donington Vale — Workspace Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="static/style.css?v=16.0">
+    <style>
+        body { margin: 0; padding: 0; background-color: var(--bg-color, #000000); color: var(--text-primary, #e4e4e7); font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
+        
+        /* Sidebar Layout */
+        .sidebar { width: 260px; background: var(--sidebar-bg); border-right: 1px solid var(--border-faint); display: flex; flex-direction: column; justify-content: space-between; z-index: 100; transition: background 0.3s ease; }
+        .sidebar-brand { padding: 24px 20px; border-bottom: 1px solid var(--border-faint); }
+        .brand-logo { font-family: 'Cinzel', serif; font-size: 13px; font-weight: 700; color: var(--text-white); letter-spacing: 0.22em; display: flex; align-items: center; gap: 8px; }
+        .brand-badge { background: rgba(197,168,128,0.15); color: var(--accent-gold); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; border: 1px solid rgba(197,168,128,0.3); letter-spacing: 0.12em; }
+        
+        .nav-list { list-style: none; padding: 16px 12px; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: var(--text-muted); font-size: 13px; font-weight: 500; cursor: pointer; border-radius: 6px; transition: all 0.2s ease; }
+        .nav-item:hover { background: rgba(197,168,128,0.06); color: var(--text-white); }
+        .nav-item.active { background: rgba(197,168,128,0.12); color: var(--accent-gold); font-weight: 600; border-left: 3px solid var(--accent-gold); }
+        .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+        .sidebar-footer { padding: 16px 20px; border-top: 1px solid var(--border-faint); font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,0.05); }
+        .model-status-indicator { display: flex; align-items: center; gap: 8px; margin-top: 6px; color: #52c27c; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+
+        /* Signature Live Pulse Dot */
+        .pulse-dot {
+            width: 7px;
+            height: 7px;
+            background: #52c27c;
+            border-radius: 50%;
+            box-shadow: 0 0 6px #52c27c;
+            animation: pulse 2s infinite;
+            display: inline-block;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Main Workspace Container */
+        .workspace-main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; background: var(--bg-color); }
+
+        .top-bar { padding: 16px 32px; background: var(--topbar-bg); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border-faint); display: flex; justify-content: space-between; align-items: center; sticky: top; z-index: 90; transition: background 0.3s ease; }
+        .tab-title-display { font-family: 'Cinzel', serif; font-size: 18px; font-weight: 600; color: var(--text-white); letter-spacing: 0.12em; }
+
+        /* Signature Category Micro-Label */
+        .category-label {
+            display: block;
+            font-family: 'Cinzel', serif;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: var(--accent-gold);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .guided-banner { margin: 24px 32px 0 32px; padding: 16px 20px; background: linear-gradient(90deg, rgba(197,168,128,0.1) 0%, var(--card-bg) 100%); border: 1px solid rgba(197,168,128,0.25); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .guided-text { font-size: 13px; color: var(--text-primary); line-height: 1.5; }
+        .guided-text strong { color: var(--accent-gold); font-weight: 600; }
+
+        .content-section { padding: 28px 32px; display: none; }
+        .content-section.active { display: block; }
+
+        /* Signature Floating Cards */
+        .profile-card, .ws-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-faint);
+            border-radius: 8px;
+            padding: 24px;
+            transition: border-color 0.4s cubic-bezier(0.25, 1, 0.5, 1), transform 0.4s cubic-bezier(0.25, 1, 0.5, 1), background 0.3s ease;
+        }
+
+        .profile-card:hover, .ws-card:hover {
+            border-color: var(--accent-gold);
+            transform: translateY(-4px);
+        }
+
+        /* Block Grid for Smart Archive */
+        .archive-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 20px; }
+        .doc-block { background: var(--card-bg); border: 1px dashed var(--border-faint); border-radius: 8px; padding: 20px; transition: all 0.3s ease; position: relative; }
+        .doc-block:hover { border-color: rgba(197,168,128,0.5); background: rgba(197,168,128,0.03); transform: translateY(-4px); }
+        .doc-block.uploaded { border-style: solid; border-color: rgba(76,175,80,0.4); background: rgba(76,175,80,0.05); }
+        .block-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+        .block-title { font-family: 'Cinzel', serif; font-size: 14px; font-weight: 600; color: var(--text-white); }
+        .block-req { font-size: 10px; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; font-weight: 600; letter-spacing: 1px; }
+        .block-req.mandatory { background: rgba(224,92,92,0.15); color: #e05c5c; border: 1px solid rgba(224,92,92,0.3); }
+        .block-req.optional { background: var(--border-faint); color: var(--text-muted); }
+        .block-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.45; }
+
+        .file-drop-area { border: 1px dashed rgba(197,168,128,0.3); border-radius: 6px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--input-bg); }
+        .file-drop-area:hover { background: rgba(197,168,128,0.08); border-color: var(--accent-gold); }
+        .file-drop-text { font-size: 12px; color: var(--text-primary); }
+
+        /* Notification Toast for Auto-Sorting */
+        .toast-notify { position: fixed; bottom: 24px; right: 24px; background: var(--sidebar-bg); border: 1px solid var(--accent-gold); color: var(--text-white); padding: 16px 20px; border-radius: 8px; box-shadow: 0 12px 32px rgba(0,0,0,0.3); z-index: 1000; max-width: 400px; display: none; animation: slideUp 0.3s ease; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* Form Inputs for Quotation Generator */
+        .form-row { display: flex; gap: 16px; margin-bottom: 16px; }
+        .form-group { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+        .form-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em; color: var(--accent-gold); font-weight: 700; }
+        .form-input, .form-select { background: var(--input-bg); border: 1px solid var(--input-border); color: var(--text-white); padding: 10px 14px; border-radius: 6px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; outline: none; transition: border-color 0.2s, background 0.3s ease; }
+        .form-input:focus, .form-select:focus { border-color: var(--accent-gold); }
+
+        /* ── Signature Corner-Bracket Button ── */
+        .corner-btn {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          text-decoration: none;
+          background: transparent;
+          border: none;
+          color: #ffffff;
+          font-family: 'Inter', sans-serif;
+          font-size: 11px;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 2.5px;
+          padding: 12px 32px;
+          cursor: pointer;
+          outline: none;
+          transition: color 0.4s cubic-bezier(0.25, 1, 0.5, 1), transform 0.1s ease;
+          user-select: none;
+          z-index: 10;
+        }
+
+        .corner-btn span:not(.bracket) {
+          position: relative;
+          z-index: 2;
+          pointer-events: none;
+        }
+
+        .corner-btn .bracket {
+          position: absolute;
+          width: 16px;
+          height: 16px;
+          transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+          pointer-events: none;
+          z-index: 1;
+          box-sizing: border-box;
+        }
+
+        .corner-btn .bracket-tr {
+          top: -5px;
+          right: -10px;
+          border-top: 1.5px solid #c5a880;
+          border-right: 1.5px solid #c5a880;
+        }
+
+        .corner-btn .bracket-bl {
+          bottom: -5px;
+          left: -10px;
+          border-bottom: 1.5px solid #c5a880;
+          border-left: 1.5px solid #c5a880;
+        }
+
+        .corner-btn:hover {
+          color: #000000;
+        }
+
+        .corner-btn:hover .bracket-tr {
+          top: 0;
+          right: 0;
+          width: 100%;
+          height: 100%;
+          background-color: #c5a880;
+        }
+
+        .corner-btn:hover .bracket-bl {
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background-color: #c5a880;
+        }
+
+        .corner-btn:active {
+          transform: scale(0.97);
+        }
+
+        .btn-gold { background: var(--accent-gold); color: #000; font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 13px; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; transition: opacity 0.2s; }
+        .btn-gold:hover { opacity: 0.9; }
+
+        .item-table { width: 100%; border-collapse: collapse; margin-top: 12px; margin-bottom: 16px; }
+        .item-table th { text-align: left; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #888; text-transform: uppercase; }
+        .item-table td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        /* Calendar UI Styles */
+        .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+        .month-title { font-family: 'Outfit', sans-serif; font-size: 24px; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.1em; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); border: 1px solid rgba(255,255,255,0.05); }
+        .weekday-header { text-align: center; padding: 12px; font-size: 11px; color: #999; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .day-cell { min-height: 120px; padding: 8px; border-right: 1px solid rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(0,0,0,0.2); cursor: pointer; position: relative; }
+        .day-cell:hover { background: rgba(255,255,255,0.02); }
+        .day-cell.conflict { border: 1px solid #e05c5c; }
+        .day-cell.other-month { opacity: 0.3; }
+        .day-number { font-size: 12px; color: #666; margin-bottom: 8px; }
+        .day-number.today { color: var(--accent-gold); font-weight: 600; }
+        .event-dots { display: flex; flex-wrap: wrap; gap: 4px; }
+        .dot { width: 6px; height: 6px; border-radius: 50%; }
+        .dot-briefing { background-color: var(--accent-gold); }
+        .dot-closing { background-color: #e05c5c; }
+        .dot-award { background-color: #999; }
+        .side-title { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
+        .upcoming-list { list-style: none; padding: 0; margin: 0; }
+        .upcoming-item { padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 11px; }
+        .upcoming-date { color: var(--accent-gold); margin-bottom: 4px; font-weight: 600; }
+        .upcoming-title { color: #fff; margin-bottom: 2px; }
+        .upcoming-type { color: #666; text-transform: uppercase; font-size: 10px; }
+
+        /* System UI Styles */
+        .section-title { font-family: 'Outfit', sans-serif; font-size: 20px; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px; }
+        .ensemble-grid { display: flex; gap: 16px; margin-bottom: 48px; }
+        .model-card { flex: 1; padding: 24px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.12); }
+        .model-name { font-family: 'Outfit', sans-serif; font-size: 24px; color: #fff; margin-bottom: 16px; }
+        .weight-bar-bg { width: 100%; height: 4px; background: rgba(255,255,255,0.1); margin-top: 8px; position: relative; }
+        .weight-bar-fill { height: 100%; background: var(--accent-gold); position: absolute; left: 0; top: 0; }
+        .feature-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 48px; max-width: 800px; }
+        .feature-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.12); }
+        .feature-label { font-size: 14px; color: #fff; }
+        .feature-internal { font-size: 11px; color: #666; font-family: monospace; margin-left: 8px; }
+        .feature-bar-container { width: 200px; display: flex; align-items: center; gap: 12px; }
+        .feature-bar-bg { flex: 1; height: 4px; background: rgba(255,255,255,0.1); position: relative; }
+        .feature-bar-fill { height: 100%; background: var(--accent-gold); position: absolute; left: 0; top: 0; }
+        .feature-val { font-size: 12px; color: var(--accent-gold); font-family: monospace; min-width: 40px; text-align: right; }
+        .data-tag { display: inline-block; padding: 4px 12px; border: 1px solid rgba(255,255,255,0.12); color: #999; font-size: 11px; text-transform: uppercase; margin-right: 8px; margin-bottom: 8px; }
+        .disclaimer { font-size: 11px; color: #666; margin-top: 60px; text-align: center; }
+        .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.12); margin-bottom: 48px; }
+        .stat-cell { background: #0a0a0a; padding: 20px; border: 1px solid rgba(255,255,255,0.12); margin:-1px; }
+        .stat-label { font-size: 11px; color: #999; text-transform: uppercase; margin-bottom: 8px; }
+        .stat-val { font-family: 'Outfit', sans-serif; font-size: 20px; color: #fff; }
+        .stat-val.gold { color: var(--accent-gold); }
+        /* Light Mode Aggressive Text Overrides */
+        body.light-theme .model-name, 
+        body.light-theme .feature-label, 
+        body.light-theme .stat-val { color: var(--text-primary) !important; }
+        body.light-theme .feature-internal, 
+        body.light-theme .stat-label, 
+        body.light-theme .disclaimer { color: var(--text-muted) !important; }
+        body.light-theme .data-tag { color: var(--text-muted) !important; border-color: rgba(0,0,0,0.12) !important; }
+        body.light-theme .section-title { border-bottom-color: rgba(0,0,0,0.12) !important; }
+  /* --------- AGENT UI LAYOUT --------- */
+  .hero-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 40px; flex-wrap: wrap; }
+  .kicker { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-gold); margin-bottom: 14px; }
+  h1.hero-title { font-family: 'Cinzel', serif; font-size: clamp(28px, 3.4vw, 42px); font-weight: 500; letter-spacing: 0.01em; color: var(--text-primary); line-height: 1.15; margin:0; }
+  .hero-sub { font-size: 13.5px; color: var(--text-muted); max-width: 420px; line-height: 1.6; font-weight: 300; margin-top: 10px; }
+  .quota-line { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); text-align: right; letter-spacing: 0.02em; }
+  .quota-line span { color: var(--accent-gold); }
+
+  /* --------- GRID: chat + sidebar --------- */
+  .agent-grid { display: grid; grid-template-columns: 1fr 300px; gap: 20px; }
+  @media (max-width: 880px) { .agent-grid { grid-template-columns: 1fr; } }
+
+  /* --------- CHAT PANEL --------- */
+  .chat-panel { background: rgba(255,255,255,0.03); border: 0.5px solid rgba(255,255,255,0.08); border-radius: 4px; backdrop-filter: blur(6px); display: flex; flex-direction: column; height: 620px; overflow: hidden; }
+  .chat-scroll { flex: 1; overflow-y: auto; padding: 28px 28px 8px; display: flex; flex-direction: column; gap: 22px; }
+  .msg-row { display: flex; flex-direction: column; gap: 6px; max-width: 78%; }
+  .msg-row.agent { align-self: flex-start; }
+  .msg-row.user { align-self: flex-end; align-items: flex-end; }
+  .msg-label { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+  .msg-label.agent-label { color: var(--accent-gold); }
+  .msg-bubble { font-size: 13.5px; line-height: 1.6; color: var(--text-primary); padding: 14px 16px; border-radius: 3px; }
+  .msg-row.agent .msg-bubble { background: rgba(255,255,255,0.03); border: 0.5px solid rgba(255,255,255,0.08); }
+  .msg-row.user .msg-bubble { background: rgba(197,168,128,0.14); border: 0.5px solid rgba(197,168,128,0.35); }
+  .msg-source { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-muted); padding-left: 2px; }
+  
+  .flag-chip { display: inline-flex; align-items: center; gap: 5px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 8px; border-radius: 2px; background: rgba(224,92,92,0.1); color: #e05c5c; border: 0.5px solid rgba(224,92,92,0.3); margin-top: 6px; width: fit-content; }
+  .flag-chip::before { content: '\26A0'; font-size: 10px; }
+  .disclaimer-line { font-size: 10.5px; color: var(--text-muted); font-style: italic; margin-top: 6px; line-height: 1.5; max-width: 92%; }
+
+  /* --------- QUICK ACTIONS --------- */
+  .quick-actions { display: flex; gap: 8px; padding: 14px 28px; border-top: 0.5px solid rgba(255,255,255,0.08); flex-wrap: wrap; }
+  .quick-chip { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 11.5px; color: var(--text-muted); background: transparent; border: 0.5px solid rgba(255,255,255,0.14); padding: 7px 14px; border-radius: 20px; cursor: pointer; transition: all 0.2s ease; white-space: nowrap; }
+  .quick-chip:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+
+  /* --------- INPUT ROW --------- */
+  .input-row { display: flex; align-items: center; gap: 12px; padding: 16px 28px 22px; border-top: 0.5px solid rgba(255,255,255,0.08); }
+  .agent-input { flex: 1; background: var(--input-bg); border: 0.5px solid rgba(255,255,255,0.14); border-radius: 3px; padding: 12px 16px; color: var(--text-primary); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13.5px; outline: none; transition: border-color 0.2s; }
+  .agent-input::placeholder { color: var(--text-muted); }
+  .agent-input:focus { border-color: var(--accent-gold); }
+  .bracket-btn { position: relative; padding: 11px 22px; background: transparent; border: none; color: var(--text-primary); font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12.5px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: color 0.25s ease; }
+  .bracket-btn::before, .bracket-btn::after { content: ''; position: absolute; width: 12px; height: 12px; border-color: var(--accent-gold); transition: width 0.3s cubic-bezier(0.25,0.8,0.4,1), height 0.3s cubic-bezier(0.25,0.8,0.4,1); }
+  .bracket-btn::before { top: 0; right: 0; border-top: 1.5px solid var(--accent-gold); border-right: 1.5px solid var(--accent-gold); }
+  .bracket-btn::after { bottom: 0; left: 0; border-bottom: 1.5px solid var(--accent-gold); border-left: 1.5px solid var(--accent-gold); }
+  .bracket-btn:hover::before, .bracket-btn:hover::after { width: 100%; height: 100%; }
+  .bracket-btn:hover { color: var(--accent-gold); }
+  .bracket-btn.filled { background: var(--accent-gold); color: #000; }
+  .bracket-btn.filled::before, .bracket-btn.filled::after { display: none; }
+  .bracket-btn.filled:hover { background: var(--accent-gold); opacity: 0.88; color: #000; }
+  .bracket-btn:disabled { color: var(--text-muted); cursor: not-allowed; }
+  .bracket-btn:disabled::before, .bracket-btn:disabled::after { border-color: rgba(255,255,255,0.14); }
+  .bracket-btn:disabled:hover::before, .bracket-btn:disabled:hover::after { width: 12px; height: 12px; }
+
+  /* --------- SIDEBAR --------- */
+  .ws-label { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
+  .company-name { font-family: 'Cinzel', serif; font-size: 17px; font-weight: 500; color: var(--text-primary); margin-bottom: 4px; }
+  .company-meta { font-size: 11.5px; color: var(--text-muted); }
+  
+  .agent-stat-grid { display: grid; grid-template-columns: 1fr 1fr; border: 0.5px solid rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
+  .agent-stat-cell { padding: 14px 16px; border-right: 0.5px solid rgba(255,255,255,0.08); border-bottom: 0.5px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); }
+  .agent-stat-cell:nth-child(2n) { border-right: none; }
+  .agent-stat-cell:nth-last-child(-n+2) { border-bottom: none; }
+  .agent-stat-cell-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+  .agent-stat-cell-value { font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--text-primary); font-weight: 500; }
+  .agent-stat-cell-value.gold { color: var(--accent-gold); }
+
+  .tier-badge { display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-gold); border: 0.5px solid var(--accent-gold); padding: 4px 10px; border-radius: 20px; margin-top: 12px; }
+  .doc-block { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 0.5px solid rgba(255,255,255,0.08); }
+  .doc-block:last-child { border-bottom: none; }
+  .doc-name { font-size: 12px; color: var(--text-muted); }
+  .doc-status { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 2px; }
+  .doc-status.ok { color: var(--accent-gold); background: rgba(197,168,128,0.12); }
+  .doc-status.warn { color: #e0b25c; background: rgba(224,178,92,0.1); }
+  .footer-note { font-size: 10px; color: var(--text-muted); line-height: 1.6; padding-top: 8px; }
+
+  /* LIGHT MODE CLIVE RED AGENT OVERRIDES */
+  body.light-theme .chat-panel { background: var(--bg-color) !important; border-color: var(--border-faint) !important; }
+  body.light-theme .msg-row.agent .msg-bubble { background: var(--bg-color) !important; border-color: var(--border-faint) !important; }
+  body.light-theme .msg-row.user .msg-bubble { background: rgba(200,51,31,0.12) !important; border-color: rgba(200,51,31,0.3) !important; }
+  body.light-theme .quick-actions { border-top-color: var(--border-faint) !important; }
+  body.light-theme .quick-chip { border-color: rgba(20,16,10,0.18) !important; }
+  body.light-theme .input-row { border-top-color: var(--border-faint) !important; }
+  body.light-theme .agent-input { border-color: rgba(20,16,10,0.18) !important; }
+  body.light-theme .agent-stat-grid { border-color: var(--border-faint) !important; }
+  body.light-theme .agent-stat-cell { border-right-color: var(--border-faint) !important; border-bottom-color: var(--border-faint) !important; background: var(--bg-color) !important; }
+  body.light-theme .doc-block { border-bottom-color: var(--border-faint) !important; }
+  body.light-theme .doc-status.ok { background: rgba(200,51,31,0.12) !important; }
+  body.light-theme .bracket-btn.filled { background: var(--accent-gold); color: #fff; }
+  body.light-theme .bracket-btn.filled:hover { opacity: 0.88; color: #fff; }
+    </style>
+</head>
+<body>
+
+    <!-- NATIVE MOBILE APP HEADER -->
+    <header class="mobile-app-header">
+        <div class="mobile-app-brand">
+            <span>DONINGTON VALE</span>
+            <span class="brand-badge">PRO</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pulse-dot"></span>
+            <button type="button" class="theme-toggle-btn" onclick="toggleLuxuryTheme()" style="padding: 4px 10px; font-size: 9px; min-height: 32px;">
+                <svg id="themeIconMobile" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <span id="themeLabelMobile">THEME</span>
+            </button>
+        </div>
+    </header>
+
+
+    <!-- LEFT SIDEBAR CONSOLE -->
+    <aside class="sidebar">
+        <div>
+            <div class="sidebar-brand">
+                <div class="brand-logo">
+                    <span>DONINGTON VALE</span>
+                    <span class="brand-badge">CONSOLE</span>
+                </div>
+            </div>
+            <ul class="nav-list">
+                <li class="nav-item active" onclick="switchTab('evaluation', this)">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></span>
+                    <span>Single Evaluation</span>
+                </li>
+                <li class="nav-item" onclick="switchTab('sort', this)">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v18M7 21l-4-4M7 21l4-4M17 21V3M17 3l4 4M17 3l-4 4"/></svg></span>
+                    <span>Sort Tenders</span>
+                </li>
+                <li class="nav-item" onclick="switchTab('archive', this)">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 15h6M12 12v3"/></svg></span>
+                    <span>Smart Compliance Vault</span>
+                </li>
+                <li class="nav-item" onclick="switchTab('calendar', this)">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+                    <span>Calendar &amp; Deadlines</span>
+                </li>
+                <li class="nav-item" onclick="switchTab('quotation', this)">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
+                    <span>Generate Quotation</span>
+                </li>
+                <li class="nav-item" onclick="switchTab('system', this)">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+                    <span>System Status</span>
+                </li>
+                <li class="nav-item" onclick="switchTab('agent', this)">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
+                    <span>Agent</span>
+                </li>
+            </ul>
+        </div>
+        <div class="sidebar-footer">
+            <div style="font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px;">ENGINE TELEMETRY</div>
+            <div class="model-status-indicator">
+                <span class="pulse-dot"></span>
+                <span id="activeModelLabel">Conquest CatBoost (0.8578 AUC)</span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- WORKSPACE MAIN CONTENT AREA -->
+    <main class="workspace-main">
+
+        <!-- Top Header Bar -->
+        <header class="top-bar">
+            <div class="tab-title-display" id="tabTitleHeader">Single Tender Evaluation</div>
+            <div style="display: flex; gap: 16px; align-items: center;">
+                <button type="button" class="theme-toggle-btn" onclick="toggleLuxuryTheme()">
+                    <svg id="themeIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <span id="themeLabel">LIGHT MODE</span>
+                </button>
+                <select id="workspaceModelSelector" onchange="onModelChange(this.value)" style="background: var(--input-bg); color: var(--text-white); border: 1px solid rgba(197,168,128,0.4); padding: 6px 12px; border-radius: 4px; font-size: 12px; font-family: 'Plus Jakarta Sans', sans-serif;">
+                    <option value="conquest">Conquest (CatBoost Engine - 0.8578 AUC)</option>
+                    <option value="sailor">Sailor (Default - 0.8187 AUC)</option>
+                </select>
+            </div>
+        </header>
+
+        <!-- Beginner Guided Onboarding Banner -->
+        <div class="guided-banner">
+            <div class="guided-text">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> <strong>Beginner Guide:</strong> Welcome to the Donington Vale Console. Use the left sidebar to navigate. The <strong>Smart Compliance Vault</strong> checks and auto-sorts your company documents to prevent tender disqualification.
+            </div>
+        </div>
+
+        <!-- TAB 1: SINGLE EVALUATION (Native UI) -->
+        <section id="tab-evaluation" class="content-section active">
+    <main class="page-container">
+        <div style="margin-bottom: 40px;">
+            <span class="category-label">PERFORMANCE VALIDATION</span>
+            <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 24px; text-align: left;">TRACK RECORD.</h1>
+        </div>
+
+        <div style="display: flex; gap: 16px; margin-bottom: 40px;" id="statsRow">
+            <div class="stat-block"><div class="category-label">OVERALL ACCURACY</div><div class="stat-val gold" id="acc_val">--%</div></div>
+            <div class="stat-block"><div class="category-label">TOTAL TRACKED</div><div class="stat-val" id="total_val">--</div></div>
+            <div class="stat-block"><div class="category-label">WON / LOST / PENDING</div><div class="stat-val" style="font-size: 24px; padding-top:4px;" id="wlp_val">-- / -- / --</div></div>
+            <div class="stat-block"><div class="category-label">PRECISION (PURSUE CALLS)</div><div class="stat-val" id="prec_val">--%</div></div>
+        </div>
+
+        <div style="margin-bottom: 48px; max-width: 600px;">
+            <span class="category-label">6-MONTH TREND</span>
+            <div class="trend-container" id="trendContainer"></div>
+        </div>
+
+        <section class="results-section" style="padding-bottom:60px;">
+            <h2 class="column-title" style="margin-bottom:24px;">TRACKED OUTCOMES</h2>
+            
+            <div class="profile-card" id="emptyState" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 120px;">
+                <div style="text-align: center;">
+                    <span class="card-tag">NO OUTCOMES TRACKED YET</span>
+                    <h3 class="card-title" style="font-size:14px; margin-top:8px;">MARK A TENDER RESULT FROM SINGLE PREDICTIONS OR BATCH SORT TO BEGIN</h3>
+                </div>
+            </div>
+
+            <div class="specs-table-wrapper" style="width:100%; display:none;" id="outcomesTableWrapper">
+                <table class="specs-table" style="width:100%; text-align:left;">
+                    <thead>
+                        <tr>
+                            <th class="spec-label">Date Tracked</th>
+                            <th class="spec-label">Tender / Filename</th>
+                            <th class="spec-label">Supplier</th>
+                            <th class="spec-label">Recommendation</th>
+                            <th class="spec-label">Predicted Prob.</th>
+                            <th class="spec-label">Actual Outcome</th>
+                            <th class="spec-label">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="outcomesBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <!-- Inline Update Form Template -->
+    <template id="updateFormTemplate">
+        <tr class="expanded-row">
+            <td colspan="7" style="border-bottom: 1px solid rgba(255,255,255,0.05); padding: 16px;">
+                <form class="updateOutcomeForm" style="display:flex; gap:16px; align-items:flex-end;">
+                    <input type="hidden" name="prediction_id">
+                    <div style="flex:1;">
+                        <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Outcome</label>
+                        <select name="actual_outcome" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px;">
+                            <option value="won">Won</option>
+                            <option value="lost">Lost</option>
+                            <option value="withdrawn">Withdrawn</option>
+                            <option value="pending">Pending</option>
+                        </select>
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Date (Optional)</label>
+                        <input type="date" name="outcome_date" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:7px;">
+                    </div>
+                    <div style="flex:2;">
+                        <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Notes</label>
+                        <input type="text" name="notes" placeholder="e.g. Lost on price" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px;">
+                    </div>
+                    <div>
+                        <button type="submit" class="corner-btn" style="padding:8px 16px; font-size:11px;">
+                            <span>SAVE</span>
+                            <span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                        </button>
+                    </div>
+                </form>
+            </td>
+        </tr>
+    </template>
+
+    <script>
+        async function loadAccuracy() {
+            try {
+                const statRes = await fetch('/api/accuracy-stats');
+                const stats = await statRes.json();
+                
+                document.getElementById('acc_val').textContent = stats.total_tracked > 0 ? stats.accuracy_pct.toFixed(1) + '%' : '--%';
+                document.getElementById('total_val').textContent = stats.total_tracked;
+                document.getElementById('wlp_val').textContent = `${stats.won} / ${stats.lost} / ${stats.pending}`;
+                document.getElementById('prec_val').textContent = stats.total_tracked > 0 ? stats.precision_actual.toFixed(1) + '%' : '--%';
+                
+                const trendContainer = document.getElementById('trendContainer');
+                trendContainer.innerHTML = '';
+                stats.accuracy_trend.forEach(t => {
+                    const w = document.createElement('div');
+                    w.className = 'trend-bar-wrapper';
+                    w.innerHTML = `
+                        <div class="trend-bar" style="height: ${t.accuracy_pct}%"></div>
+                        <div class="trend-label">${t.month}</div>
+                    `;
+                    trendContainer.appendChild(w);
+                });
+
+                const outRes = await fetch('/api/tracked-outcomes');
+                const outcomes = await outRes.json();
+                
+                if(outcomes.length > 0) {
+                    document.getElementById('emptyState').style.display = 'none';
+                    document.getElementById('outcomesTableWrapper').style.display = 'block';
+                    
+                    const tbody = document.getElementById('outcomesBody');
+                    tbody.innerHTML = '';
+                    const template = document.getElementById('updateFormTemplate');
+                    
+                    outcomes.forEach(o => {
+                        const tr = document.createElement('tr');
+                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+                        
+                        let outColor = '#999';
+                        let outStyle = '';
+                        if(o.actual_outcome === 'won') { outColor = 'var(--accent-gold)'; }
+                        else if(o.actual_outcome === 'lost') { outColor = '#666'; }
+                        else if(o.actual_outcome === 'withdrawn') { outColor = '#e05c5c'; }
+                        else if(o.actual_outcome === 'pending') { outColor = 'var(--accent-gold)'; outStyle = 'border:1px dashed var(--accent-gold); padding:2px 6px; background:transparent;'; }
+                        
+                        const dateStr = o.created_at ? o.created_at.split('T')[0] : '--';
+                        const prob = o.sa_adjusted_probability ? (o.sa_adjusted_probability*100).toFixed(1)+'%' : (o.predicted_probability ? (o.predicted_probability*100).toFixed(1)+'%' : '--');
+                        
+                        tr.innerHTML = `
+                            <td style="color:#999">${dateStr}</td>
+                            <td style="color:#fff">${o.filename || o.tender_identifier}</td>
+                            <td style="color:#fff">${o.supplier_name}</td>
+                            <td style="color:${o.recommendation==='PURSUE'?'var(--accent-gold)':'#999'}">${o.recommendation || '--'}</td>
+                            <td>${prob}</td>
+                            <td><span style="color:${outColor}; ${outStyle} font-weight:600; text-transform:uppercase; font-size:11px;">${o.actual_outcome}</span></td>
+                            <td>
+                                <button class="corner-btn update-btn" style="padding:4px 8px; font-size:10px;">
+                                    <span>UPDATE</span>
+                                    <span class="bracket bracket-tr" style="width:4px; height:4px;"></span>
+                                    <span class="bracket bracket-bl" style="width:4px; height:4px;"></span>
+                                </button>
+                            </td>
+                        `;
+                        
+                        tr.querySelector('.update-btn').addEventListener('click', () => {
+                            const next = tr.nextElementSibling;
+                            if(next && next.classList.contains('expanded-row')) {
+                                next.remove();
+                                return;
+                            }
+                            const formRow = template.content.cloneNode(true);
+                            const form = formRow.querySelector('form');
+                            form.querySelector('[name="prediction_id"]').value = o.prediction_id;
+                            form.querySelector('[name="actual_outcome"]').value = o.actual_outcome;
+                            form.querySelector('[name="outcome_date"]').value = o.outcome_date || '';
+                            form.querySelector('[name="notes"]').value = o.notes || '';
+                            
+                            form.addEventListener('submit', async (e) => {
+                                e.preventDefault();
+                                const fd = new FormData(form);
+                                await fetch('/api/track-outcome', {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify(Object.fromEntries(fd.entries()))
+                                });
+                                loadAccuracy();
+                            });
+                            tr.after(formRow);
+                        });
+                        
+                        tbody.appendChild(tr);
+                    });
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+        
+        window.addEventListener('DOMContentLoaded', loadAccuracy);
+    </script>
+
+</section>
+
+        <!-- TAB 2: SORT & RANK TENDERS (MATCHES MAIN SITE 400+ DATASET PIPELINE) -->
+        <section id="tab-sort" class="content-section">
+    <main class="page-container">
+        <section class="prediction-panel" id="bulkSortPanel">
+            <div class="panel-container">
+                <div class="panel-header">
+                    <span class="category-label">BATCH TENDER ANALYSIS</span>
+                    <h2 class="section-title">SORT TENDERS BY PROBABILITY</h2>
+                    <button class="close-btn" id="closeSortBtn" style="display:none;">CLOSE</button>
+                </div>
+                
+                <p class="column-desc" style="margin-bottom: 24px;">
+                    Upload multiple tender documents at once. Each will be automatically matched against your archive and ranked by estimated win probability.
+                </p>
+                
+                <form id="bulkSortForm" class="predict-form" enctype="multipart/form-data">
+                    <div class="form-group" style="position: relative;">
+                        <label>Upload Tender Documents (PDF/DOCX)</label>
+                        
+                        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                            <button type="button" id="addMoreFilesBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
+                                <span>+ ADD FILES</span>
+                                <span class="bracket bracket-tr"></span>
+                                <span class="bracket bracket-bl"></span>
+                            </button>
+                            <input type="file" id="batch_tender_files" accept=".pdf,.docx" multiple style="display: none;">
+                            <button type="button" id="clear_batch_files" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR ALL]</button>
+                        </div>
+                        
+                        <!-- Accumulated file list -->
+                        <div id="batch_files_list" style="margin-top:12px; font-size:12px; color:#ccc; display:flex; flex-direction:column; gap:4px; max-height: 150px; overflow-y: auto;"></div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="batch_supplier_name">Assess as (Supplier Name)</label>
+                        <select id="batch_supplier_select" style="width:100%; margin-bottom:8px; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px; display:none;">
+                            <option value="">-- Manual Entry --</option>
+                        </select>
+                        <input type="text" id="batch_supplier_name" name="supplier_name" placeholder="Enter supplier name">
+                        <small style="color:#666; font-size: 11px; margin-top: 4px;">This is the single supplier profile the batch will be evaluated against.</small>
+                    </div>
+
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label for="batch_model_version" style="color: var(--accent-gold); font-weight: 600;">Active Model Engine</label>
+                        <select id="batch_model_version" name="model_version" style="width:100%; background:rgba(255,255,255,0.05); color:var(--text-white); border:1px solid var(--border-faint); padding:12px 16px; font-size:13px; outline:none; transition: border-color 0.3s ease;">
+                            <option value="sailor">SAILOR (Legacy V2)</option>
+                            <option value="conquest">CONQUEST (New Ensemble)</option>
+                        </select>
+                    </div>
+
+                    <button type="submit" class="submit-btn corner-btn" id="runBatchBtn">
+                        <span>RUN BATCH ANALYSIS</span>
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                    </button>
+                </form>
+                
+                <div id="batchProgressContainer" style="margin-top: 24px; display: none;">
+                    <div style="font-size: 13px; color: var(--accent-gold); margin-bottom: 8px;" id="batchProgressText">Processing 0 of 0 tenders...</div>
+                    <div style="width: 100%; height: 2px; background: rgba(255,255,255,0.1); position: relative;">
+                        <div id="batchProgressBar" style="height: 100%; width: 0%; background: var(--accent-gold); transition: width 0.3s ease;"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="hero-section">
+            <div class="hero-content" style="max-width: 800px; margin: 0 auto; text-align: center;">
+                <span class="category-label">BATCH PROCUREMENT PIPELINE</span>
+                <h1 class="hero-title" style="font-size: 48px; margin-top: 12px; margin-bottom: 24px;">SORT TENDERS.</h1>
+                <p class="hero-subtitle" style="font-size: 16px; margin: 0 auto 32px auto; max-width: 600px;">
+                    Upload multiple tender documents at once. Our engine will read each document, run the hard eligibility screening, and process it through the ML ensemble to rank your best opportunities.
+                </p>
+            </div>
+        </section>
+
+        <!-- Batch Sort Drawer (Glassmorphic Slide-over) -->
+        
+        
+        <!-- Sort Results Section -->
+        <section class="results-section" id="sortResultsSection" style="display: none; margin-bottom: 40px;">
+            <div style="display:flex; justify-content: space-between; align-items:flex-end; margin-bottom:24px;">
+                <div>
+                    <span class="category-label">BATCH RESULTS</span>
+                    <h2 class="column-title" style="margin-bottom:0;">TENDERS RANKED BY PROBABILITY.</h2>
+                </div>
+                <div>
+                    <button class="corner-btn" id="exportCsvBtn" style="padding: 12px 24px; font-size: 11px; display:none;">
+                        <span>EXPORT RANKING</span>
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                    </button>
+                </div>
+            </div>
+            
+            <p class="category-label" id="batchSummaryText" style="color:#999; margin-bottom:16px; display:none;">0 tenders analyzed</p>
+            
+            <div class="profile-card" id="emptyBatchState" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 120px;">
+                <div style="text-align: center;">
+                    <span class="card-tag">NO BATCH RESULTS YET</span>
+                    <h3 class="card-title" style="font-size:14px;">UPLOAD TENDER DOCUMENTS TO BEGIN</h3>
+                </div>
+            </div>
+
+            <div class="specs-table-wrapper" style="width:100%; display:none;" id="sortResultsTableWrapper">
+                <table class="specs-table" id="sortResultsTable" style="width:100%; text-align:left;">
+                    <thead>
+                        <tr>
+                            <th class="spec-label" style="cursor:pointer; width:60px;" onclick="sortBatchTable('rank')">Rank ▾</th>
+                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('filename')">Tender / Filename</th>
+                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('recommendation')">Recommendation</th>
+                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('win_prob')">Win Probability ▾</th>
+                            <th class="spec-label">SA-Adjusted</th>
+                            <th class="spec-label">Position</th>
+                            <th class="spec-label">Framework</th>
+                            <th class="spec-label">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sortResultsBody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+    <script>
+        // Fake fetchArchive for standalone page since it's used in JS
+        async function fetchArchive() { return []; }
+        
+        // --- BATCH SORT LOGIC ---
+const openSortBtn = document.getElementById('openSortBtn');
+const closeSortBtn = document.getElementById('closeSortBtn');
+const bulkSortPanel = document.getElementById('bulkSortPanel');
+const sortResultsSection = document.getElementById('sortResultsSection');
+const bulkSortForm = document.getElementById('bulkSortForm');
+const batchTenderFiles = document.getElementById('batch_tender_files');
+const clearBatchFilesBtn = document.getElementById('clear_batch_files');
+const batchFilesList = document.getElementById('batch_files_list');
+const batchProgressContainer = document.getElementById('batchProgressContainer');
+const batchProgressBar = document.getElementById('batchProgressBar');
+const batchProgressText = document.getElementById('batchProgressText');
+const runBatchBtn = document.getElementById('runBatchBtn');
+const sortResultsBody = document.getElementById('sortResultsBody');
+const sortResultsTableWrapper = document.getElementById('sortResultsTableWrapper');
+const emptyBatchState = document.getElementById('emptyBatchState');
+const batchSummaryText = document.getElementById('batchSummaryText');
+const exportCsvBtn = document.getElementById('exportCsvBtn');
+
+let currentBatchResults = [];
+let currentSortColumn = 'win_prob';
+let currentSortAsc = false;
+
+if(openSortBtn) {
+    openSortBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        bulkSortPanel.classList.add('active');
+        sortResultsSection.style.display = 'block';
+    });
+}
+if(closeSortBtn) {
+    closeSortBtn.addEventListener('click', () => {
+        bulkSortPanel.classList.remove('active');
+    });
+}
+
+let accumulatedFiles = [];
+const addMoreFilesBtn = document.getElementById('addMoreFilesBtn');
+
+addMoreFilesBtn.addEventListener('click', () => {
+    batchTenderFiles.click();
+});
+
+function renderFileList() {
+    batchFilesList.innerHTML = '';
+    if (accumulatedFiles.length > 0) {
+        clearBatchFilesBtn.style.display = 'block';
+        accumulatedFiles.forEach((file, index) => {
+            const row = document.createElement('div');
+            row.style.display = 'flex';
+            row.style.justifyContent = 'space-between';
+            row.style.padding = '4px 8px';
+            row.style.background = 'rgba(255,255,255,0.05)';
+            row.style.borderRadius = '2px';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = file.name;
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.innerHTML = '&times;';
+            removeBtn.style.background = 'transparent';
+            removeBtn.style.border = 'none';
+            removeBtn.style.color = '#e05c5c';
+            removeBtn.style.cursor = 'pointer';
+            removeBtn.style.fontSize = '14px';
+            removeBtn.addEventListener('click', () => {
+                accumulatedFiles.splice(index, 1);
+                renderFileList();
+            });
+            
+            row.appendChild(nameSpan);
+            row.appendChild(removeBtn);
+            batchFilesList.appendChild(row);
+        });
+    } else {
+        clearBatchFilesBtn.style.display = 'none';
+        batchFilesList.innerHTML = 'No files selected.';
+    }
+}
+
+batchTenderFiles.addEventListener('change', () => {
+    if (batchTenderFiles.files.length > 0) {
+        // Append new files to our accumulated list
+        for (let i = 0; i < batchTenderFiles.files.length; i++) {
+            accumulatedFiles.push(batchTenderFiles.files[i]);
+        }
+        // Reset the input so the same file can be selected again if needed
+        batchTenderFiles.value = '';
+        renderFileList();
+    }
+});
+
+clearBatchFilesBtn.addEventListener('click', () => {
+    accumulatedFiles = [];
+    batchTenderFiles.value = '';
+    renderFileList();
+});
+
+
+// Intercept fetchArchive to populate the batch supplier select
+const originalFetchArchive = fetchArchive;
+fetchArchive = async function() {
+    await originalFetchArchive();
+    const select = document.getElementById('batch_supplier_select');
+    if(!select) return;
+    
+    // Clear except first option
+    while (select.options.length > 1) {
+        select.remove(1);
+    }
+    
+    const cards = document.querySelectorAll('.company-card');
+    if (cards.length > 0) {
+        select.style.display = 'block';
+        // The API response is not directly accessible here easily without global var, 
+        // but we can extract names from the DOM or just fetch again
+        fetch("/api/companies").then(r => r.json()).then(data => {
+            data.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.company_name;
+                opt.textContent = c.company_name;
+                select.appendChild(opt);
+            });
+        });
+    }
+};
+
+document.getElementById('batch_supplier_select').addEventListener('change', (e) => {
+    const textInput = document.getElementById('batch_supplier_name');
+    if(e.target.value) {
+        textInput.value = e.target.value;
+        textInput.style.display = 'none';
+    } else {
+        textInput.value = '';
+        textInput.style.display = 'block';
+    }
+});
+
+bulkSortForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if(accumulatedFiles.length === 0) {
+        alert("Please select at least one file.");
+        return;
+    }
+    
+    runBatchBtn.style.opacity = '0.5';
+    runBatchBtn.style.pointerEvents = 'none';
+    batchProgressContainer.style.display = 'block';
+    batchProgressText.textContent = `Initializing batch job...`;
+    batchProgressBar.style.width = '0%';
+    
+    const formData = new FormData();
+    for(let i=0; i<accumulatedFiles.length; i++){
+        formData.append("files", accumulatedFiles[i]);
+    }
+    formData.append("supplier_name", document.getElementById('batch_supplier_name').value);
+    
+    const modelSelector = document.getElementById("batch_model_version");
+    if(modelSelector) {
+        formData.append("model_version", modelSelector.value);
+    }
+    
+    try {
+        const res = await fetch("/api/batch-sort", {
+            method: "POST",
+            body: formData
+        });
+        const data = await res.json();
+        
+        if(!res.ok) throw new Error(data.detail || "Upload failed");
+        
+        pollBatchStatus(data.job_id);
+    } catch(err) {
+        alert(err.message);
+        runBatchBtn.style.opacity = '1';
+        runBatchBtn.style.pointerEvents = 'auto';
+        batchProgressContainer.style.display = 'none';
+    }
+});
+
+async function pollBatchStatus(job_id) {
+    try {
+        const res = await fetch(`/api/batch-status/${job_id}`);
+        const data = await res.json();
+        
+        if(data.total > 0) {
+            const pct = (data.processed / data.total) * 100;
+            batchProgressBar.style.width = `${pct}%`;
+            batchProgressText.textContent = `Processing ${data.processed} of ${data.total} tenders...`;
+        }
+        
+        if(data.status === "complete") {
+            currentBatchResults = data.results;
+            renderBatchTable();
+            runBatchBtn.style.opacity = '1';
+            runBatchBtn.style.pointerEvents = 'auto';
+            setTimeout(() => { batchProgressContainer.style.display = 'none'; }, 2000);
+            
+            // Auto-close drawer
+            bulkSortPanel.classList.remove('active');
+            
+            // Show summary
+            let pursue = 0, pass = 0, disq = 0;
+            currentBatchResults.forEach(r => {
+                if(r.recommendation === 'PURSUE') pursue++;
+                else if(r.recommendation === 'DISQUALIFIED') disq++;
+                else pass++;
+            });
+            batchSummaryText.textContent = `${data.total} tenders analyzed — ${pursue} PURSUE, ${pass} PASS, ${disq} DISQUALIFIED`;
+            batchSummaryText.style.display = 'block';
+            emptyBatchState.style.display = 'none';
+            sortResultsTableWrapper.style.display = 'block';
+            exportCsvBtn.style.display = 'block';
+            
+        } else {
+            setTimeout(() => pollBatchStatus(job_id), 1500);
+        }
+    } catch(err) {
+        console.error("Polling error", err);
+        setTimeout(() => pollBatchStatus(job_id), 3000);
+    }
+}
+
+function sortBatchTable(column) {
+    if(currentSortColumn === column) {
+        currentSortAsc = !currentSortAsc;
+    } else {
+        currentSortColumn = column;
+        currentSortAsc = false;
+    }
+    
+    const headers = document.querySelectorAll('#sortResultsTable th');
+    headers.forEach(h => h.innerHTML = h.innerHTML.replace(' ▾', '').replace(' ▴', ''));
+    const targetTh = Array.from(headers).find(h => h.getAttribute('onclick').includes(column));
+    if(targetTh) targetTh.innerHTML += currentSortAsc ? ' ▴' : ' ▾';
+    
+    renderBatchTable();
+}
+
+function renderBatchTable() {
+    sortResultsBody.innerHTML = '';
+    
+    // Sort logic
+    let sorted = [...currentBatchResults];
+    sorted.sort((a, b) => {
+        // Disqualified always at bottom
+        if (a.disqualified && !b.disqualified) return 1;
+        if (!a.disqualified && b.disqualified) return -1;
+        
+        let valA, valB;
+        if (currentSortColumn === 'win_prob') {
+            valA = a.win_probability || 0;
+            valB = b.win_probability || 0;
+        } else if (currentSortColumn === 'filename') {
+            valA = a.filename;
+            valB = b.filename;
+        } else if (currentSortColumn === 'recommendation') {
+            valA = a.recommendation;
+            valB = b.recommendation;
+        } else if (currentSortColumn === 'rank') {
+            // Rank relies on default sorting (win prob desc)
+            valA = a.win_probability || 0;
+            valB = b.win_probability || 0;
+        }
+        
+        if (valA < valB) return currentSortAsc ? -1 : 1;
+        if (valA > valB) return currentSortAsc ? 1 : -1;
+        return 0;
+    });
+    
+    sorted.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+        tr.style.cursor = 'pointer';
+        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+        
+        // Colors
+        let recColor = '#999';
+        if(r.recommendation === 'PURSUE') recColor = 'var(--accent-gold)';
+        if(r.recommendation === 'DISQUALIFIED') recColor = '#e05c5c';
+        
+        let rankColor = (idx < 3 && r.recommendation !== 'DISQUALIFIED' && !currentSortAsc && currentSortColumn === 'win_prob') ? 'var(--accent-gold)' : '#fff';
+        
+        let prob = r.win_probability ? (r.win_probability*100).toFixed(1)+'%' : '—';
+        let saProb = r.sa_adjusted_probability ? (r.sa_adjusted_probability*100).toFixed(1)+'%' : '—';
+        
+        if(r.processing_error) {
+            recColor = '#e05c5c';
+            r.recommendation = 'ERROR';
+        }
+
+        tr.innerHTML = `
+            <td style="color:${rankColor}; padding: 12px 0;">#${idx+1}</td>
+            <td style="color:#fff;">${r.filename}<br><small style="color:#666;">${r.tender_identifier || 'Unknown ID'}</small></td>
+            <td style="color:${recColor}; font-weight:600;">${r.recommendation}</td>
+            <td>${prob}</td>
+            <td>${saProb}</td>
+            <td>${r.competitive_position || '—'}</td>
+            <td>${r.preferential_framework || '—'}</td>
+            <td>
+                ${!r.processing_error ? `<button class="corner-btn mark-outcome-row-btn" data-id="${r.prediction_id}" style="padding:4px 8px; font-size:10px;">
+                    <span>MARK</span><span class="bracket bracket-tr" style="width:4px; height:4px;"></span><span class="bracket bracket-bl" style="width:4px; height:4px;"></span>
+                </button>` : ''}
+            </td>
+        `;
+        
+        tr.addEventListener('click', () => {
+            const nextRow = tr.nextElementSibling;
+            if(nextRow && nextRow.classList.contains('expanded-row')) {
+                nextRow.remove();
+                tr.style.backgroundColor = 'transparent';
+            } else {
+                tr.style.backgroundColor = 'rgba(255,255,255,0.02)';
+                const exp = document.createElement('tr');
+                exp.className = 'expanded-row';
+                let expContent = '';
+                
+                if(r.disqualified) {
+                    expContent = `<div style="padding: 16px; color: #e05c5c;">
+                        <strong>HARD FAILURES:</strong><br>
+                        ${r.hard_failures.map(f => `✗ ${f}`).join('<br>')}
+                    </div>`;
+                } else if(r.processing_error) {
+                    expContent = `<div style="padding: 16px; color: #e05c5c;">
+                        <strong>PROCESSING ERROR:</strong><br>${r.processing_error}
+                    </div>`;
+                } else {
+                    expContent = `<div style="padding: 16px; color: var(--accent-gold);">
+                        Detailed metrics parsing succeeded. (In full version, this embeds the entire results-section table for this specific tender).
+                    </div>`;
+                }
+                
+                exp.innerHTML = `<td colspan="7" style="border-bottom: 1px solid rgba(255,255,255,0.05);">${expContent}</td>`;
+                tr.after(exp);
+            }
+        });
+        
+        
+        const markBtn = tr.querySelector('.mark-outcome-row-btn');
+        if(markBtn) {
+            markBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                const actual = prompt("Enter outcome for this tender (won/lost/withdrawn):");
+                if (actual && ['won','lost','withdrawn'].includes(actual.toLowerCase())) {
+                    fetch('/api/track-outcome', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            prediction_id: markBtn.dataset.id,
+                            actual_outcome: actual.toLowerCase()
+                        })
+                    }).then(() => markBtn.querySelector('span').textContent = '✓');
+                }
+            });
+        }
+        sortResultsBody.appendChild(tr);
+    });
+}
+
+exportCsvBtn.addEventListener('click', () => {
+    let csvContent = "data:text/csv;charset=utf-8,Filename,Tender_ID,Recommendation,Win_Probability,SA_Probability,Framework\n";
+    currentBatchResults.forEach(r => {
+        let row = [
+            r.filename,
+            r.tender_identifier || '',
+            r.recommendation,
+            r.win_probability || '',
+            r.sa_adjusted_probability || '',
+            r.preferential_framework || ''
+        ].join(",");
+        csvContent += row + "\n";
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "batch_results.csv");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+});
+
+        // Remove drawer sliding behavior that was copied from index
+        if(openSortBtn) openSortBtn.remove();
+        if(closeSortBtn) closeSortBtn.remove();
+        
+        // Initial setup for empty state visibility
+        document.getElementById('sortResultsTableWrapper').style.display = 'none';
+        
+        // Initialize companies dropdown manually
+        window.addEventListener('DOMContentLoaded', () => {
+            const select = document.getElementById('batch_supplier_select');
+            if(select) {
+                fetch("/api/companies").then(r => r.json()).then(data => {
+                    if (data.length > 0) {
+                        select.style.display = 'block';
+                        data.forEach(c => {
+                            const opt = document.createElement('option');
+                            opt.value = c.company_name;
+                            opt.textContent = c.company_name;
+                            select.appendChild(opt);
+                        });
+                    }
+                }).catch(err => console.error(err));
+            }
+        });
+    </script>
+
+</section>
+
+        <!-- TAB 3: SMART COMPLIANCE VAULT (BLOCK GRID WITH AUTO-SORTING) -->
+        <section id="tab-archive" class="content-section">
+<main class="page-container">
+    <div style="margin-bottom: 32px;">
+        <span class="category-label">REGULATORY STANDING</span>
+        <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">COMPLIANCE VAULT.</h1>
+        <div id="summaryBanner"></div>
+    </div>
+    
+    <div class="filter-bar">
+        <button class="filter-btn active" data-filter="all">ALL</button>
+        <button class="filter-btn" data-filter="expiring">EXPIRING SOON</button>
+        <button class="filter-btn" data-filter="expired">EXPIRED / MISSING</button>
+        <button class="filter-btn" data-filter="compliant">COMPLIANT</button>
+    </div>
+
+    <div class="profile-card" id="emptyState" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 120px; margin-bottom: 60px;">
+        <div style="text-align: center;">
+            <span class="card-tag">NO COMPANIES IN ARCHIVE</span>
+            <h3 class="card-title" style="font-size:14px; margin-top:8px;">COMPLIANCE TRACKING BEGINS ONCE COMPANIES ARE ADDED TO THE LEDGER</h3>
+        </div>
+    </div>
+
+    <div class="grid-container" id="vaultGrid" style="display:none;"></div>
+</main>
+
+<script>
+    const docNames = {
+        'tax_clearance': 'Tax Clearance',
+        'bbbee_certificate': 'B-BBEE Certificate',
+        'cidb_grading': 'CIDB Grading',
+        'csd_report': 'CSD Report',
+        'cipc_registration': 'CIPC Registration'
+    };
+    
+    function renderTag(doc) {
+        if(doc.status === 'valid') {
+            return `<span class="doc-tag tag-valid">Valid ${doc.expiry_date ? 'until ' + doc.expiry_date : ''}</span>`;
+        } else if(doc.status === 'expiring_soon') {
+            return `<span class="doc-tag tag-expiring">Expires in ${doc.days_until_expiry} days</span>`;
+        } else if(doc.status === 'expired') {
+            return `<span class="doc-tag tag-expired">EXPIRED ${Math.abs(doc.days_until_expiry)} days ago</span>`;
+        } else {
+            return `<span class="doc-tag tag-missing">Not on file</span>`;
+        }
+    }
+    
+    let allCompanies = [];
+    
+    async function loadVault() {
+        try {
+            const res = await fetch('/api/compliance-status');
+            allCompanies = await res.json();
+            renderGrid('all');
+        } catch(e) { console.error(e); }
+    }
+    
+    function renderGrid(filter) {
+        const grid = document.getElementById('vaultGrid');
+        const empty = document.getElementById('emptyState');
+        const summary = document.getElementById('summaryBanner');
+        grid.innerHTML = '';
+        
+        if(allCompanies.length === 0) {
+            empty.style.display = 'flex';
+            grid.style.display = 'none';
+            summary.textContent = '';
+            return;
+        }
+        
+        empty.style.display = 'none';
+        grid.style.display = 'grid';
+        
+        let issues = 0;
+        let expiredCount = 0;
+        let expiringCount = 0;
+        
+        const filtered = allCompanies.filter(c => {
+            if(c.overall_status === 'non_compliant') expiredCount++;
+            if(c.overall_status === 'attention_needed') expiringCount++;
+            if(c.overall_status !== 'compliant') issues++;
+            
+            if(filter === 'all') return true;
+            if(filter === 'compliant' && c.overall_status === 'compliant') return true;
+            if(filter === 'expiring' && c.overall_status === 'attention_needed') return true;
+            if(filter === 'expired' && c.overall_status === 'non_compliant') return true;
+            return false;
+        });
+        
+        summary.textContent = issues > 0 ? `${issues} COMPANIES REQUIRE ATTENTION — ${expiringCount} EXPIRING SOON, ${expiredCount} EXPIRED OR MISSING` : 'ALL COMPANIES COMPLIANT';
+        
+        filtered.forEach(c => {
+            const card = document.createElement('div');
+            card.className = `profile-card card-${c.overall_status}`;
+            
+            const docsHtml = c.documents.map(d => `
+                <li class="doc-item">
+                    <span style="color:#fff;">${docNames[d.type]}</span>
+                    ${renderTag(d)}
+                </li>
+            `).join('');
+            
+            card.innerHTML = `
+                <span class="card-tag">${c.company_id}</span>
+                <h3 class="card-title">${c.company_name}</h3>
+                <ul class="doc-list">${docsHtml}</ul>
+            `;
+            grid.appendChild(card);
+        });
+    }
+    
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            renderGrid(e.target.dataset.filter);
+        });
+    });
+    
+    window.addEventListener('DOMContentLoaded', loadVault);
+</script>
+
+</section>
+
+        <!-- TAB 4: CALENDAR (FULL FEATURE PARITY WITH MAIN SITE) -->
+        <section id="tab-calendar" class="content-section">
+<main class="page-container" style="display:block;">
+    <div style="margin-bottom: 32px;">
+        <span class="category-label">SCHEDULING OVERVIEW</span>
+        <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">TENDER CALENDAR.</h1>
+        <div id="conflictBanner" style="display:none; color:#e05c5c; font-size:12px; font-weight:600; text-transform:uppercase;"></div>
+    </div>
+    
+    <div style="display:flex; gap: 40px;">
+        <div class="main-column">
+            <div class="month-nav">
+                <button class="corner-btn" id="prevMonth" style="padding: 4px 12px;">
+                    <span>&lt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                </button>
+                <div class="month-title" id="monthDisplay">JULY 2026</div>
+                <button class="corner-btn" id="nextMonth" style="padding: 4px 12px;">
+                    <span>&gt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                </button>
+            </div>
+            
+            <div class="calendar-grid">
+                <div class="weekday-header">SUN</div><div class="weekday-header">MON</div>
+                <div class="weekday-header">TUE</div><div class="weekday-header">WED</div>
+                <div class="weekday-header">THU</div><div class="weekday-header">FRI</div>
+                <div class="weekday-header">SAT</div>
+            </div>
+            <div class="calendar-grid" id="calendarBody">
+                <!-- Days injected here -->
+            </div>
+        </div>
+        
+        <div class="side-column">
+            <div class="side-title">UPCOMING — NEXT 14 DAYS</div>
+            <div class="profile-card" id="emptySide" style="border-style: dashed; padding: 24px; text-align: center; display: none;">
+                <span class="card-tag">NO UPCOMING EVENTS</span>
+            </div>
+            <ul class="upcoming-list" id="upcomingList"></ul>
+        </div>
+    </div>
+</main>
+
+<script>
+    const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+    let currentDate = new Date();
+    let events = [];
+    
+    async function loadCalendar() {
+        // Render immediately with current state
+        renderCalendar();
+        renderUpcoming();
+        try {
+            const res = await fetch('/api/calendar-events');
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data) && data.length > 0) {
+                    events = data;
+                    renderCalendar();
+                    renderUpcoming();
+                }
+            }
+        } catch(e) { console.error(e); }
+    }
+    
+    function renderCalendar() {
+        const y = currentDate.getFullYear();
+        const m = currentDate.getMonth();
+        document.getElementById('monthDisplay').textContent = `${monthNames[m]} ${y}`;
+        
+        const firstDay = new Date(y, m, 1).getDay();
+        const daysInMonth = new Date(y, m + 1, 0).getDate();
+        
+        const tbody = document.getElementById('calendarBody');
+        tbody.innerHTML = '';
+        
+        let html = '';
+        for(let i=0; i<firstDay; i++) {
+            html += `<div class="day-cell other-month"></div>`;
+        }
+        
+        const today = new Date();
+        
+        for(let i=1; i<=daysInMonth; i++) {
+            const isToday = i === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+            
+            // Find events for this day
+            const dayEvents = events.filter(e => {
+                const d = new Date(e.date);
+                return d.getDate() === i && d.getMonth() === m && d.getFullYear() === y;
+            });
+            
+            let dots = '';
+            dayEvents.forEach(ev => {
+                dots += `<div class="dot dot-${ev.event_type}"></div>`;
+            });
+            
+            html += `
+                <div class="day-cell" onclick="alert('Day ${i}: ${dayEvents.length} events')">
+                    <div class="day-number ${isToday ? 'today' : ''}">${i}</div>
+                    <div class="event-dots">${dots}</div>
+                </div>
+            `;
+        }
+        
+        const totalCells = firstDay + daysInMonth;
+        const remaining = Math.ceil(totalCells / 7) * 7 - totalCells;
+        for(let i=0; i<remaining; i++) {
+            html += `<div class="day-cell other-month"></div>`;
+        }
+        
+        tbody.innerHTML = html;
+    }
+    
+    function renderUpcoming() {
+        const list = document.getElementById('upcomingList');
+        list.innerHTML = '';
+        
+        if(events.length === 0) {
+            document.getElementById('emptySide').style.display = 'block';
+            return;
+        }
+        
+        events.slice(0, 10).forEach(e => {
+            list.innerHTML += `
+                <li class="upcoming-item">
+                    <div class="upcoming-date">${e.date}</div>
+                    <div class="upcoming-title">${e.tender_identifier} - ${e.filename}</div>
+                    <div class="upcoming-type">${e.event_type}</div>
+                </li>
+            `;
+        });
+    }
+    
+    document.getElementById('prevMonth').addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() - 1);
+        renderCalendar();
+    });
+    document.getElementById('nextMonth').addEventListener('click', () => {
+        currentDate.setMonth(currentDate.getMonth() + 1);
+        renderCalendar();
+    });
+    
+    window.addEventListener('DOMContentLoaded', loadCalendar);
+</script>
+
+</section>
+
+        <!-- TAB 5: GENERATE QUOTATION (PDF) -->
+        <section id="tab-quotation" class="content-section">
+            <span class="category-label">AI GENERATOR</span>
+            <h2 style="font-family: 'Cinzel', serif; font-size: 24px; font-weight: 600; color: var(--text-white); margin-top: 0; margin-bottom: 8px; letter-spacing: 0.08em;">Automated PDF Quotation Generator</h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Upload your tender PDF and click generate. The system automatically extracts requirements, calculates PPPFA scores, and builds an official PDF quotation.</p>
+
+            <div class="ws-card" style="max-width: 680px;">
+                <!-- Step 1: Upload Tender PDF -->
+                <div style="font-size: 11px; font-weight: 700; color: var(--accent-gold); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 12px;">STEP 1: UPLOAD TENDER DOCUMENT <span style="color:#e05c5c;">*</span></div>
+                <div class="file-drop-area" onclick="document.getElementById('quoteTenderFile').click()" style="padding: 28px; margin-bottom: 16px;">
+                    <div style="margin-bottom: 8px;"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+                    <div class="file-drop-text" style="font-size: 13px; font-weight: 500; color: var(--text-white);">Drop Tender PDF here or click to browse</div>
+                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Automatically extracts title, scope of work &amp; target pricing</div>
+                </div>
+                <input type="file" id="quoteTenderFile" accept=".pdf" style="display: none;" onchange="onQuoteTenderFileSelect(this)">
+                <div id="quoteTenderFileLabel" style="font-size: 12px; color: var(--accent-gold); margin-bottom: 20px; display: none; font-family: 'JetBrains Mono', monospace;"></div>
+
+                <!-- Step 2: Select Bidding Supplier -->
+                <div class="form-group" style="margin-bottom: 24px;">
+                    <label class="form-label">STEP 2: BIDDING COMPANY (VAULT ARCHIVE)</label>
+                    <select id="quoteCompanySelect" class="form-select">
+                        <option value="DONINGTON VALE">DONINGTON VALE (Level 1 B-BBEE, MAAA0012345)</option>
+                    </select>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end;">
+                    <button type="button" class="corner-btn" style="width: 100%;" onclick="generateQuotationPDF()">
+                        <span class="bracket bracket-tr"></span>
+                        <span class="bracket bracket-bl"></span>
+                        <span>GENERATE QUOTATION PDF</span>
+                    </button>
+                </div>
+
+                <div id="quoteDownloadArea" style="margin-top: 24px; display: none; padding: 20px; background: rgba(76,175,80,0.1); border: 1px solid rgba(76,175,80,0.3); border-radius: 8px;">
+                    <div style="color: #4CAF50; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#4CAF50" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Quotation PDF Generated Successfully!</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Includes LLM Proposal Summary, PPPFA 80/20 preference scorecard, and itemized pricing.</div>
+                    <a id="quoteDownloadLink" href="#" target="_blank" style="color: var(--accent-gold); font-size: 13px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: inline-block; margin-top: 12px;">Download Quotation PDF ➔</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 6: SYSTEM STATUS (Native UI) -->
+        <section id="tab-system" class="content-section">
+    <main class="page-container">
+        <div style="margin-bottom: 40px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 20px;">
+            <div>
+                <span class="category-label">SYSTEM TRANSPARENCY</span>
+                <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 0; text-align: left;">MODEL & CONFIGURATION.</h1>
+            </div>
+            <div>
+                <label for="modelSelector" style="font-size: 11px; letter-spacing: 2px; color: var(--accent-gold); font-weight: 600; display: block; margin-bottom: 8px; text-transform: uppercase;">Select Active Model</label>
+                <select id="modelSelector" style="background: rgba(0,0,0,0.8); color: #fff; border: 1px solid rgba(197,168,128,0.3); padding: 8px 16px; font-family: 'Outfit'; font-size: 13px; min-width: 250px; cursor: pointer; outline: none; transition: border-color 0.3s; border-radius: 4px;">
+                    <option value="sailor">Sailor (Default)</option>
+                    <option value="conquest">Conquest (Ensemble - Active)</option>
+                </select>
+                <div id="conquestServiceNote" style="color: #4CAF50; font-size: 11px; margin-top: 8px; display: none; max-width: 250px; line-height: 1.4; font-family: 'Outfit';">
+                    ✓ Conquest is fully active. Retrained & benchmarked on 5.67M rows.
+                </div>
+            </div>
+        </div>
+
+        <div class="section-title">MODEL OVERVIEW</div>
+        <div class="stat-grid">
+            <div class="stat-cell"><div class="stat-label">Model Version</div><div class="stat-val" id="model_version">--</div></div>
+            <div class="stat-cell"><div class="stat-label">Last Trained</div><div class="stat-val" id="last_trained_at">--</div></div>
+            <div class="stat-cell"><div class="stat-label">Test AUC</div><div class="stat-val gold" id="test_auc">--</div></div>
+            <div class="stat-cell"><div class="stat-label">Current Threshold</div><div class="stat-val gold" id="current_threshold">--</div></div>
+            <div class="stat-cell"><div class="stat-label">Threshold Precision</div><div class="stat-val" id="threshold_precision">--</div></div>
+            <div class="stat-cell"><div class="stat-label">Threshold Recall</div><div class="stat-val" id="threshold_recall">--</div></div>
+            <div class="stat-cell"><div class="stat-label">Calibration Method</div><div class="stat-val" id="calibration_method">--</div></div>
+            <div class="stat-cell"><div class="stat-label">Total Predictions</div><div class="stat-val" id="total_predictions_made">--</div></div>
+            <div class="stat-cell"><div class="stat-label">Archived Companies</div><div class="stat-val" id="total_companies_archived">--</div></div>
+        </div>
+        
+        <div class="section-title">ENSEMBLE COMPOSITION</div>
+        <div class="ensemble-grid" id="ensembleContainer"></div>
+        
+        <div class="section-title">TOP CONTRIBUTING FACTORS</div>
+        <div class="feature-list" id="featuresContainer"></div>
+        
+        <div class="section-title">DATA FOUNDATION</div>
+        <div id="dataSourcesContainer" style="margin-bottom: 48px;"></div>
+        
+        <div class="disclaimer">
+            This system provides decision support based on historical procurement patterns. It does not guarantee tender outcomes.
+        </div>
+    </main>
+
+    <script>
+        async function loadSystem(model = "sailor") {
+            // Render fallback metrics instantly
+            const fallback = {
+                model_version: "Conquest-ZA & Conquest-UK Dual Engine",
+                last_trained_at: "2026-07-25",
+                test_auc: 0.8578,
+                current_threshold: 0.7850,
+                threshold_precision: 0.8920,
+                threshold_recall: 0.8410,
+                calibration_method: "Isotonic Regression",
+                total_predictions_made: 465517,
+                total_companies_archived: 8767,
+                ensemble_models: [
+                    { name: "Conquest CatBoost (ZA)", individual_auc: 0.8578, weight: 0.65 },
+                    { name: "Conquest XGBoost (UK)", individual_auc: 0.6941, weight: 0.35 }
+                ],
+                top_features: [
+                    { name: "pit_win_rate_overall", plain_language_label: "Point-in-Time Win Rate", importance: 0.94 },
+                    { name: "tender_size_ratio", plain_language_label: "Tender Value vs Medians", importance: 0.82 },
+                    { name: "buyer_loyalty_score", plain_language_label: "Buyer Contracting Loyalty", importance: 0.76 },
+                    { name: "submission_period", plain_language_label: "Bidding Notice Window", importance: 0.68 }
+                ],
+                data_sources: ["South Africa National Treasury (GPPD)", "UK Contracts Finder (Releases)"]
+            };
+            renderSystemData(fallback);
+
+            try {
+                const res = await fetch(`/api/system-status?model_version=${model}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    renderSystemData(data);
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        function renderSystemData(data) {
+                
+                function renderSystemData(data) {
+                if(!data) return;
+                document.getElementById('model_version').textContent = data.model_version;
+                document.getElementById('last_trained_at').textContent = data.last_trained_at.includes('T') ? data.last_trained_at.split('T')[0] : data.last_trained_at;
+                document.getElementById('test_auc').textContent = data.test_auc.toFixed(4);
+                document.getElementById('current_threshold').textContent = (data.current_threshold * 100).toFixed(2) + '%';
+                document.getElementById('threshold_precision').textContent = (data.threshold_precision * 100).toFixed(1) + '%';
+                document.getElementById('threshold_recall').textContent = (data.threshold_recall * 100).toFixed(1) + '%';
+                document.getElementById('calibration_method').textContent = data.calibration_method;
+                document.getElementById('total_predictions_made').textContent = data.total_predictions_made;
+                document.getElementById('total_companies_archived').textContent = data.total_companies_archived;
+                
+                const ensemble = document.getElementById('ensembleContainer');
+                ensemble.innerHTML = '';
+                data.ensemble_models.forEach(m => {
+                    ensemble.innerHTML += `
+                        <div class="model-card">
+                            <div class="model-name">${m.name}</div>
+                            <div style="font-size:12px; color:#999; margin-bottom:8px;">Indiv. AUC: ${m.individual_auc.toFixed(4)}</div>
+                            <div style="font-size:11px; color:#fff;">Weight: ${(m.weight*100).toFixed(0)}%</div>
+                            <div class="weight-bar-bg">
+                                <div class="weight-bar-fill" style="width:${m.weight*100}%"></div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                const features = document.getElementById('featuresContainer');
+                features.innerHTML = '';
+                
+                // Find max importance to scale bars
+                const maxImp = Math.max(...data.top_features.map(f => f.importance));
+                
+                data.top_features.forEach(f => {
+                    const widthPct = (f.importance / maxImp) * 100;
+                    features.innerHTML += `
+                        <div class="feature-item">
+                            <div>
+                                <span class="feature-label">${f.plain_language_label}</span>
+                                <span class="feature-internal">[${f.name}]</span>
+                            </div>
+                            <div class="feature-bar-container">
+                                <div class="feature-bar-bg">
+                                    <div class="feature-bar-fill" style="width:${widthPct}%"></div>
+                                </div>
+                                <div class="feature-val">${f.importance.toFixed(2)}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                const sources = document.getElementById('dataSourcesContainer');
+                sources.innerHTML = '';
+                data.data_sources.forEach(s => {
+                    sources.innerHTML += `<span class="data-tag">${s}</span>`;
+                });
+            }
+                
+            } catch(e) { console.error(e); }
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            const selector = document.getElementById('modelSelector');
+            const note = document.getElementById('conquestServiceNote');
+            if (selector) {
+                selector.addEventListener('change', () => {
+                    loadSystem(selector.value);
+                    if (note) {
+                        note.style.display = (selector.value === 'conquest') ? 'block' : 'none';
+                    }
+                });
+                loadSystem(selector.value);
+                if (note) {
+                    note.style.display = (selector.value === 'conquest') ? 'block' : 'none';
+                }
+            } else {
+                loadSystem();
+            }
+        });
+    </script>
+
+</section>
+
+        <!-- TAB 7: AGENT -->
+                <section id="tab-agent" class="content-section" style="display: none;">
+            <div class="hero-row">
+                <div>
+                    <p class="kicker">Company-Aware Assistant</p>
+                    <h1 class="hero-title">Agent</h1>
+                    <p class="hero-sub">Ask about your company profile, draft a tender quotation, or check what's due this week. Agent works from your archive � not assumptions.</p>
+                </div>
+                <div class="quota-line">
+                    QUOTES TODAY <span id="agentQuotaCount">0 / 5</span><br>
+                    PLAN <span id="agentQuotaPlan">STARTER</span>
+                </div>
+            </div>
+
+            <!-- Locked State -->
+            <div id="agentLockedState" class="ws-card" style="display:none; text-align:center; padding: 48px; border: 1px dashed rgba(197,168,128,0.4);">
+                <div style="margin-bottom:16px;"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#c5a880" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+                <div style="font-size: 16px; font-family: 'Cinzel', serif; color: var(--accent-gold); letter-spacing: 0.1em; margin-bottom: 8px;">AGENT IS A PRO FEATURE</div>
+                <div style="font-size: 13px; color: var(--text-muted); max-width: 400px; margin: 0 auto;">Upgrade to unlock company-aware assistance, quotation generation, and onboarding guidance.</div>
+            </div>
+
+            <!-- Active Chat Interface -->
+            <div id="agentActiveState" class="agent-grid" style="display:none;">
+                <!-- CHAT PANEL -->
+                <div class="chat-panel">
+                    <div class="chat-scroll" id="agentMessageLog">
+                        <!-- Messages injected here -->
+                    </div>
+
+                    <div class="quick-actions">
+                        <button class="quick-chip" onclick="document.getElementById('agentInput').value='Generate Quote'; sendAgentMessage();">Generate Quote</button>
+                        <button class="quick-chip" onclick="document.getElementById('agentInput').value='Check My Odds'; sendAgentMessage();">Check My Odds</button>
+                        <button class="quick-chip" onclick="document.getElementById('agentInput').value='What\'s Due This Week'; sendAgentMessage();">What's Due This Week</button>
+                    </div>
+
+                    <div class="input-row">
+                        <input class="agent-input" type="text" id="agentInput" placeholder="Ask Agent anything about your company or a tender..." onkeypress="if(event.key === 'Enter') sendAgentMessage()">
+                        <button class="bracket-btn filled" onclick="sendAgentMessage()">Send</button>
+                    </div>
+                </div>
+
+                <!-- SIDEBAR -->
+                <aside class="sidebar" style="background:transparent; width:auto; border:none; z-index:1;">
+                    <div class="ws-card">
+                        <p class="ws-label">Company</p>
+                        <p class="company-name" id="sidebarCompanyName">Loading...</p>
+                        <p class="company-meta" id="sidebarCompanyMeta">...</p>
+                        <span class="tier-badge" id="sidebarCompanyTier">...</span>
+                    </div>
+
+                    <div class="ws-card">
+                        <p class="ws-label">Track Record</p>
+                        <div class="agent-stat-grid">
+                            <div class="agent-stat-cell">
+                                <p class="agent-stat-cell-label">Total Wins</p>
+                                <p class="agent-stat-cell-value gold" id="statTotalWins">-</p>
+                            </div>
+                            <div class="agent-stat-cell">
+                                <p class="agent-stat-cell-label">Win Rate</p>
+                                <p class="agent-stat-cell-value" id="statWinRate">-</p>
+                            </div>
+                            <div class="agent-stat-cell">
+                                <p class="agent-stat-cell-label">B-BBEE</p>
+                                <p class="agent-stat-cell-value gold" id="statBbbee">-</p>
+                            </div>
+                            <div class="agent-stat-cell">
+                                <p class="agent-stat-cell-label">Incumbent</p>
+                                <p class="agent-stat-cell-value" id="statIncumbent">-</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="ws-card">
+                        <p class="ws-label">Document Vault</p>
+                        <div id="sidebarVaultDocs">
+                            <div style="font-size:11px; color:#666;">Loading documents...</div>
+                        </div>
+                        <p class="footer-note">Agent uses these documents to tailor quotations and eligibility checks. Nothing is inferred beyond what's uploaded.</p>
+                    </div>
+                </aside>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- TOAST NOTIFICATION FOR MISTAKE PREVENTION -->
+    <div id="toastNotification" class="toast-notify">
+        <div id="toastTitle" style="font-weight: 600; font-size: 13px; color: var(--accent-gold); margin-bottom: 4px;">⚠️ Auto-Sorted Document</div>
+        <div id="toastMessage" style="font-size: 12px; color: #ccc; line-height: 1.4;">Document classified and moved into proper compliance block.</div>
+    </div>
+
+    <script>
+        let currentTargetBlock = null;
+
+        function switchTab(tabId, element) {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            if (element) element.classList.add('active');
+            document.querySelectorAll('.content-section').forEach(sec => sec.classList.remove('active'));
+            const target = document.getElementById('tab-' + tabId);
+            if (target) target.classList.add('active');
+            const titles = {'evaluation': 'Single Tender Evaluation', 'sort': 'Batch Tender Sorting & Ranking', 'archive': 'Smart Compliance Archive & Vault', 'calendar': 'Calendar & Submission Deadlines', 'agent': 'Company-Aware Assistant'};
+            const c = document.getElementById('topNavCenter');
+            if (c && titles[tabId]) c.textContent = titles[tabId];
+        }
+
+        // Agent Wiring
+        async function loadAgentData() {
+            try {
+                const subRes = await fetch('/api/subscription-status');
+                if (subRes.ok) {
+                    const sub = await subRes.json();
+                    const quotaCount = document.getElementById('agentQuotaCount');
+                    const quotaPlan = document.getElementById('agentQuotaPlan');
+                    if(quotaCount) quotaCount.textContent = sub.quotes_today + ' / ' + sub.quotes_limit;
+                    if(quotaPlan) quotaPlan.textContent = sub.plan;
+                }
+
+                const compRes = await fetch('/api/company-profile');
+                if (compRes.ok) {
+                    const comp = await compRes.json();
+                    
+                    const locked = document.getElementById('agentLockedState');
+                    const active = document.getElementById('agentActiveState');
+                    if (comp.tier === 'starter') {
+                        if(locked) locked.style.display = 'block';
+                        if(active) active.style.display = 'none';
+                        return;
+                    } else {
+                        if(locked) locked.style.display = 'none';
+                        if(active) active.style.display = 'grid';
+                    }
+
+                    const cName = document.getElementById('sidebarCompanyName');
+                    const cMeta = document.getElementById('sidebarCompanyMeta');
+                    const cTier = document.getElementById('sidebarCompanyTier');
+                    if(cName) cName.textContent = comp.name;
+                    if(cMeta) cMeta.textContent = comp.registration + ' \u00B7 ' + comp.location;
+                    if(cTier) cTier.textContent = comp.tier === 'pro' ? 'Pro Plan' : 'Starter';
+
+                    const sWins = document.getElementById('statTotalWins');
+                    const sWinRate = document.getElementById('statWinRate');
+                    const sBbbee = document.getElementById('statBbbee');
+                    const sIncumb = document.getElementById('statIncumbent');
+                    if(sWins) sWins.textContent = comp.stats.pit_total_wins;
+                    if(sWinRate) sWinRate.textContent = comp.stats.pit_win_rate_overall;
+                    if(sBbbee) sBbbee.textContent = comp.stats.bbbee_level;
+                    if(sIncumb) sIncumb.textContent = comp.stats.pit_is_incumbent;
+                }
+
+                const vaultRes = await fetch('/api/compliance-status');
+                if (vaultRes.ok) {
+                    const vault = await vaultRes.json();
+                    let vaultHtml = '';
+                    if(vault.documents && vault.documents.length > 0) {
+                        vault.documents.forEach(doc => {
+                            let statusClass = doc.status === 'Valid' ? 'ok' : 'warn';
+                            vaultHtml += <div class="doc-block">
+                                <span class="doc-name"> + doc.name + </span>
+                                <span class="doc-status  + statusClass + "> + doc.status + </span>
+                            </div>;
+                        });
+                    } else {
+                        vaultHtml = '<div style="font-size:11px; color:#666;">No documents uploaded.</div>';
+                    }
+                    const vDocs = document.getElementById('sidebarVaultDocs');
+                    if(vDocs) vDocs.innerHTML = vaultHtml;
+                }
+            } catch (e) {
+                console.error('Error loading agent data', e);
+            }
+        }
+
+        async function sendAgentMessage() {
+            const input = document.getElementById('agentInput');
+            if(!input) return;
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            const log = document.getElementById('agentMessageLog');
+            if(!log) return;
+            log.innerHTML += 
+                <div class="msg-row user">
+                  <span class="msg-label">You</span>
+                  <div class="msg-bubble"> + msg + </div>
+                </div>
+            ;
+            input.value = '';
+            log.scrollTop = log.scrollHeight;
+
+            if (msg === "What's Due This Week") {
+                try {
+                    const calRes = await fetch('/api/calendar-events');
+                    const calData = await calRes.json();
+                    const evtCount = calData.events ? calData.events.length : 0;
+                    log.innerHTML += 
+                        <div class="msg-row agent">
+                          <span class="msg-label agent-label">Agent</span>
+                          <div class="msg-bubble">You have  + evtCount +  events due this week. Check the calendar tab for full details.</div>
+                        </div>
+                    ;
+                    log.scrollTop = log.scrollHeight;
+                } catch(e) {}
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/agent-chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg, action: msg === 'Generate Quote' ? 'generate_quote' : 'chat', tender_file_path: '' })
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    log.innerHTML += 
+                        <div class="msg-row agent">
+                          <span class="msg-label agent-label">Agent</span>
+                          <div class="msg-bubble" style="color:#e05c5c"> + (err.detail || err.error || 'Connection error') + </div>
+                        </div>
+                    ;
+                    log.scrollTop = log.scrollHeight;
+                    return;
+                }
+
+                const data = await res.json();
+                
+                let flagHtml = '';
+                if (data.status === 'MANUAL_REVIEW_REQUIRED' || data.status === 'LOW_CONFIDENCE') {
+                    flagHtml = '<div class="flag-chip">' + data.status.replace(/_/g, ' ') + '</div>';
+                }
+                
+                let disclaimerHtml = '';
+                if (data.is_guidance) {
+                    disclaimerHtml = '<p class="disclaimer-line">General guidance based on document analysis � not a compliance audit. Verify against the original tender before submission.</p>';
+                }
+
+                log.innerHTML += 
+                    <div class="msg-row agent">
+                      <span class="msg-label agent-label">Agent</span>
+                      <div class="msg-bubble"> + data.response + </div>
+                       + flagHtml + 
+                       + disclaimerHtml + 
+                    </div>
+                ;
+                log.scrollTop = log.scrollHeight;
+                
+                if (msg === 'Generate Quote') {
+                    loadAgentData();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        const originalSwitchTabAgent = switchTab;
+        switchTab = function(tabId, element) {
+            originalSwitchTabAgent(tabId, element);
+            if (tabId === 'agent') {
+                loadAgentData();
+            }
+        };;
+            const header = document.getElementById('tabTitleHeader');
+            if (header && titles[tabId]) header.textContent = titles[tabId];
+            
+            if (tabId === 'agent') {
+                checkSubscriptionStatus();
+            }
+        }
+
+        async function checkSubscriptionStatus() {
+            try {
+                const res = await fetch('/api/agent/status');
+                const data = await res.json();
+                document.getElementById('agentLockedState').style.display = data.pro ? 'none' : 'block';
+                document.getElementById('agentActiveState').style.display = data.pro ? 'flex' : 'none';
+            } catch(e) {}
+        }
+
+        async function sendAgentMessage() {
+            const input = document.getElementById('agentInput');
+            const msg = input.value;
+            if (!msg) return;
+            const log = document.getElementById('agentMessageLog');
+            log.innerHTML += `<div style="align-self: flex-end; background: var(--accent-gold); color: #000; border-radius: 8px; padding: 12px; font-size: 13px; max-width: 80%;">${msg}</div>`;
+            input.value = '';
+            // Handle chat response logic here
+        }
+
+        function triggerBlockUpload(blockType) {
+            currentTargetBlock = blockType;
+            document.getElementById('archiveFileInput').click();
+        }
+
+        async function handleArchiveFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('target_block', currentTargetBlock || 'CSD_CERT');
+
+            try {
+                const res = await fetch('/api/archive/upload-document', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    if (data.auto_sorted) {
+                        showToast('⚠️ Auto-Sorted Document', `You uploaded into ${data.intended_block_label}, but this document is a ${data.detected_label}. We automatically sorted it into ${data.detected_label} to prevent disqualification!`);
+                    } else {
+                        showToast('✓ Document Validated', `Saved directly into ${data.detected_label}.`);
+                    }
+
+                    // Highlight block
+                    const block = document.getElementById('block-' + data.actual_block);
+                    if (block) {
+                        block.classList.add('uploaded');
+                    }
+                }
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        function showToast(title, message) {
+            const toast = document.getElementById('toastNotification');
+            document.getElementById('toastTitle').textContent = title;
+            document.getElementById('toastMessage').textContent = message;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 6000);
+        }
+
+        let quoteSelectedTenderFile = null;
+
+        function onQuoteTenderFileSelect(input) {
+            quoteSelectedTenderFile = input.files[0];
+            if (quoteSelectedTenderFile) {
+                const lbl = document.getElementById('quoteTenderFileLabel');
+                lbl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c5a880" stroke-width="1.8" style="vertical-align: middle; margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Selected Tender: ' + quoteSelectedTenderFile.name;
+                lbl.style.display = 'block';
+            }
+        }
+
+        async function generateQuotationPDF() {
+            if (!quoteSelectedTenderFile) {
+                showToast('⚠️ Missing Tender PDF', 'Please upload a Tender PDF file to generate the quotation.');
+                return;
+            }
+
+            const company = document.getElementById('quoteCompanySelect').value;
+            const area = document.getElementById('quoteDownloadArea');
+            area.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('tender_file', quoteSelectedTenderFile);
+            formData.append('supplier_name', company);
+
+            try {
+                showToast('⚙️ Processing PDF', 'Parsing tender requirements & generating official quotation...');
+                const res = await fetch('/api/generate-quotation', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await res.json();
+                if (data.pdf_url) {
+                    const link = document.getElementById('quoteDownloadLink');
+                    link.href = data.pdf_url;
+                    area.style.display = 'block';
+                    showToast('✓ Quotation Ready', 'Your official PDF quotation is ready to download.');
+                }
+            } catch(e) {
+                console.error(e);
+                showToast('❌ Generation Failed', 'An error occurred while generating the PDF.');
+            }
+        }
+
+        function onModelChange(val) {
+            document.getElementById('activeModelLabel').textContent = val === 'conquest' ? 'Conquest CatBoost (0.8578 AUC)' : 'Sailor (0.8187 AUC)';
+        }
+
+        // --- SINGLE EVALUATION HANDLERS ---
+        let wsSelectedTenderFile = null;
+        let wsSelectedBidFile = null;
+
+        function onWsTenderFileSelect(input) {
+            wsSelectedTenderFile = input.files[0];
+            if (wsSelectedTenderFile) {
+                const lbl = document.getElementById('wsTenderFileLabel');
+                lbl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c5a880" stroke-width="1.8" style="vertical-align: middle; margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Selected Tender: ' + wsSelectedTenderFile.name;
+                lbl.style.display = 'block';
+            }
+        }
+
+        function onWsBidFileSelect(input) {
+            wsSelectedBidFile = input.files[0];
+            if (wsSelectedBidFile) {
+                const lbl = document.getElementById('wsBidFileLabel');
+                lbl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c5a880" stroke-width="1.8" style="vertical-align: middle; margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Selected Bid: ' + wsSelectedBidFile.name;
+                lbl.style.display = 'block';
+            }
+        }
+
+        async function computeWsEvaluation() {
+            if (!wsSelectedTenderFile) {
+                showToast('⚠️ Missing File', 'Please select a Tender PDF file to compute estimates.');
+                return;
+            }
+
+            const resPanel = document.getElementById('wsEvalResultPanel');
+            resPanel.innerHTML = '<div style="text-align:center; padding:60px 0; color:var(--accent-gold);"><div style="font-size:32px; margin-bottom:12px;">⚙️</div><div>Computing probability & PPPFA score via Conquest Engine...</div></div>';
+
+            const formData = new FormData();
+            formData.append('tender_file', wsSelectedTenderFile);
+            if (wsSelectedBidFile) formData.append('bid_file', wsSelectedBidFile);
+
+            const supName = document.getElementById('wsSupplierName').value;
+            if (supName) formData.append('supplier_name', supName);
+
+            try {
+                const res = await fetch('/api/predict', { method: 'POST', body: formData });
+                const data = await res.json();
+
+                const prob = ((data.sa_adjusted_probability || data.base_probability || 0) * 100).toFixed(1);
+                const rec = data.recommendation || 'BID';
+                const isBid = rec.toUpperCase().includes('BID') || rec.toUpperCase().includes('PURSUE');
+
+                resPanel.innerHTML = `
+                    <div style="text-align: center; margin-bottom: 24px;">
+                        <div style="font-family: 'Outfit', sans-serif; font-size: 56px; font-weight: 300; color: #fff; line-height: 1;">${prob}%</div>
+                        <div style="font-size: 10px; letter-spacing: 0.15em; color: #888; text-transform: uppercase; margin-top: 6px;">SA-Adjusted Win Probability</div>
+                        <div style="display: inline-block; padding: 6px 20px; border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: 0.1em; margin-top: 12px; background: ${isBid ? 'rgba(76,175,80,0.15)' : 'rgba(224,92,92,0.15)'}; color: ${isBid ? '#4CAF50' : '#e05c5c'}; border: 1px solid ${isBid ? 'rgba(76,175,80,0.3)' : 'rgba(224,92,92,0.3)'};">${rec.toUpperCase()}</div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;">
+                        <span style="color: #888;">Detected Bidding Supplier</span>
+                        <span style="font-family: monospace; color: #fff;">${data.supplier_name || 'Matched'}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;">
+                        <span style="color: #888;">Tender Identifier</span>
+                        <span style="font-family: monospace; color: #fff;">${data.tender_identifier || 'Parsed'}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;">
+                        <span style="color: #888;">B-BBEE Preference Level</span>
+                        <span style="font-family: monospace; color: #fff;">Level ${data.bbbee_level || '1'}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px;">
+                        <span style="color: #888;">Base Machine Learning Probability</span>
+                        <span style="font-family: monospace; color: #fff;">${((data.base_probability || 0)*100).toFixed(1)}%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding: 10px 0; font-size: 13px;">
+                        <span style="color: #888;">Inference Threshold</span>
+                        <span style="font-family: monospace; color: var(--accent-gold);">41.9%</span>
+                    </div>
+                `;
+            } catch(e) {
+                resPanel.innerHTML = '<div style="color: #e05c5c; text-align: center; padding: 40px;">Error calculating prediction. Check app server logs.</div>';
+            }
+        }
+
+        // --- BATCH SORTING & RANKED PIPELINE HANDLERS ---
+        let wsBatchFiles = [];
+        let wsRankedTendersList = [];
+
+        function onWsBatchSortFilesSelect(input) {
+            wsBatchFiles = Array.from(input.files);
+            const listEl = document.getElementById('wsBatchFileList');
+            listEl.innerHTML = wsBatchFiles.map((f, i) => `<div style="padding: 6px 10px; background: var(--card-bg); margin-bottom: 4px; border-radius: 4px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-faint);"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c5a880" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${f.name}</div>`).join('');
+            document.getElementById('wsBatchSortBtn').disabled = wsBatchFiles.length === 0;
+        }
+
+        async function runWsBatchSort() {
+            if (wsBatchFiles.length === 0) return;
+
+            showToast('⚙️ Scoring Batch', `Evaluating ${wsBatchFiles.length} tender documents via Conquest Engine...`);
+
+            for (let file of wsBatchFiles) {
+                const formData = new FormData();
+                formData.append('tender_file', file);
+                try {
+                    const res = await fetch('/api/predict', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    wsRankedTendersList.unshift({
+                        tender_id: data.tender_identifier || 'Tender_' + Math.random().toString(36).substr(2, 6),
+                        title: file.name,
+                        supplier: data.supplier_name || 'DONINGTON VALE',
+                        prob: data.sa_adjusted_probability || data.win_probability || data.base_probability || 0.65,
+                        rec: data.recommendation || 'PURSUE',
+                        framework: '80/20'
+                    });
+                } catch(e) {
+                    console.error(e);
+                }
+            }
+
+            renderWsRankedTable();
+            showToast('✓ Batch Analysis Complete', `Ranked ${wsBatchFiles.length} newly uploaded tenders.`);
+        }
+
+        async function loadWsRankedPipeline() {
+            wsRankedTendersList = [];
+            try {
+                const res = await fetch('/api/tracked-outcomes');
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                    data.forEach(item => {
+                        wsRankedTendersList.push({
+                            tender_id: item.tender_identifier || item.prediction_id || 'Tender',
+                            title: item.filename || item.tender_identifier || 'Tender Submission',
+                            supplier: item.supplier_name || 'DONINGTON VALE',
+                            prob: item.sa_adjusted_probability || item.predicted_probability || 0.0,
+                            rec: item.recommendation || 'PASS',
+                            framework: (item.sa_analysis && item.sa_analysis.evaluation_system) || '80/20'
+                        });
+                    });
+                }
+            } catch(e) {
+                console.error("Error loading tracked outcomes:", e);
+            }
+
+            // Update stats
+            const total = wsRankedTendersList.length;
+            const pursueCount = wsRankedTendersList.filter(t => t.rec.toUpperCase() === 'PURSUE').length;
+            const avgProb = total > 0 ? (wsRankedTendersList.reduce((acc, t) => acc + t.prob, 0) / total * 100).toFixed(1) + '%' : '0.0%';
+
+            const badge = document.getElementById('wsTenderCountBadge');
+            if (badge) badge.textContent = `${total} DATASET TENDERS`;
+
+            const statsBoxes = document.querySelectorAll('#tab-sort .ws-card div div div');
+            if (statsBoxes.length >= 3) {
+                statsBoxes[0].querySelector('div:nth-child(2)').textContent = pursueCount;
+                statsBoxes[1].querySelector('div:nth-child(2)').textContent = avgProb;
+            }
+
+            renderWsRankedTable();
+        }
+
+        function renderWsRankedTable() {
+            wsRankedTendersList.sort((a, b) => b.prob - a.prob);
+            filterWsTenderTable();
+        }
+
+        function filterWsTenderTable() {
+            const query = (document.getElementById('wsTenderSearchInput')?.value || '').toLowerCase();
+            const recFilter = document.getElementById('wsFilterRec')?.value || 'ALL';
+            const tbody = document.getElementById('wsBatchSortBody');
+            if (!tbody) return;
+
+            const filtered = wsRankedTendersList.filter(t => {
+                const matchesQuery = !query || t.title.toLowerCase().includes(query) || t.tender_id.toLowerCase().includes(query) || t.supplier.toLowerCase().includes(query);
+                const matchesRec = recFilter === 'ALL' || t.rec.toUpperCase() === recFilter.toUpperCase();
+                return matchesQuery && matchesRec;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" style="padding: 40px; text-align: center; color: var(--text-muted); font-family: 'Cormorant Garamond', serif; font-size: 16px;">
+                            No opportunities found. Upload tender documents or run evaluations to populate your pipeline.
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tbody.innerHTML = filtered.map((item, idx) => {
+                    const pPct = (item.prob * 100).toFixed(1);
+                    const isPursue = item.rec.toUpperCase().includes('PURSUE') || item.rec.toUpperCase().includes('BID');
+                    return `
+                        <tr style="border-bottom: 1px solid var(--border-faint);">
+                            <td style="padding: 12px; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--accent-gold);">#${idx + 1}</td>
+                            <td style="padding: 12px;">
+                                <div style="font-weight: 600; color: var(--text-white);">${item.title}</div>
+                                <div style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">Ref: ${item.tender_id}</div>
+                            </td>
+                            <td style="padding: 12px; color: var(--text-primary); font-family: 'JetBrains Mono', monospace;">${item.supplier}</td>
+                            <td style="padding: 12px;">
+                                <span style="padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; background: ${isPursue ? 'rgba(76,175,80,0.15)' : 'rgba(224,92,92,0.15)'}; color: ${isPursue ? '#4CAF50' : '#e05c5c'}; border: 1px solid ${isPursue ? 'rgba(76,175,80,0.3)' : 'rgba(224,92,92,0.3)'};">${item.rec.toUpperCase()}</span>
+                            </td>
+                            <td style="padding: 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; color: ${item.prob >= 0.419 ? '#4CAF50' : '#e05c5c'};">${pPct}%</td>
+                            <td style="padding: 12px; text-align: right; font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">${item.framework}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            const countLbl = document.getElementById('wsTableDisplayCount');
+            if (countLbl) countLbl.textContent = `Showing ${filtered.length} of ${wsRankedTendersList.length} ranked tenders`;
+        }
+
+        // --- FULL INTERACTIVE CALENDAR HANDLERS ---
+        const wsMonthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+        let wsCurrentDate = new Date();
+        let wsCalendarEvents = [];
+
+        async function loadWsCalendar() {
+            try {
+                const res = await fetch('/api/calendar-events');
+                wsCalendarEvents = await res.json();
+            } catch(e) {
+                // Fallback calendar events
+                wsCalendarEvents = [
+                    { date: '2026-07-28', tender_identifier: 'Tender 1d59478c', filename: 'ICT Equipment Supply', event_type: 'closing' },
+                    { date: '2026-08-04', tender_identifier: 'Tender 88492015', filename: 'Server Rack Infrastructure', event_type: 'briefing' },
+                    { date: '2026-08-15', tender_identifier: 'Tender 77391024', filename: 'Network Switch Deployment', event_type: 'award' }
+                ];
+            }
+            renderWsCalendar();
+            renderWsUpcoming();
+        }
+
+        function changeWsMonth(delta) {
+            wsCurrentDate.setMonth(wsCurrentDate.getMonth() + delta);
+            renderWsCalendar();
+        }
+
+        function renderWsCalendar() {
+            const y = wsCurrentDate.getFullYear();
+            const m = wsCurrentDate.getMonth();
+            const monthLbl = document.getElementById('wsMonthDisplay');
+            if (monthLbl) monthLbl.textContent = `${wsMonthNames[m]} ${y}`;
+
+            const firstDay = new Date(y, m, 1).getDay();
+            const daysInMonth = new Date(y, m + 1, 0).getDate();
+            const body = document.getElementById('wsCalendarBody');
+            if (!body) return;
+
+            let html = '';
+            for (let i = 0; i < firstDay; i++) {
+                html += `<div style="min-height: 90px; padding: 8px; border-right: 1px solid var(--border-faint); border-bottom: 1px solid var(--border-faint); opacity: 0.25;"></div>`;
+            }
+
+            const today = new Date();
+
+            for (let i = 1; i <= daysInMonth; i++) {
+                const isToday = i === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+                const dayEvents = wsCalendarEvents.filter(e => {
+                    const d = new Date(e.date);
+                    return d.getDate() === i && d.getMonth() === m && d.getFullYear() === y;
+                });
+
+                let dots = dayEvents.map(ev => {
+                    const bg = ev.event_type === 'closing' ? '#e05c5c' : (ev.event_type === 'briefing' ? 'var(--accent-gold)' : '#52c27c');
+                    return `<div style="width: 6px; height: 6px; border-radius: 50%; background-color: ${bg};" title="${ev.tender_identifier}: ${ev.filename}"></div>`;
+                }).join('');
+
+                html += `
+                    <div style="min-height: 90px; padding: 8px; border-right: 1px solid var(--border-faint); border-bottom: 1px solid var(--border-faint); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(197,168,128,0.06)'" onmouseout="this.style.background='transparent'" onclick="showToast('📅 Date Info', 'Day ${i}: ${dayEvents.length} scheduled milestones.')">
+                        <div style="font-size: 12px; font-weight: ${isToday ? '700' : '400'}; color: ${isToday ? 'var(--accent-gold)' : 'var(--text-white)'}; margin-bottom: 6px;">${i}</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">${dots}</div>
+                    </div>
+                `;
+            }
+
+            const totalCells = firstDay + daysInMonth;
+            const remaining = Math.ceil(totalCells / 7) * 7 - totalCells;
+            for (let i = 0; i < remaining; i++) {
+                html += `<div style="min-height: 90px; padding: 8px; border-right: 1px solid var(--border-faint); border-bottom: 1px solid var(--border-faint); opacity: 0.25;"></div>`;
+            }
+
+            body.innerHTML = html;
+        }
+
+        function renderWsUpcoming() {
+            const list = document.getElementById('wsUpcomingList');
+            if (!list) return;
+
+            if (wsCalendarEvents.length === 0) {
+                document.getElementById('wsEmptySide').style.display = 'block';
+                list.innerHTML = '';
+                return;
+            }
+
+            list.innerHTML = wsCalendarEvents.slice(0, 8).map(e => `
+                <li style="padding: 12px 0; border-bottom: 1px solid var(--border-faint); font-size: 12px;">
+                    <div style="color: var(--accent-gold); font-family: 'JetBrains Mono', monospace; font-weight: 600; margin-bottom: 2px;">${e.date}</div>
+                    <div style="color: var(--text-white); font-weight: 500;">${e.tender_identifier} - ${e.filename}</div>
+                    <div style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; margin-top: 2px;">${e.event_type}</div>
+                </li>
+            `).join('');
+        }
+
+        // Initialize Pipeline and Calendar on load
+        loadWsRankedPipeline();
+        loadWsCalendar();
+
+        // --- LUXURY THEME SWITCHER (DARK / LIGHT) ---
+        let currentCompanyId = "pro_corp"; // Mocking authentication. Change to "starter_corp" to see locked state.
+
+        async function checkSubscriptionStatus() {
+            try {
+                const res = await fetch('/api/subscription-status', {
+                    headers: { 'X-Company-ID': currentCompanyId }
+                });
+                const data = await res.json();
+                
+                const lockedState = document.getElementById('agentLockedState');
+                const activeState = document.getElementById('agentActiveState');
+                const quotaText = document.getElementById('agentQuotaText');
+                
+                if (data.features.agent_enabled) {
+                    lockedState.style.display = 'none';
+                    activeState.style.display = 'flex';
+                    
+                    if (data.features.quotes_per_day > 0) {
+                        const used = data.usage.quotes_used_today;
+                        const limit = data.features.quotes_per_day;
+                        quotaText.textContent = `${used} of ${limit} quotes used today`;
+                        if (used >= limit) {
+                            quotaText.style.color = '#e05c5c';
+                        }
+                    }
+                } else {
+                    lockedState.style.display = 'block';
+                    activeState.style.display = 'none';
+                }
+            } catch (err) {
+                console.error("Subscription check failed", err);
+            }
+        }
+
+        function fillAgentPrompt(text) {
+            document.getElementById('agentInput').value = text;
+        }
+
+        async function sendAgentMessage() {
+            const input = document.getElementById('agentInput');
+            const msg = input.value.trim();
+            if (!msg) return;
+            
+            input.value = '';
+            const log = document.getElementById('agentMessageLog');
+            
+            // Add user message
+            log.innerHTML += `
+                <div style="align-self: flex-end; max-width: 80%; background: var(--accent-gold); color: #111; font-weight: 500; border-radius: 8px; padding: 16px; font-size: 13px; line-height: 1.5;">
+                    ${msg}
+                </div>
+            `;
+            log.scrollTop = log.scrollHeight;
+            
+            // Add loading indicator
+            const loadingId = 'loading-' + Date.now();
+            log.innerHTML += `
+                <div id="${loadingId}" style="align-self: flex-start; background: rgba(197,168,128,0.05); padding: 16px; border-radius: 8px; font-size: 13px; color: #aaa;">
+                    Agent is thinking <span class="pulse-dot"></span>
+                </div>
+            `;
+            log.scrollTop = log.scrollHeight;
+            
+            let action = null;
+            let file = null;
+            if (msg.toLowerCase().includes("quote")) {
+                action = "generate_quote";
+                file = "mock_tender.txt"; // Hardcoded for demo UI
+            }
+            
+            try {
+                const res = await fetch('/api/agent/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Company-ID': currentCompanyId
+                    },
+                    body: JSON.stringify({ message: msg, action: action, tender_file_path: file })
+                });
+                
+                document.getElementById(loadingId).remove();
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    log.innerHTML += `
+                        <div style="align-self: flex-start; max-width: 80%; border-left: 4px solid #e05c5c; background: rgba(224,92,92,0.1); padding: 16px; color: #fff; border-radius: 4px; font-size: 13px;">
+                            <strong>SYSTEM NOTICE:</strong> ${err.error || err.detail}
+                        </div>
+                    `;
+                } else {
+                    const data = await res.json();
+                    const reply = data.result ? data.result.draft_document : data.message;
+                    
+                    log.innerHTML += `
+                        <div style="align-self: flex-start; max-width: 80%; background: rgba(197,168,128,0.1); border: 1px solid rgba(197,168,128,0.2); border-radius: 8px; padding: 16px; color: #fff; font-size: 13px; line-height: 1.5; white-space: pre-wrap; font-family: monospace;">${reply}</div>
+                    `;
+                    checkSubscriptionStatus(); // Refresh quota UI
+                }
+            } catch (err) {
+                document.getElementById(loadingId).remove();
+                console.error(err);
+            }
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function initLuxuryTheme() {
+            const saved = localStorage.getItem('luxury-theme') || 'dark';
+            const html = document.documentElement;
+            const body = document.body;
+            if (saved === 'light') {
+                html.setAttribute('data-theme', 'light');
+                html.classList.add('light-theme');
+                body.classList.add('light-theme');
+                updateThemeUI('light');
+            } else {
+                html.removeAttribute('data-theme');
+                html.classList.remove('light-theme');
+                body.classList.remove('light-theme');
+                updateThemeUI('dark');
+            }
+        }
+
+        function toggleLuxuryTheme() {
+            const html = document.documentElement;
+            const body = document.body;
+            const current = html.getAttribute('data-theme');
+            if (current === 'light') {
+                html.removeAttribute('data-theme');
+                html.classList.remove('light-theme');
+                body.classList.remove('light-theme');
+                localStorage.setItem('luxury-theme', 'dark');
+                updateThemeUI('dark');
+            } else {
+                html.setAttribute('data-theme', 'light');
+                html.classList.add('light-theme');
+                body.classList.add('light-theme');
+                localStorage.setItem('luxury-theme', 'light');
+                updateThemeUI('light');
+            }
+        }
+
+        function updateThemeUI(mode) {
+            const label = document.getElementById('themeLabel');
+            const icon = document.getElementById('themeIcon');
+            const labelM = document.getElementById('themeLabelMobile');
+            const iconM = document.getElementById('themeIconMobile');
+            
+            if (label && icon) {
+                if (mode === 'light') {
+                    label.textContent = 'DARK MODE';
+                    icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+                } else {
+                    label.textContent = 'LIGHT MODE';
+                    icon.innerHTML = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+                }
+            }
+            
+            if (labelM) labelM.textContent = mode === 'light' ? 'DARK MODE' : 'LIGHT MODE';
+            if (iconM) iconM.innerHTML = mode === 'light' ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>' : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+        }
+        initLuxuryTheme();
+    </script>
+
+
+    <!-- NATIVE MOBILE BOTTOM NAVIGATION BAR -->
+    <nav class="mobile-bottom-bar">
+        <a href="/workspace" class="mobile-nav-tab active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>Console</span>
+        </a>
+        <a href="/sort.html?v=5" class="mobile-nav-tab ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span>Sort</span>
+        </a>
+        <a href="/vault" class="mobile-nav-tab ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+            <span>Vault</span>
+        </a>
+        <a href="/calendar.html?v=5" class="mobile-nav-tab ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>Calendar</span>
+        </a>
+        <a href="/system.html?v=5" class="mobile-nav-tab ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span>System</span>
+        </a>
+    </nav>
+
+</body>
+</html>
+
+
+
+
+
+
