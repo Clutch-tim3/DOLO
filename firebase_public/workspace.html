@@ -1591,8 +1591,6 @@ exportCsvBtn.addEventListener('click', () => {
         }
 
         function renderSystemData(data) {
-                
-                function renderSystemData(data) {
                 if(!data) return;
                 document.getElementById('model_version').textContent = data.model_version;
                 document.getElementById('last_trained_at').textContent = data.last_trained_at.includes('T') ? data.last_trained_at.split('T')[0] : data.last_trained_at;
@@ -1649,9 +1647,6 @@ exportCsvBtn.addEventListener('click', () => {
                     sources.innerHTML += `<span class="data-tag">${s}</span>`;
                 });
             }
-                
-            } catch(e) { console.error(e); }
-        }
         
         window.addEventListener('DOMContentLoaded', () => {
             const selector = document.getElementById('modelSelector');
@@ -2372,72 +2367,7 @@ exportCsvBtn.addEventListener('click', () => {
             document.getElementById('agentInput').value = text;
         }
 
-        async function sendAgentMessage() {
-            const input = document.getElementById('agentInput');
-            const msg = input.value.trim();
-            if (!msg) return;
-            
-            input.value = '';
-            const log = document.getElementById('agentMessageLog');
-            
-            // Add user message
-            log.innerHTML += `
-                <div style="align-self: flex-end; max-width: 80%; background: var(--accent-gold); color: #111; font-weight: 500; border-radius: 8px; padding: 16px; font-size: 13px; line-height: 1.5;">
-                    ${msg}
-                </div>
-            `;
-            log.scrollTop = log.scrollHeight;
-            
-            // Add loading indicator
-            const loadingId = 'loading-' + Date.now();
-            log.innerHTML += `
-                <div id="${loadingId}" style="align-self: flex-start; background: rgba(197,168,128,0.05); padding: 16px; border-radius: 8px; font-size: 13px; color: #aaa;">
-                    Agent is thinking <span class="pulse-dot"></span>
-                </div>
-            `;
-            log.scrollTop = log.scrollHeight;
-            
-            let action = null;
-            let file = null;
-            if (msg.toLowerCase().includes("quote")) {
-                action = "generate_quote";
-                file = "mock_tender.txt"; // Hardcoded for demo UI
-            }
-            
-            try {
-                const res = await fetch('/api/agent/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Company-ID': currentCompanyId
-                    },
-                    body: JSON.stringify({ message: msg, action: action, tender_file_path: file })
-                });
-                
-                document.getElementById(loadingId).remove();
-                
-                if (!res.ok) {
-                    const err = await res.json();
-                    log.innerHTML += `
-                        <div style="align-self: flex-start; max-width: 80%; border-left: 4px solid #e05c5c; background: rgba(224,92,92,0.1); padding: 16px; color: #fff; border-radius: 4px; font-size: 13px;">
-                            <strong>SYSTEM NOTICE:</strong> ${err.error || err.detail}
-                        </div>
-                    `;
-                } else {
-                    const data = await res.json();
-                    const reply = data.result ? data.result.draft_document : data.message;
-                    
-                    log.innerHTML += `
-                        <div style="align-self: flex-start; max-width: 80%; background: rgba(197,168,128,0.1); border: 1px solid rgba(197,168,128,0.2); border-radius: 8px; padding: 16px; color: #fff; font-size: 13px; line-height: 1.5; white-space: pre-wrap; font-family: monospace;">${reply}</div>
-                    `;
-                    checkSubscriptionStatus(); // Refresh quota UI
-                }
-            } catch (err) {
-                document.getElementById(loadingId).remove();
-                console.error(err);
-            }
-            log.scrollTop = log.scrollHeight;
-        }
+        
 
         function initLuxuryTheme() {
             const saved = localStorage.getItem('luxury-theme') || 'dark';
