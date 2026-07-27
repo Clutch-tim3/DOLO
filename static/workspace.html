@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="static/style.css?v=16.0">
+    <link rel="stylesheet" href="static/style.css?v=17.0">
     <style>
         body { margin: 0; padding: 0; background-color: var(--bg-color, #000000); color: var(--text-primary, #e4e4e7); font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
         
@@ -1772,16 +1772,16 @@ exportCsvBtn.addEventListener('click', () => {
         // Agent Wiring
         async function loadAgentData() {
             try {
-                const subRes = await fetch('/api/subscription-status');
+                const subRes = await fetch('/api/subscription-status', { headers: { 'X-Company-ID': 'pro_corp' } });
                 if (subRes.ok) {
                     const sub = await subRes.json();
                     const quotaCount = document.getElementById('agentQuotaCount');
                     const quotaPlan = document.getElementById('agentQuotaPlan');
-                    if(quotaCount) quotaCount.textContent = sub.quotes_today + ' / ' + sub.quotes_limit;
-                    if(quotaPlan) quotaPlan.textContent = sub.plan;
+                    if(quotaCount && sub.usage && sub.features) quotaCount.textContent = sub.usage.quotes_used_today + ' / ' + sub.features.quotes_per_day;
+                    if(quotaPlan) quotaPlan.textContent = sub.tier === 'pro' ? 'PRO PLAN' : 'STARTER';
                 }
 
-                const compRes = await fetch('/api/company-profile');
+                const compRes = await fetch('/api/company-profile', { headers: { 'X-Company-ID': 'pro_corp' } });
                 if (compRes.ok) {
                     const comp = await compRes.json();
                     
@@ -1870,7 +1870,7 @@ exportCsvBtn.addEventListener('click', () => {
             }
 
             try {
-                const res = await fetch('/api/agent-chat', {
+                const res = await fetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: msg, action: msg === 'Generate Quote' ? 'generate_quote' : 'chat', tender_file_path: '' })

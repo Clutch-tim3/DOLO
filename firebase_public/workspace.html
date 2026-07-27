@@ -1772,16 +1772,16 @@ exportCsvBtn.addEventListener('click', () => {
         // Agent Wiring
         async function loadAgentData() {
             try {
-                const subRes = await fetch('/api/subscription-status');
+                const subRes = await fetch('/api/subscription-status', { headers: { 'X-Company-ID': 'pro_corp' } });
                 if (subRes.ok) {
                     const sub = await subRes.json();
                     const quotaCount = document.getElementById('agentQuotaCount');
                     const quotaPlan = document.getElementById('agentQuotaPlan');
-                    if(quotaCount) quotaCount.textContent = sub.quotes_today + ' / ' + sub.quotes_limit;
-                    if(quotaPlan) quotaPlan.textContent = sub.plan;
+                    if(quotaCount && sub.usage && sub.features) quotaCount.textContent = sub.usage.quotes_used_today + ' / ' + sub.features.quotes_per_day;
+                    if(quotaPlan) quotaPlan.textContent = sub.tier === 'pro' ? 'PRO PLAN' : 'STARTER';
                 }
 
-                const compRes = await fetch('/api/company-profile');
+                const compRes = await fetch('/api/company-profile', { headers: { 'X-Company-ID': 'pro_corp' } });
                 if (compRes.ok) {
                     const comp = await compRes.json();
                     
