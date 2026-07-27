@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -192,6 +192,8 @@
         .item-table th { text-align: left; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #888; text-transform: uppercase; }
         .item-table td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
         /* Calendar UI Styles */
+        .main-column { flex: 3; }
+        .side-column { flex: 1; }
         .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
         .month-title { font-family: 'Outfit', sans-serif; font-size: 24px; color: var(--accent-gold); text-transform: uppercase; letter-spacing: 0.1em; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); border: 1px solid rgba(255,255,255,0.05); }
@@ -333,6 +335,46 @@
   body.light-theme .doc-status.ok { background: rgba(200,51,31,0.12) !important; }
   body.light-theme .bracket-btn.filled { background: var(--accent-gold); color: #fff; }
   body.light-theme .bracket-btn.filled:hover { opacity: 0.88; color: #fff; }
+
+        /* Sort Page Overrides (inline in console) */
+        #tab-sort #bulkSortPanel {
+            position: relative;
+            top: auto;
+            right: auto;
+            width: 100%;
+            height: auto;
+            transform: none;
+            display: block;
+            background: var(--card-bg, #000000);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            margin-bottom: 40px;
+        }
+        #tab-sort #bulkSortPanel .panel-container { padding: 40px; }
+        #tab-sort #bulkSortPanel .close-btn { display: none; }
+        #tab-sort #sortResultsSection { display: block !important; }
+        
+        /* Sort Light Mode Overrides */
+        body.light-theme #batchSummaryText,
+        body.light-theme .spec-label { color: var(--text-muted) !important; }
+        body.light-theme .card-title,
+        body.light-theme .card-tag { color: var(--text-primary) !important; }
+        body.light-theme #emptyBatchState { border-color: rgba(0,0,0,0.12) !important; }
+
+        /* Calendar Light Mode Overrides */
+        body.light-theme .day-cell { background: rgba(255,255,255,0.6); border-color: rgba(0,0,0,0.08); }
+        body.light-theme .weekday-header { color: var(--text-muted); border-bottom-color: rgba(0,0,0,0.08); }
+        body.light-theme .calendar-grid { border-color: rgba(0,0,0,0.08); }
+        body.light-theme .day-number { color: var(--text-muted); }
+        body.light-theme .upcoming-item { border-bottom-color: rgba(0,0,0,0.08); }
+        body.light-theme .upcoming-title { color: var(--text-primary); }
+
+        /* System Light Mode Overrides */
+        body.light-theme .stat-cell { background: var(--bg-color) !important; border-color: rgba(0,0,0,0.12) !important; }
+        body.light-theme .stat-grid { background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.12); }
+        body.light-theme .model-card { background: rgba(0,0,0,0.02); border-color: rgba(0,0,0,0.12); }
+
+        /* Console page-container override (no top padding needed inside tabs) */
+        .content-section .page-container { padding-top: 0; }
     </style>
 </head>
 <body>
@@ -679,7 +721,7 @@
             </div>
         </section>
 
-        <section class="hero-section">
+<section class="hero-section">
             <div class="hero-content" style="max-width: 800px; margin: 0 auto; text-align: center;">
                 <span class="category-label">BATCH PROCUREMENT PIPELINE</span>
                 <h1 class="hero-title" style="font-size: 48px; margin-top: 12px; margin-bottom: 24px;">SORT TENDERS.</h1>
@@ -721,14 +763,14 @@
                 <table class="specs-table" id="sortResultsTable" style="width:100%; text-align:left;">
                     <thead>
                         <tr>
-                            <th class="spec-label" style="cursor:pointer; width:60px;" onclick="sortBatchTable('rank')">Rank â–¾</th>
+                            <th class="spec-label" style="cursor:pointer; width:60px;" onclick="sortBatchTable('rank')">Rank ▾</th>
                             <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('filename')">Tender / Filename</th>
                             <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('recommendation')">Recommendation</th>
-                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('win_prob')">Win Probability â–¾</th>
+                            <th class="spec-label" style="cursor:pointer;" onclick="sortBatchTable('win_prob')">Win Probability ▾</th>
                             <th class="spec-label">SA-Adjusted</th>
                             <th class="spec-label">Position</th>
                             <th class="spec-label">Framework</th>
-                            <th class="spec-label">Actions</th>
+<th class="spec-label">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="sortResultsBody">
@@ -950,7 +992,7 @@ async function pollBatchStatus(job_id) {
                 else if(r.recommendation === 'DISQUALIFIED') disq++;
                 else pass++;
             });
-            batchSummaryText.textContent = `${data.total} tenders analyzed â€” ${pursue} PURSUE, ${pass} PASS, ${disq} DISQUALIFIED`;
+            batchSummaryText.textContent = `${data.total} tenders analyzed — ${pursue} PURSUE, ${pass} PASS, ${disq} DISQUALIFIED`;
             batchSummaryText.style.display = 'block';
             emptyBatchState.style.display = 'none';
             sortResultsTableWrapper.style.display = 'block';
@@ -974,9 +1016,9 @@ function sortBatchTable(column) {
     }
     
     const headers = document.querySelectorAll('#sortResultsTable th');
-    headers.forEach(h => h.innerHTML = h.innerHTML.replace(' â–¾', '').replace(' â–´', ''));
+    headers.forEach(h => h.innerHTML = h.innerHTML.replace(' ▾', '').replace(' ▴', ''));
     const targetTh = Array.from(headers).find(h => h.getAttribute('onclick').includes(column));
-    if(targetTh) targetTh.innerHTML += currentSortAsc ? ' â–´' : ' â–¾';
+    if(targetTh) targetTh.innerHTML += currentSortAsc ? ' ▴' : ' ▾';
     
     renderBatchTable();
 }
@@ -1024,8 +1066,8 @@ function renderBatchTable() {
         
         let rankColor = (idx < 3 && r.recommendation !== 'DISQUALIFIED' && !currentSortAsc && currentSortColumn === 'win_prob') ? 'var(--accent-gold)' : '#fff';
         
-        let prob = r.win_probability ? (r.win_probability*100).toFixed(1)+'%' : 'â€”';
-        let saProb = r.sa_adjusted_probability ? (r.sa_adjusted_probability*100).toFixed(1)+'%' : 'â€”';
+        let prob = r.win_probability ? (r.win_probability*100).toFixed(1)+'%' : '—';
+        let saProb = r.sa_adjusted_probability ? (r.sa_adjusted_probability*100).toFixed(1)+'%' : '—';
         
         if(r.processing_error) {
             recColor = '#e05c5c';
@@ -1038,8 +1080,8 @@ function renderBatchTable() {
             <td style="color:${recColor}; font-weight:600;">${r.recommendation}</td>
             <td>${prob}</td>
             <td>${saProb}</td>
-            <td>${r.competitive_position || 'â€”'}</td>
-            <td>${r.preferential_framework || 'â€”'}</td>
+            <td>${r.competitive_position || '—'}</td>
+            <td>${r.preferential_framework || '—'}</td>
             <td>
                 ${!r.processing_error ? `<button class="corner-btn mark-outcome-row-btn" data-id="${r.prediction_id}" style="padding:4px 8px; font-size:10px;">
                     <span>MARK</span><span class="bracket bracket-tr" style="width:4px; height:4px;"></span><span class="bracket bracket-bl" style="width:4px; height:4px;"></span>
@@ -1061,7 +1103,7 @@ function renderBatchTable() {
                 if(r.disqualified) {
                     expContent = `<div style="padding: 16px; color: #e05c5c;">
                         <strong>HARD FAILURES:</strong><br>
-                        ${r.hard_failures.map(f => `âœ— ${f}`).join('<br>')}
+                        ${r.hard_failures.map(f => `✗ ${f}`).join('<br>')}
                     </div>`;
                 } else if(r.processing_error) {
                     expContent = `<div style="padding: 16px; color: #e05c5c;">
@@ -1092,7 +1134,7 @@ function renderBatchTable() {
                             prediction_id: markBtn.dataset.id,
                             actual_outcome: actual.toLowerCase()
                         })
-                    }).then(() => markBtn.querySelector('span').textContent = 'âœ“');
+                    }).then(() => markBtn.querySelector('span').textContent = '✓');
                 }
             });
         }
@@ -1150,6 +1192,7 @@ exportCsvBtn.addEventListener('click', () => {
     </script>
 
 </section>
+
 
         <!-- TAB 3: SMART COMPLIANCE VAULT (BLOCK GRID WITH AUTO-SORTING) -->
         <section id="tab-archive" class="content-section">
@@ -1277,150 +1320,151 @@ exportCsvBtn.addEventListener('click', () => {
 
         <!-- TAB 4: CALENDAR (FULL FEATURE PARITY WITH MAIN SITE) -->
         <section id="tab-calendar" class="content-section">
-<main class="page-container" style="display:block;">
-    <div style="margin-bottom: 32px;">
-        <span class="category-label">SCHEDULING OVERVIEW</span>
-        <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">TENDER CALENDAR.</h1>
-        <div id="conflictBanner" style="display:none; color:#e05c5c; font-size:12px; font-weight:600; text-transform:uppercase;"></div>
-    </div>
-    
-    <div style="display:flex; gap: 40px;">
-        <div class="main-column">
-            <div class="month-nav">
-                <button class="corner-btn" id="prevMonth" style="padding: 4px 12px;">
-                    <span>&lt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
-                </button>
-                <div class="month-title" id="monthDisplay">JULY 2026</div>
-                <button class="corner-btn" id="nextMonth" style="padding: 4px 12px;">
-                    <span>&gt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
-                </button>
-            </div>
-            
-            <div class="calendar-grid">
-                <div class="weekday-header">SUN</div><div class="weekday-header">MON</div>
-                <div class="weekday-header">TUE</div><div class="weekday-header">WED</div>
-                <div class="weekday-header">THU</div><div class="weekday-header">FRI</div>
-                <div class="weekday-header">SAT</div>
-            </div>
-            <div class="calendar-grid" id="calendarBody">
-                <!-- Days injected here -->
-            </div>
+    <main class="page-container" style="display:block;">
+        <div style="margin-bottom: 32px;">
+            <span class="category-label">SCHEDULING OVERVIEW</span>
+            <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">TENDER CALENDAR.</h1>
+            <div id="conflictBanner" style="display:none; color:#e05c5c; font-size:12px; font-weight:600; text-transform:uppercase;"></div>
         </div>
         
-        <div class="side-column">
-            <div class="side-title">UPCOMING â€” NEXT 14 DAYS</div>
-            <div class="profile-card" id="emptySide" style="border-style: dashed; padding: 24px; text-align: center; display: none;">
-                <span class="card-tag">NO UPCOMING EVENTS</span>
-            </div>
-            <ul class="upcoming-list" id="upcomingList"></ul>
-        </div>
-    </div>
-</main>
-
-<script>
-    const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
-    let currentDate = new Date();
-    let events = [];
-    
-    async function loadCalendar() {
-        // Render immediately with current state
-        renderCalendar();
-        renderUpcoming();
-        try {
-            const res = await fetch('/api/calendar-events');
-            if (res.ok) {
-                const data = await res.json();
-                if (Array.isArray(data) && data.length > 0) {
-                    events = data;
-                    renderCalendar();
-                    renderUpcoming();
-                }
-            }
-        } catch(e) { console.error(e); }
-    }
-    
-    function renderCalendar() {
-        const y = currentDate.getFullYear();
-        const m = currentDate.getMonth();
-        document.getElementById('monthDisplay').textContent = `${monthNames[m]} ${y}`;
-        
-        const firstDay = new Date(y, m, 1).getDay();
-        const daysInMonth = new Date(y, m + 1, 0).getDate();
-        
-        const tbody = document.getElementById('calendarBody');
-        tbody.innerHTML = '';
-        
-        let html = '';
-        for(let i=0; i<firstDay; i++) {
-            html += `<div class="day-cell other-month"></div>`;
-        }
-        
-        const today = new Date();
-        
-        for(let i=1; i<=daysInMonth; i++) {
-            const isToday = i === today.getDate() && m === today.getMonth() && y === today.getFullYear();
-            
-            // Find events for this day
-            const dayEvents = events.filter(e => {
-                const d = new Date(e.date);
-                return d.getDate() === i && d.getMonth() === m && d.getFullYear() === y;
-            });
-            
-            let dots = '';
-            dayEvents.forEach(ev => {
-                dots += `<div class="dot dot-${ev.event_type}"></div>`;
-            });
-            
-            html += `
-                <div class="day-cell" onclick="alert('Day ${i}: ${dayEvents.length} events')">
-                    <div class="day-number ${isToday ? 'today' : ''}">${i}</div>
-                    <div class="event-dots">${dots}</div>
+        <div style="display:flex; gap: 40px;">
+            <div class="main-column">
+                <div class="month-nav">
+                    <button class="corner-btn" id="prevMonth" style="padding: 4px 12px;">
+                        <span>&lt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                    </button>
+                    <div class="month-title" id="monthDisplay">JULY 2026</div>
+                    <button class="corner-btn" id="nextMonth" style="padding: 4px 12px;">
+                        <span>&gt;</span><span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
+                    </button>
                 </div>
-            `;
+                
+                <div class="calendar-grid">
+                    <div class="weekday-header">SUN</div><div class="weekday-header">MON</div>
+                    <div class="weekday-header">TUE</div><div class="weekday-header">WED</div>
+                    <div class="weekday-header">THU</div><div class="weekday-header">FRI</div>
+                    <div class="weekday-header">SAT</div>
+                </div>
+                <div class="calendar-grid" id="calendarBody">
+                    <!-- Days injected here -->
+                </div>
+            </div>
+            
+            <div class="side-column">
+                <div class="side-title">UPCOMING — NEXT 14 DAYS</div>
+                <div class="profile-card" id="emptySide" style="border-style: dashed; padding: 24px; text-align: center; display: none;">
+                    <span class="card-tag">NO UPCOMING EVENTS</span>
+                </div>
+                <ul class="upcoming-list" id="upcomingList"></ul>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const monthNames = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+        let currentDate = new Date();
+        let events = [];
+        
+        async function loadCalendar() {
+            // Render immediately with current state
+            renderCalendar();
+            renderUpcoming();
+            try {
+                const res = await fetch('/api/calendar-events');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        events = data;
+                        renderCalendar();
+                        renderUpcoming();
+                    }
+                }
+            } catch(e) { console.error(e); }
         }
         
-        const totalCells = firstDay + daysInMonth;
-        const remaining = Math.ceil(totalCells / 7) * 7 - totalCells;
-        for(let i=0; i<remaining; i++) {
-            html += `<div class="day-cell other-month"></div>`;
+        function renderCalendar() {
+            const y = currentDate.getFullYear();
+            const m = currentDate.getMonth();
+            document.getElementById('monthDisplay').textContent = `${monthNames[m]} ${y}`;
+            
+            const firstDay = new Date(y, m, 1).getDay();
+            const daysInMonth = new Date(y, m + 1, 0).getDate();
+            
+            const tbody = document.getElementById('calendarBody');
+            tbody.innerHTML = '';
+            
+            let html = '';
+            for(let i=0; i<firstDay; i++) {
+                html += `<div class="day-cell other-month"></div>`;
+            }
+            
+            const today = new Date();
+            
+            for(let i=1; i<=daysInMonth; i++) {
+                const isToday = i === today.getDate() && m === today.getMonth() && y === today.getFullYear();
+                
+                // Find events for this day
+                const dayEvents = events.filter(e => {
+                    const d = new Date(e.date);
+                    return d.getDate() === i && d.getMonth() === m && d.getFullYear() === y;
+                });
+                
+                let dots = '';
+                dayEvents.forEach(ev => {
+                    dots += `<div class="dot dot-${ev.event_type}"></div>`;
+                });
+                
+                html += `
+                    <div class="day-cell" onclick="alert('Day ${i}: ${dayEvents.length} events')">
+                        <div class="day-number ${isToday ? 'today' : ''}">${i}</div>
+                        <div class="event-dots">${dots}</div>
+                    </div>
+                `;
+            }
+            
+            const totalCells = firstDay + daysInMonth;
+            const remaining = Math.ceil(totalCells / 7) * 7 - totalCells;
+            for(let i=0; i<remaining; i++) {
+                html += `<div class="day-cell other-month"></div>`;
+            }
+            
+            tbody.innerHTML = html;
         }
         
-        tbody.innerHTML = html;
-    }
-    
-    function renderUpcoming() {
-        const list = document.getElementById('upcomingList');
-        list.innerHTML = '';
-        
-        if(events.length === 0) {
-            document.getElementById('emptySide').style.display = 'block';
-            return;
+        function renderUpcoming() {
+            const list = document.getElementById('upcomingList');
+            list.innerHTML = '';
+            
+            if(events.length === 0) {
+                document.getElementById('emptySide').style.display = 'block';
+                return;
+            }
+            
+            events.slice(0, 10).forEach(e => {
+                list.innerHTML += `
+                    <li class="upcoming-item">
+                        <div class="upcoming-date">${e.date}</div>
+                        <div class="upcoming-title">${e.tender_identifier} - ${e.filename}</div>
+                        <div class="upcoming-type">${e.event_type}</div>
+                    </li>
+                `;
+            });
         }
         
-        events.slice(0, 10).forEach(e => {
-            list.innerHTML += `
-                <li class="upcoming-item">
-                    <div class="upcoming-date">${e.date}</div>
-                    <div class="upcoming-title">${e.tender_identifier} - ${e.filename}</div>
-                    <div class="upcoming-type">${e.event_type}</div>
-                </li>
-            `;
+        document.getElementById('prevMonth').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
         });
-    }
-    
-    document.getElementById('prevMonth').addEventListener('click', () => {
-        currentDate.setMonth(currentDate.getMonth() - 1);
-        renderCalendar();
-    });
-    document.getElementById('nextMonth').addEventListener('click', () => {
-        currentDate.setMonth(currentDate.getMonth() + 1);
-        renderCalendar();
-    });
-    
-    window.addEventListener('DOMContentLoaded', loadCalendar);
-</script>
+        document.getElementById('nextMonth').addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        });
+        
+        window.addEventListener('DOMContentLoaded', loadCalendar);
+    </script>
 
 </section>
+
 
         <!-- TAB 5: GENERATE QUOTATION (PDF) -->
         <section id="tab-quotation" class="content-section">
@@ -1478,7 +1522,7 @@ exportCsvBtn.addEventListener('click', () => {
                     <option value="conquest">Conquest (Ensemble - Active)</option>
                 </select>
                 <div id="conquestServiceNote" style="color: #4CAF50; font-size: 11px; margin-top: 8px; display: none; max-width: 250px; line-height: 1.4; font-family: 'Outfit';">
-                    âœ“ Conquest is fully active. Retrained & benchmarked on 5.67M rows.
+                    ✓ Conquest is fully active. Retrained & benchmarked on 5.67M rows.
                 </div>
             </div>
         </div>
@@ -1631,8 +1675,9 @@ exportCsvBtn.addEventListener('click', () => {
 
 </section>
 
+
         <!-- TAB 7: AGENT -->
-                <section id="tab-agent" class="content-section" style="display: none;">
+                <section id="tab-agent" class="content-section">
             <div class="hero-row">
                 <div>
                     <p class="kicker">Company-Aware Assistant</p>
@@ -1731,7 +1776,7 @@ exportCsvBtn.addEventListener('click', () => {
             document.querySelectorAll('.content-section').forEach(sec => sec.classList.remove('active'));
             const target = document.getElementById('tab-' + tabId);
             if (target) target.classList.add('active');
-            const titles = {'evaluation': 'Single Tender Evaluation', 'sort': 'Batch Tender Sorting & Ranking', 'archive': 'Smart Compliance Archive & Vault', 'calendar': 'Calendar & Submission Deadlines', 'agent': 'Company-Aware Assistant'};
+            const titles = {'evaluation': 'Single Tender Evaluation', 'sort': 'Batch Tender Sorting & Ranking', 'archive': 'Smart Compliance Archive & Vault', 'calendar': 'Calendar & Submission Deadlines', 'quotation': 'Automated Quotation Generator', 'system': 'System Status & Configuration', 'agent': 'Company-Aware Assistant'};
             const c = document.getElementById('topNavCenter');
             if (c && titles[tabId]) c.textContent = titles[tabId];
         }
