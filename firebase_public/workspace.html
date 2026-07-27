@@ -806,19 +806,6 @@ let currentBatchResults = [];
 let currentSortColumn = 'win_prob';
 let currentSortAsc = false;
 
-if(openSortBtn) {
-    openSortBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        bulkSortPanel.classList.add('active');
-        sortResultsSection.style.display = 'block';
-    });
-}
-if(closeSortBtn) {
-    closeSortBtn.addEventListener('click', () => {
-        bulkSortPanel.classList.remove('active');
-    });
-}
-
 let accumulatedFiles = [];
 const addMoreFilesBtn = document.getElementById('addMoreFilesBtn');
 
@@ -1827,10 +1814,10 @@ exportCsvBtn.addEventListener('click', () => {
                     if(vault.documents && vault.documents.length > 0) {
                         vault.documents.forEach(doc => {
                             let statusClass = doc.status === 'Valid' ? 'ok' : 'warn';
-                            vaultHtml += <div class="doc-block">
-                                <span class="doc-name"> + doc.name + </span>
-                                <span class="doc-status  + statusClass + "> + doc.status + </span>
-                            </div>;
+                            vaultHtml += `<div class="doc-block">
+                                <span class="doc-name">${doc.name}</span>
+                                <span class="doc-status ${statusClass}">${doc.status}</span>
+                            </div>`;
                         });
                     } else {
                         vaultHtml = '<div style="font-size:11px; color:#666;">No documents uploaded.</div>';
@@ -1851,12 +1838,12 @@ exportCsvBtn.addEventListener('click', () => {
 
             const log = document.getElementById('agentMessageLog');
             if(!log) return;
-            log.innerHTML += 
+            log.innerHTML += `
                 <div class="msg-row user">
                   <span class="msg-label">You</span>
-                  <div class="msg-bubble"> + msg + </div>
+                  <div class="msg-bubble">${msg}</div>
                 </div>
-            ;
+            `;
             input.value = '';
             log.scrollTop = log.scrollHeight;
 
@@ -1865,12 +1852,12 @@ exportCsvBtn.addEventListener('click', () => {
                     const calRes = await fetch('/api/calendar-events');
                     const calData = await calRes.json();
                     const evtCount = calData.events ? calData.events.length : 0;
-                    log.innerHTML += 
+                    log.innerHTML += `
                         <div class="msg-row agent">
                           <span class="msg-label agent-label">Agent</span>
-                          <div class="msg-bubble">You have  + evtCount +  events due this week. Check the calendar tab for full details.</div>
+                          <div class="msg-bubble">You have ${evtCount} events due this week. Check the calendar tab for full details.</div>
                         </div>
-                    ;
+                    `;
                     log.scrollTop = log.scrollHeight;
                 } catch(e) {}
                 return;
@@ -1885,12 +1872,12 @@ exportCsvBtn.addEventListener('click', () => {
                 
                 if (!res.ok) {
                     const err = await res.json();
-                    log.innerHTML += 
+                    log.innerHTML += `
                         <div class="msg-row agent">
                           <span class="msg-label agent-label">Agent</span>
-                          <div class="msg-bubble" style="color:#e05c5c"> + (err.detail || err.error || 'Connection error') + </div>
+                          <div class="msg-bubble" style="color:#e05c5c">${err.detail || err.error || 'Connection error'}</div>
                         </div>
-                    ;
+                    `;
                     log.scrollTop = log.scrollHeight;
                     return;
                 }
@@ -1907,14 +1894,14 @@ exportCsvBtn.addEventListener('click', () => {
                     disclaimerHtml = '<p class="disclaimer-line">General guidance based on document analysis — not a compliance audit. Verify against the original tender before submission.</p>';
                 }
 
-                log.innerHTML += 
+                log.innerHTML += `
                     <div class="msg-row agent">
                       <span class="msg-label agent-label">Agent</span>
-                      <div class="msg-bubble"> + data.response + </div>
-                       + flagHtml + 
-                       + disclaimerHtml + 
+                      <div class="msg-bubble">${data.response}</div>
+                      ${flagHtml}
+                      ${disclaimerHtml}
                     </div>
-                ;
+                `;
                 log.scrollTop = log.scrollHeight;
                 
                 if (msg === 'Generate Quote') {

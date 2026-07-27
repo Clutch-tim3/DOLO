@@ -1,0 +1,20 @@
+74:                     if(vDocs) vDocs.innerHTML = vaultHtml;
+89:             log.innerHTML += `
+103:                     log.innerHTML += `
+123:                     log.innerHTML += `
+145:                 log.innerHTML += `
+220:                 lbl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c5a880" stroke-width="1.8" style="vertical-align: middle; margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Selected Tender: ' + quoteSelectedTenderFile.name;
+271:                 lbl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c5a880" stroke-width="1.8" style="vertical-align: middle; margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Selected Tender: ' + wsSelectedTenderFile.name;
+280:                 lbl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c5a880" stroke-width="1.8" style="vertical-align: middle; margin-right: 6px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> Selected Bid: ' + wsSelectedBidFile.name;
+292:             resPanel.innerHTML = '<div style="text-align:center; padding:60px 0; color:var(--accent-gold);"><div style="font-size:32px; margin-bottom:12px;">âš™ï¸</div><div>Computing probability & PPPFA score via Conquest Engine...</div></div>';
+309:                 resPanel.innerHTML = `
+338:                 resPanel.innerHTML = '<div style="color: #e05c5c; text-align: center; padding: 40px;">Error calculating prediction. Check app server logs.</div>';
+349:             listEl.innerHTML = wsBatchFiles.map((f, i) => `<div style="padding: 6px 10px; background: var(--card-bg); margin-bottom: 4px; border-radius: 4px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-faint);"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c5a880" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> ${f.name}</div>`).join('');
+437:                 tbody.innerHTML = `
+445:                 tbody.innerHTML = filtered.map((item, idx) => {
+540:             body.innerHTML = html;
+549:                 list.innerHTML = '';
+553:             list.innerHTML = wsCalendarEvents.slice(0, 8).map(e => `
+652:                     icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+655:                     icon.innerHTML = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+660:             if (iconM) iconM.innerHTML = mode === 'light' ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>' : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
