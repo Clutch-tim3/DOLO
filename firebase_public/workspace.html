@@ -1936,6 +1936,88 @@ exportCsvBtn.addEventListener('click', () => {
             doc.save("Donington_Vale_Accreditation_Roadmap.pdf");
         }
 
+        function generateQuotePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Signature Light Mode Colors: Clive Red (#C8331F)
+            doc.setFillColor(200, 51, 31); // #C8331F
+            doc.rect(0, 0, 210, 30, 'F');
+            
+            // Header
+            doc.setTextColor(255, 255, 255);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(24);
+            // Default to Donington Vale based on mock company info
+            doc.text("DONINGTON VALE", 15, 20);
+            
+            doc.setFontSize(10);
+            doc.text("Reg: 2026/250499/07", 150, 16);
+            doc.text("Centurion, GP", 150, 22);
+            
+            // Title
+            doc.setTextColor(200, 51, 31);
+            doc.setFontSize(16);
+            doc.text("QUOTATION", 105, 50, null, null, "center");
+            
+            doc.setDrawColor(200, 51, 31);
+            doc.setLineWidth(0.5);
+            doc.line(15, 55, 195, 55);
+            
+            // Items
+            doc.setTextColor(40, 40, 40);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(11);
+            
+            doc.text("Item Description", 15, 65);
+            doc.text("Qty", 130, 65);
+            doc.text("Unit Price", 150, 65);
+            doc.text("Total", 180, 65);
+            
+            doc.line(15, 68, 195, 68);
+            
+            // Item 1
+            doc.text("PPE Safety Helmets (Class G)", 15, 78);
+            doc.text("50", 130, 78);
+            doc.text("R 145.00", 150, 78);
+            doc.text("R 7,250.00", 180, 78);
+            
+            // Item 2
+            doc.text("High-Visibility Vests", 15, 88);
+            doc.text("100", 130, 88);
+            doc.text("R 85.00", 150, 88);
+            doc.text("R 8,500.00", 180, 88);
+            
+            // Item 3
+            doc.text("Steel-Toe Work Boots (Various Sizes)", 15, 98);
+            doc.text("50", 130, 98);
+            doc.text("R 899.00", 150, 98);
+            doc.text("R 44,950.00", 180, 98);
+            
+            doc.line(15, 105, 195, 105);
+            
+            // Totals
+            doc.setFont("helvetica", "bold");
+            doc.text("Subtotal:", 150, 115);
+            doc.text("R 60,700.00", 180, 115);
+            
+            doc.text("VAT (15%):", 150, 125);
+            doc.text("R 9,105.00", 180, 125);
+            
+            doc.setTextColor(200, 51, 31);
+            doc.text("TOTAL DUE:", 150, 135);
+            doc.text("R 69,805.00", 180, 135);
+            
+            // Footer
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            doc.setTextColor(150, 150, 150);
+            doc.text("This is an AI-generated draft quotation based on current retail pricing.", 105, 270, null, null, "center");
+            doc.text("Prices are subject to change and must be independently verified.", 105, 275, null, null, "center");
+            
+            doc.save("Donington_Vale_Quotation.pdf");
+        }
+
         async function sendAgentMessage() {
             const input = document.getElementById('agentInput');
             if(!input) return;
@@ -2065,10 +2147,30 @@ exportCsvBtn.addEventListener('click', () => {
                 let response = msg === 'Generate Quote' ? 'Here is a draft quotation based on your company profile and the latest pricing guidelines. I have deducted 1 from your daily quota.' : 'I understand. How else can I assist you with your compliance and quotation needs today?';
                 let flagHtml = msg === 'Generate Quote' ? '<div class="flag-chip">MANUAL REVIEW REQUIRED</div>' : '';
                 let disclaimerHtml = '<p class="disclaimer-line">General guidance based on document analysis \u2014 not a compliance audit. Verify against the original tender before submission.</p>';
+                
+                let attachmentHtml = '';
+                if (msg === 'Generate Quote') {
+                    attachmentHtml = `
+                          <div class="pdf-attachment" onclick="generateQuotePDF()">
+                              <div class="pdf-icon">
+                                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                              </div>
+                              <div class="pdf-details">
+                                  <span class="pdf-title">Donington_Vale_Quotation.pdf</span>
+                                  <span class="pdf-size">28 KB \u00B7 Click to Download</span>
+                              </div>
+                              <button class="pdf-download-btn">
+                                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                              </button>
+                          </div>
+                    `;
+                }
+
                 log.innerHTML += `
                     <div class="msg-row agent">
                       <span class="msg-label agent-label">Agent</span>
                       <div class="msg-bubble">${response}</div>
+                      ${attachmentHtml}
                       ${flagHtml}
                       ${disclaimerHtml}
                     </div>

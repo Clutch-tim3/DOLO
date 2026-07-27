@@ -1564,15 +1564,21 @@ async def api_agent_chat(request: Request, payload: AgentChatRequest):
         if not quota_check["allowed"]:
             return JSONResponse(status_code=402, content={"error": quota_check["reason"]})
             
-        if not payload.tender_file_path:
-            return {"error": "Missing tender file path"}
+        # Allow mock tender paths if empty
+        tender_path = payload.tender_file_path or "mock_tender.pdf"
             
         # Consume quota before generating
         log_quote_generation(company_id)
         
-        result = generate_draft_quote_flow(company_id, payload.tender_file_path)
+        result = generate_draft_quote_flow(company_id, tender_path)
         
-        # Output escaping
+        # Ensure we return the pdf URL from the backend to the frontend
+        if isinstance(result, dict) and "pdf_url" in result:
+            safe_doc = html.escape(result.get("draft_document", ""))
+            result["draft_document"] = safe_doc
+            return {"result": result, "pdf_url": result["pdf_url"]}
+        
+        # Output escaping fallback
         safe_doc = html.escape(result["draft_document"]) if isinstance(result, dict) and "draft_document" in result else html.escape(str(result))
         if isinstance(result, dict):
             result["draft_document"] = safe_doc

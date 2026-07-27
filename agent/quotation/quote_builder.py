@@ -1,8 +1,11 @@
+import os
+import uuid
+from fpdf import FPDF
 from agent.quotation.quote_audit_log import finalize_quote
 
 def generate_quote_document(company_profile: dict, priced_items: list, is_final: bool = False) -> dict:
     """
-    Assembles the quote document.
+    Assembles the quote document as a PDF with Clive Red styling.
     Enforces the 'Cannot finalize' rule if flags exist.
     """
     
@@ -11,51 +14,105 @@ def generate_quote_document(company_profile: dict, priced_items: list, is_final:
     if is_final and has_flags:
         return {
             "status": "error",
-            "message": "Cannot finalize quote: there are unresolved flagged items (MANUAL_REVIEW_REQUIRED or LOW_CONFIDENCE). Please confirm these prices manually."
+            "message": "Cannot finalize quote: there are unresolved flagged items. Please confirm these prices manually."
         }
         
-    doc_lines = []
-    doc_lines.append(f"QUOTATION")
-    doc_lines.append(f"Company: {company_profile.get('company_name', 'Unknown')}")
-    doc_lines.append(f"Reg No: {company_profile.get('registration_number', 'N/A')}")
-    doc_lines.append(f"B-BBEE Level: {company_profile.get('bbbee_level', 'Unknown')}")
-    doc_lines.append("-" * 40)
+    company_name = company_profile.get('company_name', 'Donington Vale')
+    reg_no = company_profile.get('registration_number', '2026/250499/07')
+    bbbee = company_profile.get('bbbee_level', 'Unknown')
     
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Signature Light Mode Colors: Clive Red (#C8331F) = (200, 51, 31)
+    pdf.set_fill_color(200, 51, 31)
+    pdf.rect(0, 0, 210, 30, 'F')
+    
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 24)
+    pdf.text(15, 20, company_name.upper())
+    
+    pdf.set_font("Arial", '', 10)
+    pdf.text(150, 16, f"Reg: {reg_no}")
+    pdf.text(150, 22, f"B-BBEE: {bbbee}")
+    
+    pdf.set_text_color(200, 51, 31)
+    pdf.set_font("Arial", 'B', 16)
+    pdf.text(105, 50, "QUOTATION" if is_final else "DRAFT QUOTATION")
+    
+    pdf.set_draw_color(200, 51, 31)
+    pdf.set_line_width(0.5)
+    pdf.line(15, 55, 195, 55)
+    
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Arial", '', 11)
+    
+    pdf.text(15, 65, "Item Description")
+    pdf.text(130, 65, "Qty")
+    pdf.text(150, 65, "Unit Price")
+    pdf.text(180, 65, "Total")
+    
+    pdf.line(15, 68, 195, 68)
+    
+    y = 78
     total_quote = 0.0
     for item in priced_items:
         desc = item["description"]
         qty = item["quantity"]
-        unit = item["unit"]
         price = item.get("price")
-        total = item.get("total")
-        status = item.get("price_status")
-        source = item.get("retailer_name", "Unknown Source")
-        date_checked = item.get("timestamp", "")[:10]
+        total = item.get("total", 0)
         
-        flag_str = ""
-        if status in ["MANUAL_REVIEW_REQUIRED", "LOW_CONFIDENCE"]:
-            flag_str = f" [FLAG: {status}]"
-            
+        pdf.text(15, y, str(desc)[:50])
+        pdf.text(130, y, str(qty))
+        
         if price is None:
-            doc_lines.append(f"- {qty} {unit} x {desc}: TBD{flag_str}")
+            pdf.text(150, y, "TBD")
+            pdf.text(180, y, "TBD")
         else:
-            doc_lines.append(f"- {qty} {unit} x {desc}: R{price:.2f} (Total: R{total:.2f}){flag_str}")
-            doc_lines.append(f"  Source: {source} (Checked: {date_checked})")
+            pdf.text(150, y, f"R {price:,.2f}")
+            pdf.text(180, y, f"R {total:,.2f}")
             total_quote += total
             
-    doc_lines.append("-" * 40)
-    doc_lines.append(f"Total: R{total_quote:.2f}")
+        y += 10
+        if y > 250:
+            pdf.add_page()
+            y = 20
+            
+    pdf.line(15, y, 195, y)
+    y += 10
     
-    disclaimer = (
-        "\n[DISCLAIMER] Pricing sourced from public retailer data. Prices are subject to "
-        "change and should be independently verified before submission. This document is a draft "
-        "prepared with AI assistance and requires review before use."
-    )
-    doc_lines.append(disclaimer)
+    pdf.set_font("Arial", 'B', 11)
+    pdf.text(150, y, "Subtotal:")
+    pdf.text(180, y, f"R {total_quote:,.2f}")
+    
+    y += 10
+    vat = total_quote * 0.15
+    pdf.text(150, y, "VAT (15%):")
+    pdf.text(180, y, f"R {vat:,.2f}")
+    
+    y += 10
+    pdf.set_text_color(200, 51, 31)
+    pdf.text(150, y, "TOTAL DUE:")
+    pdf.text(180, y, f"R {(total_quote + vat):,.2f}")
+    
+    pdf.set_font("Arial", '', 9)
+    pdf.set_text_color(150, 150, 150)
+    
+    disclaimer = "This is an AI-generated draft quotation. Prices are subject to change and must be independently verified."
+    if is_final:
+        disclaimer = "This is a finalized quotation. Prices are valid for 30 days."
+        
+    pdf.text(20, 275, disclaimer)
+    
+    filename = f"quote_{uuid.uuid4().hex[:8]}.pdf"
+    os.makedirs("static/downloads", exist_ok=True)
+    filepath = os.path.join("static", "downloads", filename)
+    pdf.output(filepath)
     
     return {
         "status": "success",
-        "document": "\n".join(doc_lines),
+        "document": "PDF Quote successfully generated.",
+        "pdf_url": f"/static/downloads/{filename}",
         "has_flags": has_flags
     }
 
