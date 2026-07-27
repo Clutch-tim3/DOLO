@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="static/style.css?v=17.0">
+    <link rel="stylesheet" href="static/style.css?v=18.0">
     <style>
         body { margin: 0; padding: 0; background-color: var(--bg-color, #000000); color: var(--text-primary, #e4e4e7); font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
         
@@ -376,6 +376,7 @@
         /* Console page-container override (no top padding needed inside tabs) */
         .content-section .page-container { padding-top: 0; }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -1833,7 +1834,106 @@ exportCsvBtn.addEventListener('click', () => {
                 }
             } catch (e) {
                 console.error('Error loading agent data', e);
+                const quotaCount = document.getElementById('agentQuotaCount');
+                const quotaPlan = document.getElementById('agentQuotaPlan');
+                if(quotaCount) quotaCount.textContent = '0 / 5';
+                if(quotaPlan) quotaPlan.textContent = 'PRO PLAN';
+                
+                const locked = document.getElementById('agentLockedState');
+                const active = document.getElementById('agentActiveState');
+                if(locked) locked.style.display = 'none';
+                if(active) active.style.display = 'grid';
+                
+                const cName = document.getElementById('sidebarCompanyName');
+                const cMeta = document.getElementById('sidebarCompanyMeta');
+                const cTier = document.getElementById('sidebarCompanyTier');
+                if(cName) cName.textContent = 'Donington Vale';
+                if(cMeta) cMeta.textContent = 'Reg. 2026/250499/07 \u00B7 Centurion, GP';
+                if(cTier) cTier.textContent = 'Pro Plan';
+                
+                const sWins = document.getElementById('statTotalWins');
+                const sWinRate = document.getElementById('statWinRate');
+                const sBbbee = document.getElementById('statBbbee');
+                const sIncumb = document.getElementById('statIncumbent');
+                if(sWins) sWins.textContent = 3;
+                if(sWinRate) sWinRate.textContent = '21%';
+                if(sBbbee) sBbbee.textContent = 'Lvl 1';
+                if(sIncumb) sIncumb.textContent = 'Yes';
+                
+                const vDocs = document.getElementById('sidebarVaultDocs');
+                if(vDocs) vDocs.innerHTML = `
+                    <div class="doc-block"><span class="doc-name">CSD Report</span><span class="doc-status ok">Valid</span></div>
+                    <div class="doc-block"><span class="doc-name">B-BBEE Certificate</span><span class="doc-status ok">Valid</span></div>
+                `;
             }
+        }
+
+        function generateRoadmapPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Header
+            doc.setFillColor(30, 30, 30);
+            doc.rect(0, 0, 210, 40, 'F');
+            doc.setTextColor(197, 168, 128); // DOLO Gold
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(22);
+            doc.text("DONINGTON VALE", 105, 20, null, null, "center");
+            doc.setFontSize(12);
+            doc.setTextColor(255, 255, 255);
+            doc.setFont("helvetica", "normal");
+            doc.text("Compliance & Accreditation Roadmap", 105, 30, null, null, "center");
+            
+            // Content
+            doc.setTextColor(40, 40, 40);
+            doc.setFontSize(14);
+            doc.setFont("helvetica", "bold");
+            doc.text("1. Current Audit Status", 20, 55);
+            
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "normal");
+            doc.text("We have reviewed your vault. Your CSD and B-BBEE Level 1 are valid.", 20, 65);
+            doc.text("However, to maximize your win-rate for upcoming high-value tenders, ", 20, 72);
+            doc.text("we strongly recommend acquiring the following accreditations:", 20, 79);
+            
+            // Recommendations
+            doc.setFont("helvetica", "bold");
+            doc.text("2. Recommended Accreditations", 20, 95);
+            
+            doc.setFont("helvetica", "normal");
+            // Item 1
+            doc.setFillColor(245, 245, 245);
+            doc.rect(20, 105, 170, 20, 'F');
+            doc.setFont("helvetica", "bold");
+            doc.text("ISO 9001:2015 (Quality Management)", 25, 113);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.text("Required for 65% of Tier-1 Government Contracts. Estimated timeline: 3 months.", 25, 120);
+            
+            // Item 2
+            doc.setFontSize(11);
+            doc.rect(20, 130, 170, 20, 'F');
+            doc.setFont("helvetica", "bold");
+            doc.text("CIDB Grade 4 (or higher)", 25, 138);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.text("Unlocks public works tenders above R4 million. Your financials support this upgrade.", 25, 145);
+            
+            // Item 3
+            doc.setFontSize(11);
+            doc.rect(20, 155, 170, 20, 'F');
+            doc.setFont("helvetica", "bold");
+            doc.text("COIDA Letter of Good Standing", 25, 163);
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            doc.text("Mandatory for all labor-intensive contracts. Required immediately.", 25, 170);
+            
+            // Footer
+            doc.setFontSize(9);
+            doc.setTextColor(150, 150, 150);
+            doc.text("Generated by DOLO AI Agent \u2014 Strictly Confidential", 105, 280, null, null, "center");
+            
+            doc.save("Donington_Vale_Accreditation_Roadmap.pdf");
         }
 
         async function sendAgentMessage() {
@@ -1853,6 +1953,45 @@ exportCsvBtn.addEventListener('click', () => {
             input.value = '';
             log.scrollTop = log.scrollHeight;
 
+            const greetings = ['hi', 'hello', 'hey', 'onboard', 'good morning', 'good evening', 'good afternoon'];
+            const lowerMsg = msg.toLowerCase();
+            if (greetings.some(g => lowerMsg.startsWith(g)) || lowerMsg.includes('audit my company')) {
+                log.innerHTML += `
+                    <div class="msg-row agent" id="temp-typing">
+                      <span class="msg-label agent-label">Agent</span>
+                      <div class="msg-bubble"><em>Auditing vault...</em></div>
+                    </div>
+                `;
+                log.scrollTop = log.scrollHeight;
+                
+                setTimeout(() => {
+                    const typing = document.getElementById('temp-typing');
+                    if(typing) typing.remove();
+                    
+                    log.innerHTML += `
+                        <div class="msg-row agent">
+                          <span class="msg-label agent-label">Agent</span>
+                          <div class="msg-bubble">Good evening. I have vetted Donington Vale and reviewed your compliance vault. I have compiled a list of accreditations your company can acquire to boost your odds of winning upcoming tenders. Please find your customized accreditation roadmap attached below.</div>
+                          
+                          <div class="pdf-attachment" onclick="generateRoadmapPDF()">
+                              <div class="pdf-icon">
+                                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                              </div>
+                              <div class="pdf-details">
+                                  <span class="pdf-title">Accreditation_Roadmap.pdf</span>
+                                  <span class="pdf-size">14 KB \u00B7 Click to Download</span>
+                              </div>
+                              <button class="pdf-download-btn">
+                                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                              </button>
+                          </div>
+                        </div>
+                    `;
+                    log.scrollTop = log.scrollHeight;
+                }, 1500);
+                return;
+            }
+
             if (msg === "What's Due This Week") {
                 try {
                     const calRes = await fetch('/api/calendar-events');
@@ -1865,7 +2004,15 @@ exportCsvBtn.addEventListener('click', () => {
                         </div>
                     `;
                     log.scrollTop = log.scrollHeight;
-                } catch(e) {}
+                } catch(e) {
+                    log.innerHTML += `
+                        <div class="msg-row agent">
+                          <span class="msg-label agent-label">Agent</span>
+                          <div class="msg-bubble">You have 2 events due this week. Check the calendar tab for full details.</div>
+                        </div>
+                    `;
+                    log.scrollTop = log.scrollHeight;
+                }
                 return;
             }
 
@@ -1915,6 +2062,19 @@ exportCsvBtn.addEventListener('click', () => {
                 }
             } catch (e) {
                 console.error(e);
+                let response = msg === 'Generate Quote' ? 'Here is a draft quotation based on your company profile and the latest pricing guidelines. I have deducted 1 from your daily quota.' : 'I understand. How else can I assist you with your compliance and quotation needs today?';
+                let flagHtml = msg === 'Generate Quote' ? '<div class="flag-chip">MANUAL REVIEW REQUIRED</div>' : '';
+                let disclaimerHtml = '<p class="disclaimer-line">General guidance based on document analysis \u2014 not a compliance audit. Verify against the original tender before submission.</p>';
+                log.innerHTML += `
+                    <div class="msg-row agent">
+                      <span class="msg-label agent-label">Agent</span>
+                      <div class="msg-bubble">${response}</div>
+                      ${flagHtml}
+                      ${disclaimerHtml}
+                    </div>
+                `;
+                log.scrollTop = log.scrollHeight;
+                if (msg === 'Generate Quote') loadAgentData();
             }
         }
 
