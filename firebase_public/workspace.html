@@ -1673,59 +1673,65 @@ exportCsvBtn.addEventListener('click', () => {
             </div>
 
             <!-- Locked State -->
-            <div id="agentLockedState" class="ws-card" style="display:none; text-align:center; padding: 48px; border: 1px dashed rgba(197,168,128,0.4);">
+            <div id="agentLockedState" class="ws-card" style="display:none; text-align:center; padding: 48px; border: 1px dashed rgba(197,168,128,0.4); margin-bottom: 20px;">
                 <div style="margin-bottom:16px;"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#c5a880" stroke-width="1.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
                 <div style="font-size: 16px; font-family: 'Cinzel', serif; color: var(--accent-gold); letter-spacing: 0.1em; margin-bottom: 8px;">AGENT IS A PRO FEATURE</div>
                 <div style="font-size: 13px; color: var(--text-muted); max-width: 400px; margin: 0 auto;">Upgrade to unlock company-aware assistance, quotation generation, and onboarding guidance.</div>
             </div>
 
-            <!-- Active Chat Interface -->
             <div id="agentActiveState" class="agent-grid" style="display:none;">
                 <!-- CHAT PANEL -->
-                <div class="chat-panel">
-                    <div class="chat-scroll" id="agentMessageLog">
-                        <!-- Messages injected here -->
+                <section class="chat-panel">
+                    <div id="agentMessageLog" class="chat-scroll">
+                        <div class="msg-row agent">
+                            <span class="msg-label agent-label">Agent</span>
+                            <div class="msg-bubble">
+                                Good afternoon. I've loaded your profile — Donington Vale (Pty) Ltd,
+                                B-BBEE Level 1, registered in Centurion, Gauteng. What would you
+                                like to work on?
+                            </div>
+                        </div>
                     </div>
 
                     <div class="quick-actions">
-                        <button class="quick-chip" onclick="document.getElementById('agentInput').value='Generate Quote'; sendAgentMessage();">Generate Quote</button>
-                        <button class="quick-chip" onclick="document.getElementById('agentInput').value='Check My Odds'; sendAgentMessage();">Check My Odds</button>
-                        <button class="quick-chip" onclick="document.getElementById('agentInput').value='What\'s Due This Week'; sendAgentMessage();">What's Due This Week</button>
+                        <button class="quick-chip" onclick="fillAgentPrompt('Generate Quote')">Generate Quote</button>
+                        <button class="quick-chip" onclick="fillAgentPrompt('Check My Odds')">Check My Odds</button>
+                        <button class="quick-chip" onclick="fillAgentPrompt('What\'s Due This Week')">What's Due This Week</button>
                     </div>
 
                     <div class="input-row">
-                        <input class="agent-input" type="text" id="agentInput" placeholder="Ask Agent anything about your company or a tender..." onkeypress="if(event.key === 'Enter') sendAgentMessage()">
+                        <input id="agentInput" class="agent-input" type="text" placeholder="Ask Agent anything about your company or a tender..." onkeydown="if(event.key === 'Enter') sendAgentMessage()">
                         <button class="bracket-btn filled" onclick="sendAgentMessage()">Send</button>
                     </div>
-                </div>
+                </section>
 
                 <!-- SIDEBAR -->
-                <aside class="sidebar" style="background:transparent; width:auto; border:none; z-index:1;">
+                <aside class="sidebar">
                     <div class="ws-card">
                         <p class="ws-label">Company</p>
-                        <p class="company-name" id="sidebarCompanyName">Loading...</p>
-                        <p class="company-meta" id="sidebarCompanyMeta">...</p>
-                        <span class="tier-badge" id="sidebarCompanyTier">...</span>
+                        <p id="sidebarCompanyName" class="company-name">Loading...</p>
+                        <p id="sidebarCompanyMeta" class="company-meta">...</p>
+                        <span id="sidebarCompanyTier" class="tier-badge">...</span>
                     </div>
 
                     <div class="ws-card">
                         <p class="ws-label">Track Record</p>
-                        <div class="agent-stat-grid">
-                            <div class="agent-stat-cell">
-                                <p class="agent-stat-cell-label">Total Wins</p>
-                                <p class="agent-stat-cell-value gold" id="statTotalWins">-</p>
+                        <div class="stat-grid">
+                            <div class="stat-cell">
+                                <p class="stat-cell-label">Total Wins</p>
+                                <p id="statTotalWins" class="stat-cell-value gold">-</p>
                             </div>
-                            <div class="agent-stat-cell">
-                                <p class="agent-stat-cell-label">Win Rate</p>
-                                <p class="agent-stat-cell-value" id="statWinRate">-</p>
+                            <div class="stat-cell">
+                                <p class="stat-cell-label">Win Rate</p>
+                                <p id="statWinRate" class="stat-cell-value">-</p>
                             </div>
-                            <div class="agent-stat-cell">
-                                <p class="agent-stat-cell-label">B-BBEE</p>
-                                <p class="agent-stat-cell-value gold" id="statBbbee">-</p>
+                            <div class="stat-cell">
+                                <p class="stat-cell-label">B-BBEE</p>
+                                <p id="statBbbee" class="stat-cell-value gold">-</p>
                             </div>
-                            <div class="agent-stat-cell">
-                                <p class="agent-stat-cell-label">Incumbent</p>
-                                <p class="agent-stat-cell-value" id="statIncumbent">-</p>
+                            <div class="stat-cell">
+                                <p class="stat-cell-label">Incumbent</p>
+                                <p id="statIncumbent" class="stat-cell-value">-</p>
                             </div>
                         </div>
                     </div>
@@ -2352,6 +2358,7 @@ exportCsvBtn.addEventListener('click', () => {
 
         function fillAgentPrompt(text) {
             document.getElementById('agentInput').value = text;
+            sendAgentMessage();
         }
 
         
