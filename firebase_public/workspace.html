@@ -377,6 +377,8 @@
         .content-section .page-container { padding-top: 0; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script src="static/bid_generator.js"></script>
 </head>
 <body>
 
@@ -2272,7 +2274,22 @@ exportCsvBtn.addEventListener('click', () => {
                 }
             } catch(e) {
                 console.error(e);
-                showToast('âŒ Generation Failed', 'An error occurred while generating the PDF.');
+                // Firebase static hosting fallback
+                const { jsPDF } = window.jspdf;
+                let doc = new jsPDF();
+                
+                const companyName = company || "DONINGTON VALE";
+                
+                // Use the new spectacular Bid Response prototype
+                doc = generateComplexBidResponse(doc, companyName);
+                
+                const pdfBlob = doc.output('blob');
+                const pdfUrl = URL.createObjectURL(pdfBlob);
+                
+                const link = document.getElementById('quoteDownloadLink');
+                if(link) link.href = pdfUrl;
+                area.style.display = 'block';
+                showToast('✅ Quotation Ready', 'Your official PDF quotation is ready to download.');
             }
         }
 

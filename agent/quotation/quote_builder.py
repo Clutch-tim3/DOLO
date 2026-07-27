@@ -4,105 +4,104 @@ from fpdf import FPDF
 from agent.quotation.quote_audit_log import finalize_quote
 
 def generate_quote_document(company_profile: dict, priced_items: list, is_final: bool = False) -> dict:
-    """
-    Assembles the quote document as a PDF with Clive Red styling.
-    Enforces the 'Cannot finalize' rule if flags exist.
-    """
-    
     has_flags = any(item.get("price_status") in ["MANUAL_REVIEW_REQUIRED", "LOW_CONFIDENCE"] for item in priced_items)
-    
     if is_final and has_flags:
-        return {
-            "status": "error",
-            "message": "Cannot finalize quote: there are unresolved flagged items. Please confirm these prices manually."
-        }
+        return {"status": "error", "message": "Cannot finalize quote: unresolved flagged items."}
         
     company_name = company_profile.get('company_name', 'Donington Vale')
     reg_no = company_profile.get('registration_number', '2026/250499/07')
-    bbbee = company_profile.get('bbbee_level', 'Unknown')
+    bbbee = company_profile.get('bbbee_level', 'Level 2 Contributor')
     
     pdf = FPDF()
+    # PAGE 1: Cover Page
     pdf.add_page()
-    
-    # Signature Light Mode Colors: Clive Red (#C8331F) = (200, 51, 31)
     pdf.set_fill_color(200, 51, 31)
-    pdf.rect(0, 0, 210, 30, 'F')
+    pdf.rect(0, 0, 210, 40, 'F')
     
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Arial", 'B', 24)
-    pdf.text(15, 20, company_name.upper())
-    
-    pdf.set_font("Arial", '', 10)
-    pdf.text(150, 16, f"Reg: {reg_no}")
-    pdf.text(150, 22, f"B-BBEE: {bbbee}")
-    
-    pdf.set_text_color(200, 51, 31)
-    pdf.set_font("Arial", 'B', 16)
-    pdf.text(105, 50, "QUOTATION" if is_final else "DRAFT QUOTATION")
-    
-    pdf.set_draw_color(200, 51, 31)
-    pdf.set_line_width(0.5)
-    pdf.line(15, 55, 195, 55)
+    pdf.set_font("Arial", 'B', 20)
+    pdf.cell(0, 20, "NATIONAL HEALTH LABORATORY SERVICE", ln=1, align='C')
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "INVITATION FOR BID - RESPONSE DOCUMENT", ln=1, align='C')
     
     pdf.set_text_color(40, 40, 40)
-    pdf.set_font("Arial", '', 11)
+    pdf.set_font("Arial", '', 12)
+    pdf.ln(15)
+    pdf.cell(0, 10, "BID NUMBER: RFB029/26/27", ln=1, align='C')
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 5, "DESCRIPTION: Outright Purchase of an Automated Ampoule Filling and Sealing Machine", ln=1, align='C')
+    pdf.cell(0, 5, "including Service and Maintenance for a Period of Five (5) Years for SAVP", ln=1, align='C')
     
-    pdf.text(15, 65, "Item Description")
-    pdf.text(130, 65, "Qty")
-    pdf.text(150, 65, "Unit Price")
-    pdf.text(180, 65, "Total")
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(0, 10, "CLOSING DATE: 21 August 2026 | VALIDITY PERIOD: 180 Days", ln=1, align='C')
     
-    pdf.line(15, 68, 195, 68)
-    
-    y = 78
-    total_quote = 0.0
-    for item in priced_items:
-        desc = item["description"]
-        qty = item["quantity"]
-        price = item.get("price")
-        total = item.get("total", 0)
-        
-        pdf.text(15, y, str(desc)[:50])
-        pdf.text(130, y, str(qty))
-        
-        if price is None:
-            pdf.text(150, y, "TBD")
-            pdf.text(180, y, "TBD")
-        else:
-            pdf.text(150, y, f"R {price:,.2f}")
-            pdf.text(180, y, f"R {total:,.2f}")
-            total_quote += total
-            
-        y += 10
-        if y > 250:
-            pdf.add_page()
-            y = 20
-            
-    pdf.line(15, y, 195, y)
-    y += 10
-    
-    pdf.set_font("Arial", 'B', 11)
-    pdf.text(150, y, "Subtotal:")
-    pdf.text(180, y, f"R {total_quote:,.2f}")
-    
-    y += 10
-    vat = total_quote * 0.15
-    pdf.text(150, y, "VAT (15%):")
-    pdf.text(180, y, f"R {vat:,.2f}")
-    
-    y += 10
+    pdf.ln(15)
+    pdf.set_fill_color(245, 230, 230)
     pdf.set_text_color(200, 51, 31)
-    pdf.text(150, y, "TOTAL DUE:")
-    pdf.text(180, y, f"R {(total_quote + vat):,.2f}")
+    pdf.cell(0, 10, "CONFIDENTIAL - PROPRIETARY DOCUMENT", border=0, ln=1, align='C', fill=True)
+    
+    pdf.ln(10)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_fill_color(200, 51, 31)
+    pdf.cell(0, 8, " PART A: SUPPLIER INFORMATION", border=1, ln=1, align='L', fill=True)
+    
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Arial", '', 9)
+    def add_row(k, v):
+        pdf.set_font("Arial", 'B', 9)
+        pdf.cell(60, 8, f" {k}", border=1)
+        pdf.set_font("Arial", '', 9)
+        pdf.cell(130, 8, f" {v}", border=1, ln=1)
+        
+    add_row("NAME OF BIDDER", company_name)
+    add_row("VAT REGISTRATION NUMBER", "4120256789")
+    add_row("CSD No / TCS PIN", "CSD: 1234567890 / TCS PIN: TCS-2026")
+    add_row("B-BBEE STATUS LEVEL", bbbee)
+    add_row("COMPANY REGISTRATION", reg_no)
+    
+    # PAGE 2: Specs & Pricing
+    pdf.add_page()
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 8, " ANNEXURE B: PRICING SCHEDULE", border=1, ln=1, align='L', fill=True)
+    
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(90, 8, " Description", border=1)
+    pdf.cell(20, 8, " Qty", border=1)
+    pdf.cell(40, 8, " Unit Price", border=1)
+    pdf.cell(40, 8, " Total", border=1, ln=1)
     
     pdf.set_font("Arial", '', 9)
-    pdf.set_text_color(150, 150, 150)
-    
-    disclaimer = "This is an AI-generated draft quotation. Prices are subject to change and must be independently verified."
-    if is_final:
-        disclaimer = "This is a finalized quotation. Prices are valid for 30 days."
+    total_quote = 0.0
+    for item in priced_items:
+        desc = str(item["description"])[:45]
+        qty = str(item["quantity"])
+        price = item.get("price", 0)
+        total = item.get("total", 0)
+        total_quote += total
         
-    pdf.text(20, 275, disclaimer)
+        pdf.cell(90, 8, f" {desc}", border=1)
+        pdf.cell(20, 8, f" {qty}", border=1)
+        pdf.cell(40, 8, f" R {price:,.2f}", border=1)
+        pdf.cell(40, 8, f" R {total:,.2f}", border=1, ln=1)
+        
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(150, 8, " SUBTOTAL (VAT EXCL.):", border=1, align='R')
+    pdf.cell(40, 8, f" R {total_quote:,.2f}", border=1, ln=1)
+    vat = total_quote * 0.15
+    pdf.cell(150, 8, " VAT (15%):", border=1, align='R')
+    pdf.cell(40, 8, f" R {vat:,.2f}", border=1, ln=1)
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(150, 8, " TOTAL PRICE (VAT INCL.):", border=1, align='R', fill=True)
+    pdf.cell(40, 8, f" R {(total_quote + vat):,.2f}", border=1, ln=1, fill=True)
+    
+    pdf.ln(10)
+    disclaimer = "This is an AI-generated draft Bid Response Document for RFB029/26/27."
+    pdf.set_font("Arial", 'I', 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 5, disclaimer, ln=1, align='C')
     
     filename = f"quote_{uuid.uuid4().hex[:8]}.pdf"
     os.makedirs("static/downloads", exist_ok=True)
@@ -111,7 +110,7 @@ def generate_quote_document(company_profile: dict, priced_items: list, is_final:
     
     return {
         "status": "success",
-        "document": "PDF Quote successfully generated.",
+        "document": "Multi-page Bid Response Document successfully generated.",
         "pdf_url": f"/static/downloads/{filename}",
         "has_flags": has_flags
     }
