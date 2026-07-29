@@ -380,6 +380,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="static/bid_generator.js"></script>
     <script src="static/onboarding_engine.js"></script>
+    <script src="static/chatbot_engine.js"></script>
 </head>
 <body>
 
@@ -409,7 +410,12 @@
                 </div>
             </div>
             <ul class="nav-list">
-                <li class="nav-item active" onclick="switchTab('evaluation', this)">
+                <li class="nav-item active" onclick="switchTab('agent', this); clearNotifications();">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
+                    <span>Agent</span>
+                    <span id="agentNotifBadge" style="display:none; background:#C8331F; color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; border-radius:50%; align-items:center; justify-content:center; margin-left:auto;">0</span>
+                </li>
+                <li class="nav-item" onclick="switchTab('evaluation', this)">
                     <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></span>
                     <span>Single Evaluation</span>
                 </li>
@@ -433,10 +439,6 @@
                     <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
                     <span>System Status</span>
                 </li>
-                <li class="nav-item" onclick="switchTab('agent', this)">
-                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
-                    <span>Agent</span>
-                </li>
             </ul>
         </div>
         <div class="sidebar-footer">
@@ -453,7 +455,7 @@
 
         <!-- Top Header Bar -->
         <header class="top-bar">
-            <div class="tab-title-display" id="tabTitleHeader">Single Tender Evaluation</div>
+            <div class="tab-title-display" id="tabTitleHeader">Company-Aware Assistant</div>
             <div style="display: flex; gap: 16px; align-items: center;">
                 <button type="button" class="theme-toggle-btn" onclick="toggleLuxuryTheme()">
                     <svg id="themeIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
@@ -474,7 +476,7 @@
         </div>
 
         <!-- TAB 1: SINGLE EVALUATION (Native UI) -->
-        <section id="tab-evaluation" class="content-section active">
+        <section id="tab-evaluation" class="content-section">
     <main class="page-container">
         <div style="margin-bottom: 40px;">
             <span class="category-label">PERFORMANCE VALIDATION</span>
@@ -1665,7 +1667,7 @@ exportCsvBtn.addEventListener('click', () => {
 
 
         <!-- TAB 7: AGENT -->
-                <section id="tab-agent" class="content-section">
+                <section id="tab-agent" class="content-section active">
             <div class="hero-row">
                 <div>
                     <p class="kicker">Company-Aware Assistant</p>
@@ -1771,7 +1773,7 @@ exportCsvBtn.addEventListener('click', () => {
             const target = document.getElementById('tab-' + tabId);
             if (target) target.classList.add('active');
             const titles = {'evaluation': 'Single Tender Evaluation', 'sort': 'Batch Tender Sorting & Ranking', 'archive': 'Smart Compliance Archive & Vault', 'calendar': 'Calendar & Submission Deadlines', 'quotation': 'Automated Quotation Generator', 'system': 'System Status & Configuration', 'agent': 'Company-Aware Assistant'};
-            const c = document.getElementById('topNavCenter');
+            const c = document.getElementById('tabTitleHeader');
             if (c && titles[tabId]) c.textContent = titles[tabId];
         }
 
@@ -2048,35 +2050,22 @@ exportCsvBtn.addEventListener('click', () => {
                 });
                 
                 if (!res.ok) {
-                    const err = await res.json();
-                    log.innerHTML += `
-                        <div class="msg-row agent">
-                          <span class="msg-label agent-label">Agent</span>
-                          <div class="msg-bubble" style="color:#e05c5c">${err.detail || err.error || 'Connection error'}</div>
-                        </div>
-                    `;
-                    log.scrollTop = log.scrollHeight;
-                    return;
+                    throw new Error('API not available');
                 }
 
                 const data = await res.json();
                 
+                let responseText = data.response || data.message || '';
                 let flagHtml = '';
                 if (data.status === 'MANUAL_REVIEW_REQUIRED' || data.status === 'LOW_CONFIDENCE') {
                     flagHtml = '<div class="flag-chip">' + data.status.replace(/_/g, ' ') + '</div>';
-                }
-                
-                let disclaimerHtml = '';
-                if (data.is_guidance) {
-                    disclaimerHtml = '<p class="disclaimer-line">General guidance based on document analysis — not a compliance audit. Verify against the original tender before submission.</p>';
                 }
 
                 log.innerHTML += `
                     <div class="msg-row agent">
                       <span class="msg-label agent-label">Agent</span>
-                      <div class="msg-bubble">${data.response}</div>
+                      <div class="msg-bubble">${responseText}</div>
                       ${flagHtml}
-                      ${disclaimerHtml}
                     </div>
                 `;
                 log.scrollTop = log.scrollHeight;
@@ -2086,39 +2075,61 @@ exportCsvBtn.addEventListener('click', () => {
                 }
             } catch (e) {
                 console.error(e);
-                let response = msg === 'Generate Quote' ? 'Here is a draft quotation based on your company profile and the latest pricing guidelines. I have deducted 1 from your daily quota.' : 'I understand. How else can I assist you with your compliance and quotation needs today?';
-                let flagHtml = msg === 'Generate Quote' ? '<div class="flag-chip">MANUAL REVIEW REQUIRED</div>' : '';
-                let disclaimerHtml = '<p class="disclaimer-line">General guidance based on document analysis \u2014 not a compliance audit. Verify against the original tender before submission.</p>';
                 
-                let attachmentHtml = '';
-                if (msg === 'Generate Quote') {
-                    attachmentHtml = `
-                          <div class="pdf-attachment" onclick="generateQuotePDF()">
-                              <div class="pdf-icon">
-                                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                              </div>
-                              <div class="pdf-details">
-                                  <span class="pdf-title">Donington_Vale_Quotation.pdf</span>
-                                  <span class="pdf-size">28 KB \u00B7 Click to Download</span>
-                              </div>
-                              <button class="pdf-download-btn">
-                                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                              </button>
-                          </div>
-                    `;
-                }
-
+                // Intelligent client-side chatbot fallback
+                const { name, industry } = getCompanyInfo();
+                
+                // Show typing indicator
                 log.innerHTML += `
-                    <div class="msg-row agent">
+                    <div class="msg-row agent" id="agent-typing-indicator">
                       <span class="msg-label agent-label">Agent</span>
-                      <div class="msg-bubble">${response}</div>
-                      ${attachmentHtml}
-                      ${flagHtml}
-                      ${disclaimerHtml}
+                      <div class="msg-bubble"><em>Thinking...</em></div>
                     </div>
                 `;
                 log.scrollTop = log.scrollHeight;
-                if (msg === 'Generate Quote') loadAgentData();
+                
+                setTimeout(() => {
+                    const typingEl = document.getElementById('agent-typing-indicator');
+                    if (typingEl) typingEl.remove();
+                    
+                    // Generate Quote special handling
+                    if (msg === 'Generate Quote') {
+                        log.innerHTML += `
+                            <div class="msg-row agent">
+                              <span class="msg-label agent-label">Agent</span>
+                              <div class="msg-bubble">Here is a draft quotation based on your company profile and the latest pricing guidelines. I have deducted 1 from your daily quota.</div>
+                              <div class="pdf-attachment" onclick="generateQuotePDF()">
+                                  <div class="pdf-icon">
+                                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                  </div>
+                                  <div class="pdf-details">
+                                      <span class="pdf-title">Donington_Vale_Quotation.pdf</span>
+                                      <span class="pdf-size">28 KB \u00B7 Click to Download</span>
+                                  </div>
+                                  <button class="pdf-download-btn">
+                                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                  </button>
+                              </div>
+                              <div class="flag-chip">MANUAL REVIEW REQUIRED</div>
+                              <p class="disclaimer-line">General guidance based on document analysis \u2014 not a compliance audit. Verify against the original tender before submission.</p>
+                            </div>
+                        `;
+                        log.scrollTop = log.scrollHeight;
+                        loadAgentData();
+                        return;
+                    }
+                    
+                    // Use the chatbot engine for ALL other messages
+                    const response = getAgentResponse(msg, name, industry);
+                    
+                    log.innerHTML += `
+                        <div class="msg-row agent">
+                          <span class="msg-label agent-label">Agent</span>
+                          <div class="msg-bubble">${response}</div>
+                        </div>
+                    `;
+                    log.scrollTop = log.scrollHeight;
+                }, 800);
             }
         }
 
