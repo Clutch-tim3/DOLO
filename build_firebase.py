@@ -16,7 +16,7 @@ for filename in os.listdir('static'):
     if os.path.isfile(src):
         if filename.endswith('.html'):
             shutil.copy2(src, os.path.join(dest_dir, filename))
-        elif filename == 'style.css':
+        elif filename.endswith('.css') or filename.endswith('.js'):
             shutil.copy2(src, os.path.join(static_dest, filename))
 
 print("Build complete! Files are ready in firebase_public/")

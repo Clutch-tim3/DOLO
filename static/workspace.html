@@ -2043,7 +2043,12 @@ exportCsvBtn.addEventListener('click', () => {
             }
 
             try {
-                const res = await fetch('/api/agent/chat', {
+                // IMPORTANT: Replace this with your actual Render URL once deployed (e.g. 'https://your-service.onrender.com')
+                // If you are running locally on port 5000, keep it as '' to use relative paths, or set it to 'http://localhost:5000'
+                const BACKEND_URL = 'https://cairoai-backend.onrender.com';
+                const endpoint = BACKEND_URL ? `${BACKEND_URL}/api/agent/chat` : '/api/agent/chat';
+                
+                const res = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: msg, action: msg === 'Generate Quote' ? 'generate_quote' : 'chat', tender_file_path: '' })
@@ -2649,6 +2654,7 @@ exportCsvBtn.addEventListener('click', () => {
             if (iconM) iconM.innerHTML = mode === 'light' ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>' : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
         }
         initLuxuryTheme();
+        window.addEventListener('DOMContentLoaded', loadAgentData);
     </script>
 
 

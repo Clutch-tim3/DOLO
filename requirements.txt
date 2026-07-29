@@ -16,3 +16,5 @@ lightgbm>=4.0.0
 catboost>=1.2.0
 google-genai>=0.2.0
 groq
+anthropic>=0.18.0
+python-dotenv>=1.0.0
