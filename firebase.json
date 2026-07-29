@@ -1,4 +1,8 @@
 {
+  "functions": {
+    "source": ".",
+    "runtime": "python310"
+  },
   "hosting": {
     "site": "cairoai",
     "public": "firebase_public",
@@ -9,6 +13,10 @@
       "**/node_modules/**"
     ],
     "rewrites": [
+      {
+        "source": "/api/**",
+        "function": "api"
+      },
       {
         "source": "**",
         "destination": "/index.html"

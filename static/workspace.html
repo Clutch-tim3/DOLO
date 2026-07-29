@@ -2043,12 +2043,7 @@ exportCsvBtn.addEventListener('click', () => {
             }
 
             try {
-                // IMPORTANT: Replace this with your actual Render URL once deployed (e.g. 'https://your-service.onrender.com')
-                // If you are running locally on port 5000, keep it as '' to use relative paths, or set it to 'http://localhost:5000'
-                const BACKEND_URL = 'https://cairoai-backend.onrender.com';
-                const endpoint = BACKEND_URL ? `${BACKEND_URL}/api/agent/chat` : '/api/agent/chat';
-                
-                const res = await fetch(endpoint, {
+                const res = await fetch('/api/agent/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: msg, action: msg === 'Generate Quote' ? 'generate_quote' : 'chat', tender_file_path: '' })
