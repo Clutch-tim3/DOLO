@@ -12,6 +12,7 @@ Run after any UI change:
 """
 
 import filecmp
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -30,6 +31,23 @@ CASING = [
 ]
 
 COPY_EXT = {".html", ".css", ".js"}
+ASSET_EXT = {".css", ".js", ".svg", ".png", ".ico"}
+
+
+def dst_path_for(rel: Path) -> Path:
+    """
+    Pages are served from the hosting root (/workspace -> workspace.html), but
+    their asset links are written as `static/foo.css`, which resolves to
+    /static/foo.css. So HTML mirrors to firebase_public/ while assets must
+    mirror to firebase_public/static/.
+
+    Getting this wrong is silent: Firebase's catch-all rewrite serves
+    index.html for the missing path, so the stylesheet returns HTTP 200 with
+    the wrong body and every page renders unstyled.
+    """
+    if rel.suffix.lower() == ".html":
+        return DST / rel
+    return DST / "static" / rel.name
 
 
 def main() -> int:
@@ -39,10 +57,10 @@ def main() -> int:
 
     copied, transformed, skipped = 0, 0, 0
     for src_file in sorted(SRC.rglob("*")):
-        if not src_file.is_file() or src_file.suffix.lower() not in COPY_EXT:
+        if not src_file.is_file() or src_file.suffix.lower() not in (COPY_EXT | ASSET_EXT):
             continue
         rel = src_file.relative_to(SRC)
-        dst_file = DST / rel
+        dst_file = dst_path_for(rel)
         dst_file.parent.mkdir(parents=True, exist_ok=True)
 
         if src_file.suffix.lower() == ".html":
@@ -83,6 +101,27 @@ def main() -> int:
         if a != b:
             ok = False
         print(f"  {src_file.name:18} {status}")
+
+    # Every asset each page links must actually exist at that path in the
+    # deployed tree. Without this, a missing file is masked by the hosting
+    # catch-all rewrite and only shows up as an unstyled production site.
+    print("\nasset resolution (as the deployed site will request them):")
+    link_rx = re.compile(r'(?:href|src)="([^"]+\.(?:css|js|svg|png|ico))(?:\?[^"]*)?"')
+    missing = set()
+    for dst_html in sorted(DST.glob("*.html")):
+        for ref in link_rx.findall(dst_html.read_text(encoding="utf-8")):
+            if ref.startswith(("http://", "https://", "//", "data:")):
+                continue
+            target = DST / ref.lstrip("/")
+            if not target.exists():
+                missing.add(f"{dst_html.name} -> {ref}")
+    if missing:
+        ok = False
+        for m in sorted(missing):
+            print(f"  MISSING  {m}")
+    else:
+        print("  all local assets resolve")
+
     return 0 if ok else 1
 
 

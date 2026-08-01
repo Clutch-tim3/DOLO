@@ -3,7 +3,7 @@ function getCompanyInfo() {
     let val = sel ? sel.value : "CAIROAI (Medical)";
     
     let industry = "medical";
-    let name = "CAIROAI";
+    let name = "CairoAI";
     
     if (val.includes("SECURITY")) {
         industry = "security";
