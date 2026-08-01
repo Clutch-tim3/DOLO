@@ -1,7 +1,36 @@
 {
   "functions": {
     "source": ".",
-    "runtime": "python310"
+    "runtime": "python312",
+    "ignore": [
+      ".git",
+      "**/venv/**",
+      "**/env/**",
+      "firebase_public",
+      "*.json.bak",
+      "data/procurement.db",
+      "**/data/archive/**",
+      "**/data/splits/**",
+      "**/data/uk_raw/**",
+      "**/catboost_info/**",
+      "**/__pycache__/**",
+      "tests",
+      ".pytest_cache",
+      ".hypothesis",
+      "node_modules",
+      "test-functions",
+      "scratch_scripts",
+
+      "google-cloud-sdk",
+      "gcloud.zip",
+      "access_token.txt",
+      "*.bak",
+      "static/downloads",
+      "**/*.tar.gz",
+      "**/*.csv",
+
+      ".env"
+    ]
   },
   "hosting": {
     "site": "cairoai",
