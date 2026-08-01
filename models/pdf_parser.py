@@ -123,8 +123,49 @@ def parse_company_pdf(file_path: Path) -> dict:
     # Clean company name formatting
     if "company_name" in results:
         results["company_name"] = re.sub(r'\s+', ' ', results["company_name"]).strip().upper()
-        
-    # 5. Look for Pricing & Budget Heuristics (Tender Value, Bid Price, Lowest Price)
+
+    # 5. Look for what the supplier actually does.
+    #
+    # This is the field the accreditation advice keys off: without it there is
+    # no way to tell a construction firm from an IT firm, and every
+    # recommendation collapses to the generic B-BBEE/CSD ones. The CSD supplier
+    # summary carries this as commodity codes (segment/family/class lines) and
+    # sometimes as an explicit industry line.
+    commodities = []
+    for pattern in (
+        # "Segment: 81000000 - Engineering and Research and Technology Based Services"
+        r'(?:Segment|Family|Class|Commodity)\s*(?:Code)?\s*[:\-]\s*(?:[0-9]{6,8}\s*[-–]\s*)?([A-Za-z][A-Za-z ,&/\'\-]{6,80})',
+        # "81000000 Engineering and Research and Technology Based Services"
+        r'\b[0-9]{8}\s+([A-Z][A-Za-z ,&/\'\-]{6,80})',
+    ):
+        for m in re.findall(pattern, text):
+            label = re.sub(r'\s+', ' ', m).strip(" -–,").strip()
+            if len(label) > 6 and label.lower() not in (c.lower() for c in commodities):
+                commodities.append(label)
+
+    if commodities:
+        # Cap it: a CSD report can list dozens, and the whole list ends up in a
+        # prompt. The leading entries are the broadest (segment before class).
+        results["commodity_categories"] = commodities[:12]
+
+    industry_match = re.search(
+        r'(?:Industry|Industry Classification|Nature of Business|Business Type|Sector)'
+        r'\s*[:\-]\s*([A-Za-z][A-Za-z ,&/\'\-]{4,80})',
+        text, re.IGNORECASE,
+    )
+    if industry_match:
+        results["industry"] = re.sub(r'\s+', ' ', industry_match.group(1)).strip(" -,")
+    elif commodities:
+        # get_accreditation_advice reads "industry" as a plain string, so give it
+        # the broadest commodity label rather than leaving it empty.
+        results["industry"] = commodities[0]
+
+    # 6. Look for CIDB grading, which gates construction/works tenders.
+    cidb_match = re.search(r'\b([1-9])\s*(GB|CE|SB|EB|EP|ME|SD|SF|SG|SH|SI|SJ|SK|SL|SM|SN|SO|SQ)\b', text)
+    if cidb_match:
+        results["cidb_grading"] = f"{cidb_match.group(1)}{cidb_match.group(2).upper()}"
+
+    # 7. Look for Pricing & Budget Heuristics (Tender Value, Bid Price, Lowest Price)
     # Extract all ZAR / Rand values from text
     price_matches = re.findall(r'(?:R|ZAR|\$)\s*([0-9][0-9\s,]{3,}(?:\.[0-9]{2})?)', text)
     cleaned_prices = []

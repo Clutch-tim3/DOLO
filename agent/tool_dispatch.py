@@ -96,6 +96,92 @@ def _finalize_quotation(quote_id: str, confirmed_items: list):
     return finalize_quote_flow(quote_id, confirmed_items)
 
 
+# The five types the Compliance Vault treats as required. Kept in step with the
+# doc_types list in app.py's /api/compliance-status.
+REQUIRED_DOC_TYPES = [
+    "tax_clearance",
+    "bbbee_certificate",
+    "cidb_grading",
+    "csd_report",
+    "cipc_registration",
+]
+
+DOC_TYPE_LABELS = {
+    "tax_clearance": "Tax Clearance Certificate",
+    "bbbee_certificate": "B-BBEE Certificate",
+    "cidb_grading": "CIDB Grading",
+    "csd_report": "CSD Report",
+    "cipc_registration": "CIPC Registration",
+}
+
+
+def _get_vault_status(company_id: str):
+    """
+    Which required vault documents this company has, and what was parsed out of
+    them. This is what tells the agent whether the vault is complete enough to
+    vet, and it is also where the commodity/industry data for the accreditation
+    recommendations comes from.
+    """
+    docs = get_company_documents(company_id)
+    by_type = {}
+    for d in docs:
+        dtype = (d.get("document_type") or d.get("type") or "").lower()
+        if dtype:
+            by_type.setdefault(dtype, d)
+
+    present, missing = [], []
+    for dtype in REQUIRED_DOC_TYPES:
+        (present if dtype in by_type else missing).append(
+            {"type": dtype, "label": DOC_TYPE_LABELS.get(dtype, dtype)}
+        )
+
+    # Merge everything the parser pulled out of the uploaded documents, so the
+    # agent sees industry/commodity codes without re-reading the PDFs.
+    merged_fields = {}
+    for d in docs:
+        parsed = d.get("parsed_fields")
+        if isinstance(parsed, dict):
+            for k, v in parsed.items():
+                if v not in (None, "", []):
+                    merged_fields.setdefault(k, v)
+
+    return {
+        "complete": not missing,
+        "present": present,
+        "missing": missing,
+        "required_count": len(REQUIRED_DOC_TYPES),
+        "present_count": len(present),
+        "parsed_company_facts": merged_fields,
+    }
+
+
+def _generate_accreditation_report(company_id: str, items: list):
+    """
+    Render the agent's accreditation recommendations to a PDF.
+
+    The agent decides what to recommend and supplies the links; this only lays
+    them out, so the advice stays tied to whatever the company's documents
+    actually say rather than to a fixed table.
+    """
+    from agent.onboarding.accreditation_report import generate_accreditation_report
+
+    if not isinstance(items, list) or not items:
+        return {
+            "status": "error",
+            "message": "No accreditation items were supplied, so there is nothing to render.",
+        }
+
+    profile = get_company_profile(company_id) or {}
+    # Parsed document facts fill the gaps the stored profile does not cover
+    # (industry, CSD supplier number), so the report header reflects the vault.
+    facts = _get_vault_status(company_id).get("parsed_company_facts", {})
+    for key in ("industry", "supplier_number", "bbbee_level", "registration_number", "company_name"):
+        if not profile.get(key) and facts.get(key):
+            profile[key] = facts[key]
+
+    return generate_accreditation_report(profile, items)
+
+
 TOOL_REGISTRY = {
     "get_company_profile": lambda company_id: get_company_profile(company_id),
     "get_company_documents": lambda company_id: get_company_documents(company_id),
@@ -109,6 +195,8 @@ TOOL_REGISTRY = {
     ),
     "generate_draft_quote": _generate_draft_quote,
     "finalize_quotation": _finalize_quotation,
+    "get_vault_status": lambda company_id: _get_vault_status(company_id),
+    "generate_accreditation_report": _generate_accreditation_report,
 }
 
 

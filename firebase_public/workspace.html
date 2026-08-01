@@ -453,6 +453,58 @@
     font-size: 12px; letter-spacing: 0.06em; color: var(--text-muted);
     font-family: 'Plus Jakarta Sans', sans-serif;
 }
+
+/* --- generation progress -------------------------------------------------
+   Shown while something is actually being produced (a quotation, an
+   accreditation roadmap). Distinct from .agent-thinking, which says work is
+   happening but not how far along it is. */
+.gen-progress {
+    padding: 13px 16px; border-radius: 3px;
+    background: rgba(255,255,255,0.03);
+    border: 0.5px solid rgba(197,168,128,0.22);
+    width: 100%; max-width: 420px;
+}
+.gen-progress-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px; margin-bottom: 9px;
+}
+.gen-progress-label {
+    font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--text-muted); font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.gen-progress-pct {
+    font-size: 11.5px; color: var(--accent-gold);
+    font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums;
+}
+.gen-progress-track {
+    height: 3px; border-radius: 2px; overflow: hidden;
+    background: rgba(255,255,255,0.07);
+}
+.gen-progress-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, rgba(197,168,128,0.55), var(--accent-gold));
+    transition: width 320ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.gen-progress.is-done .gen-progress-fill { background: var(--accent-gold); }
+body.light-theme .gen-progress { background: rgba(20,16,10,0.03); }
+body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
+
+/* The caret only shows while text is still being revealed. */
+.msg-bubble.is-typing::after {
+    content: '';
+    display: inline-block; width: 2px; height: 1em;
+    margin-left: 2px; vertical-align: text-bottom;
+    background: var(--accent-gold);
+    animation: caretBlink 1s steps(1) infinite;
+}
+@keyframes caretBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+
+/* Anyone who has asked for less motion gets the finished text immediately,
+   with no typewriter reveal and no blinking caret. */
+@media (prefers-reduced-motion: reduce) {
+    .msg-bubble.is-typing::after { display: none; }
+    .gen-progress-fill { transition: none; }
+}
 /* gold shimmer travelling across the status label while work is in flight */
 .think-label span {
     background: linear-gradient(90deg,
@@ -1971,16 +2023,12 @@ exportCsvBtn.addEventListener('click', () => {
                         <button class="quick-chip" onclick="clearAgentChat()" title="Start a new conversation">New chat</button>
                     </div>
 
-                    <div id="agentMessageLog" class="chat-scroll">
-                        <div class="msg-row agent">
-                            <span class="msg-label agent-label">Agent</span>
-                            <div class="msg-bubble">
-                                Good afternoon. I've loaded your profile — CAIROAI (Pty) Ltd,
-                                B-BBEE Level 1, registered in Centurion, Gauteng. What would you
-                                like to work on?
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Opening messages are written by openAgentConversation() so the
+                         greeting can reflect the actual time of day and the real state of
+                         the Compliance Vault. The old markup hard-coded "Good afternoon"
+                         and the company's details, which went stale and could contradict
+                         the profile the agent had actually loaded. -->
+                    <div id="agentMessageLog" class="chat-scroll"></div>
 
                     <div class="quick-actions">
                         <button class="quick-chip" onclick="fillAgentPrompt('Generate Quote')">Generate Quote</button>
@@ -2264,6 +2312,204 @@ exportCsvBtn.addEventListener('click', () => {
             { at: 16000, text: 'Still working — larger documents take longer' }
         ];
 
+        // --- message rendering ------------------------------------------------
+        //
+        // Everything that puts a message on screen goes through here. The old
+        // code did `log.innerHTML += '...' + msg + '...'`, which had two
+        // problems: it injected the user's own text as HTML (so a message
+        // containing a tag was parsed as markup), and rebuilding innerHTML
+        // re-created every existing node, which would wipe out a reveal already
+        // in progress. Building nodes and setting textContent fixes both.
+
+        function agentLog() { return document.getElementById('agentMessageLog'); }
+
+        function scrollAgentLog() {
+            const log = agentLog();
+            if (log) log.scrollTop = log.scrollHeight;
+        }
+
+        function appendMessageRow(role, labelText) {
+            const log = agentLog();
+            if (!log) return null;
+            const row = document.createElement('div');
+            row.className = 'msg-row ' + role;
+            const label = document.createElement('span');
+            label.className = role === 'agent' ? 'msg-label agent-label' : 'msg-label';
+            label.textContent = labelText || (role === 'agent' ? 'Agent' : 'You');
+            const bubble = document.createElement('div');
+            bubble.className = 'msg-bubble';
+            row.appendChild(label);
+            row.appendChild(bubble);
+            log.appendChild(row);
+            scrollAgentLog();
+            return { row: row, bubble: bubble };
+        }
+
+        function appendMessage(role, text) {
+            const parts = appendMessageRow(role);
+            if (!parts) return null;
+            parts.bubble.textContent = text;
+            scrollAgentLog();
+            return parts;
+        }
+
+        const prefersReducedMotion =
+            window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        // Reveal text the way a chat model does: fast, and a line at a time
+        // rather than one glacial character at a time. Characters inside a line
+        // are revealed in small batches per animation frame, so a long reply
+        // still lands quickly instead of making the user wait for an animation.
+        function typeInto(bubble, text, opts) {
+            const options = opts || {};
+            const charsPerFrame = options.charsPerFrame || 7;   // ~420 chars/sec at 60fps
+            const linePause = options.linePause || 55;          // beat between lines
+
+            if (!bubble) return Promise.resolve();
+            // document.hidden: a backgrounded tab throttles timers heavily, so
+            // animating there would leave the caller awaiting a reveal that
+            // effectively stops. Show the text and move on.
+            if (prefersReducedMotion || !text || document.hidden) {
+                bubble.textContent = text || '';
+                scrollAgentLog();
+                return Promise.resolve();
+            }
+
+            bubble.textContent = '';
+            bubble.classList.add('is-typing');
+
+            const lines = String(text).split('\n');
+            let lineIndex = 0;
+            let charIndex = 0;
+            let shown = '';
+
+            const deadline = Date.now() + 9000;
+
+            return new Promise(function (resolve) {
+                let settled = false;
+                function finish() {
+                    if (settled) return;
+                    settled = true;
+                    bubble.classList.remove('is-typing');
+                    bubble.textContent = text;
+                    scrollAgentLog();
+                    resolve();
+                }
+                // Driven by setTimeout rather than requestAnimationFrame: rAF
+                // does not fire at all while the tab is in the background, so a
+                // reply that started animating and then lost focus would never
+                // resolve, and runAgentTurn would sit awaiting it with the
+                // input still disabled. The deadline is a second guard - however
+                // long the text, the reveal always completes.
+                function step() {
+                    if (settled) return;
+                    if (bubble._typingCancelled || Date.now() > deadline) { finish(); return; }
+                    if (lineIndex >= lines.length) { finish(); return; }
+
+                    const line = lines[lineIndex];
+                    if (charIndex < line.length) {
+                        charIndex = Math.min(line.length, charIndex + charsPerFrame);
+                        bubble.textContent = shown + line.slice(0, charIndex);
+                        scrollAgentLog();
+                        setTimeout(step, 16);
+                        return;
+                    }
+                    shown += line + (lineIndex < lines.length - 1 ? '\n' : '');
+                    lineIndex += 1;
+                    charIndex = 0;
+                    bubble.textContent = shown;
+                    scrollAgentLog();
+                    // Blank lines are paragraph breaks; do not pause twice on them.
+                    setTimeout(step, line.length ? linePause : 0);
+                }
+                setTimeout(step, 0);
+            });
+        }
+
+        function cancelAllTyping() {
+            const log = agentLog();
+            if (!log) return;
+            log.querySelectorAll('.msg-bubble.is-typing').forEach(function (b) {
+                b._typingCancelled = true;
+            });
+        }
+
+        // --- generation progress ----------------------------------------------
+        //
+        // Advanced on real milestones rather than on a timer: each call to
+        // .step() happens because a stage genuinely completed. The one
+        // concession is that the final network wait creeps slowly toward its
+        // ceiling so the bar is not frozen while the request is in flight — it
+        // never reaches 100% until the work actually finishes.
+        function startGenerationProgress(label) {
+            const parts = appendMessageRow('agent');
+            if (!parts) return null;
+
+            const box = document.createElement('div');
+            box.className = 'gen-progress';
+            box.setAttribute('role', 'progressbar');
+            box.setAttribute('aria-valuemin', '0');
+            box.setAttribute('aria-valuemax', '100');
+            box.innerHTML =
+                '<div class="gen-progress-head">' +
+                  '<span class="gen-progress-label"></span>' +
+                  '<span class="gen-progress-pct">0%</span>' +
+                '</div>' +
+                '<div class="gen-progress-track"><div class="gen-progress-fill"></div></div>';
+
+            parts.row.replaceChild(box, parts.bubble);
+
+            const labelEl = box.querySelector('.gen-progress-label');
+            const pctEl = box.querySelector('.gen-progress-pct');
+            const fillEl = box.querySelector('.gen-progress-fill');
+            let pct = 0;
+            let creepTimer = null;
+
+            function paint() {
+                const v = Math.max(0, Math.min(100, Math.round(pct)));
+                fillEl.style.width = v + '%';
+                pctEl.textContent = v + '%';
+                box.setAttribute('aria-valuenow', String(v));
+            }
+
+            function setLabel(t) { labelEl.textContent = t || ''; }
+            setLabel(label);
+            paint();
+            scrollAgentLog();
+
+            return {
+                row: parts.row,
+                step: function (value, text) {
+                    if (creepTimer) { clearInterval(creepTimer); creepTimer = null; }
+                    pct = value;
+                    if (text) setLabel(text);
+                    paint();
+                },
+                // Drift toward `ceiling` while waiting on the network.
+                creep: function (ceiling, text) {
+                    if (text) setLabel(text);
+                    if (creepTimer) clearInterval(creepTimer);
+                    creepTimer = setInterval(function () {
+                        if (pct < ceiling) {
+                            pct += Math.max(0.4, (ceiling - pct) * 0.06);
+                            paint();
+                        }
+                    }, 320);
+                },
+                done: function (text) {
+                    if (creepTimer) { clearInterval(creepTimer); creepTimer = null; }
+                    pct = 100;
+                    if (text) setLabel(text);
+                    box.classList.add('is-done');
+                    paint();
+                },
+                remove: function () {
+                    if (creepTimer) clearInterval(creepTimer);
+                    if (parts.row && parts.row.parentNode) parts.row.parentNode.removeChild(parts.row);
+                }
+            };
+        }
+
         let _thinkTimers = [];
 
         function startAgentThinking(isQuote) {
@@ -2323,111 +2569,116 @@ exportCsvBtn.addEventListener('click', () => {
 
         function clearAgentChat() {
             stopAgentThinking();
+            cancelAllTyping();
             const log = document.getElementById('agentMessageLog');
             if (!log) return;
             log.innerHTML = '';
-            const row = document.createElement('div');
-            row.className = 'msg-row agent';
-            const label = document.createElement('span');
-            label.className = 'msg-label agent-label';
-            label.textContent = 'Agent';
-            const bubble = document.createElement('div');
-            bubble.className = 'msg-bubble';
-            bubble.textContent = 'New conversation. What would you like to work on?';
-            row.appendChild(label);
-            row.appendChild(bubble);
-            log.appendChild(row);
+            // Re-run the opening so a new chat starts the same way the first one
+            // did, greeting included, rather than with a bare one-liner.
+            log.dataset.opened = '';
+            openAgentConversation();
             const input = document.getElementById('agentInput');
             if (input) input.focus();
         }
 
-        async function sendAgentMessage() {
-            const input = document.getElementById('agentInput');
-            if(!input) return;
-            const msg = input.value.trim();
-            if (!msg) return;
+        // Which flows produce a file, and so get a progress bar rather than the
+        // indeterminate thinking dots.
+        const GENERATION_STAGES = {
+            quote: [
+                'Reading the tender document',
+                'Extracting line items',
+                'Sourcing prices',
+                'Building the quotation PDF'
+            ],
+            vet: [
+                'Reading your vault documents',
+                'Establishing what your company does',
+                'Matching accreditations to your industry',
+                'Building your roadmap PDF'
+            ]
+        };
 
-            const log = document.getElementById('agentMessageLog');
-            if(!log) return;
-            log.innerHTML += `
-                <div class="msg-row user">
-                  <span class="msg-label">You</span>
-                  <div class="msg-bubble">${msg}</div>
-                </div>
-            `;
-            input.value = '';
-            log.scrollTop = log.scrollHeight;
+        function attachGeneratedFile(row, url, title) {
+            // A real anchor to a real file. This used to be a div with
+            // onclick="generateRoadmapPDF()", which built a PDF in the browser
+            // and had nothing to do with what the agent had produced.
+            const link = document.createElement('a');
+            link.className = 'pdf-attachment';
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener';
 
-            const greetings = ['hi', 'hello', 'hey', 'onboard', 'good morning', 'good evening', 'good afternoon'];
-            const lowerMsg = msg.toLowerCase();
-            if (greetings.some(g => lowerMsg.startsWith(g)) || lowerMsg.includes('audit my company')) {
-                log.innerHTML += `
-                    <div class="msg-row agent" id="temp-typing">
-                      <span class="msg-label agent-label">Agent</span>
-                      <div class="msg-bubble"><em>Auditing vault...</em></div>
-                    </div>
-                `;
-                log.scrollTop = log.scrollHeight;
-                
-                setTimeout(() => {
-                    const typing = document.getElementById('temp-typing');
-                    if(typing) typing.remove();
-                    
-                    const { name, industry } = getCompanyInfo();
-                    const msgHtml = getOnboardingMessageHTML(name, industry);
-                    
-                    log.innerHTML += `
-                        <div class="msg-row agent">
-                          <span class="msg-label agent-label">Agent</span>
-                          ${msgHtml}
-                          
-                          <div class="pdf-attachment" onclick="generateRoadmapPDF()" style="margin-top: 12px;">
-                              <div class="pdf-icon">
-                                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                              </div>
-                              <div class="pdf-details">
-                                  <span class="pdf-title">${name.replace(/ /g, "_")}_Accreditation_Roadmap.pdf</span>
-                                  <span class="pdf-size">Dynamically Generated \u00B7 Click to Download</span>
-                              </div>
-                              <button class="pdf-download-btn">
-                                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                              </button>
-                          </div>
-                        </div>
-                    `;
-                    log.scrollTop = log.scrollHeight;
-                }, 1500);
-                return;
+            const icon = document.createElement('div');
+            icon.className = 'pdf-icon';
+            icon.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>';
+
+            const details = document.createElement('div');
+            details.className = 'pdf-details';
+            const t = document.createElement('span');
+            t.className = 'pdf-title';
+            t.textContent = title;
+            const s = document.createElement('span');
+            s.className = 'pdf-size';
+            s.textContent = 'Generated just now · Click to open';
+            details.appendChild(t);
+            details.appendChild(s);
+
+            const btn = document.createElement('span');
+            btn.className = 'pdf-download-btn';
+            btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+
+            link.appendChild(icon);
+            link.appendChild(details);
+            link.appendChild(btn);
+            row.appendChild(link);
+        }
+
+        function attachToolTrace(row, toolsUsed) {
+            if (!Array.isArray(toolsUsed) || !toolsUsed.length) return;
+            const trace = document.createElement('div');
+            trace.className = 'tool-trace';
+            [...new Set(toolsUsed)].forEach((t, i) => {
+                const chip = document.createElement('span');
+                chip.className = 'tool-chip';
+                chip.style.animationDelay = (i * 60) + 'ms';
+                chip.textContent = TOOL_LABELS[t] || t.replace(/_/g, ' ');
+                trace.appendChild(chip);
+            });
+            row.appendChild(trace);
+        }
+
+        // Shared by the input box, the quick-action chips and the automatic
+        // post-upload vet, so all three behave identically.
+        async function runAgentTurn(msg, opts) {
+            const options = opts || {};
+            const log = agentLog();
+            if (!log) return;
+
+            cancelAllTyping();
+
+            if (!options.hideUserMessage) {
+                appendMessage('user', msg);
             }
 
-            if (msg === "What's Due This Week") {
-                try {
-                    const calRes = await fetch('/api/calendar-events');
-                    const calData = await calRes.json();
-                    const evtCount = calData.events ? calData.events.length : 0;
-                    log.innerHTML += `
-                        <div class="msg-row agent">
-                          <span class="msg-label agent-label">Agent</span>
-                          <div class="msg-bubble">You have ${evtCount} events due this week. Check the calendar tab for full details.</div>
-                        </div>
-                    `;
-                    log.scrollTop = log.scrollHeight;
-                } catch(e) {
-                    log.innerHTML += `
-                        <div class="msg-row agent">
-                          <span class="msg-label agent-label">Agent</span>
-                          <div class="msg-bubble">You have 2 events due this week. Check the calendar tab for full details.</div>
-                        </div>
-                    `;
-                    log.scrollTop = log.scrollHeight;
-                }
-                return;
+            const isQuote = options.action === 'generate_quote';
+            const stages = options.stages ? GENERATION_STAGES[options.stages] : null;
+
+            let progress = null;
+            if (stages) {
+                progress = startGenerationProgress(options.progressLabel || 'Working');
+                progress.step(8, stages[0]);
+            } else {
+                startAgentThinking(false);
             }
 
-            const isQuote = msg === 'Generate Quote';
-            startAgentThinking(isQuote);
+            setAgentBusy(true);
 
             try {
+                if (progress) {
+                    progress.step(26, stages[1]);
+                    progress.creep(88, stages[2]);
+                }
+
                 const res = await fetch('/api/agent/chat', {
                     method: 'POST',
                     headers: {
@@ -2436,137 +2687,243 @@ exportCsvBtn.addEventListener('click', () => {
                         // tier has agent_enabled: false -> every request 403s.
                         'X-Company-ID': getCompanyId()
                     },
-                    body: JSON.stringify({ message: msg, action: isQuote ? 'generate_quote' : 'chat', tender_file_path: '' })
+                    body: JSON.stringify({
+                        message: msg,
+                        action: isQuote ? 'generate_quote' : 'chat',
+                        tender_file_path: options.tenderFilePath || ''
+                    })
                 });
 
                 if (!res.ok) {
-                    throw new Error('API not available');
+                    let detail = '';
+                    try { detail = (await res.json()).detail || ''; } catch (e) { /* no body */ }
+                    throw Object.assign(new Error(detail || ('HTTP ' + res.status)), { status: res.status });
                 }
 
                 const data = await res.json();
-                stopAgentThinking();
 
-                let responseText = data.response || data.message || '';
+                if (progress) {
+                    progress.step(96, stages[3]);
+                    progress.done('Done');
+                    // Leave the completed bar visible briefly so it reads as
+                    // finished rather than vanishing mid-animation.
+                    setTimeout(() => progress.remove(), 700);
+                } else {
+                    stopAgentThinking();
+                }
 
-                // Built with DOM APIs + textContent, never innerHTML: the reply is
-                // model output and is no longer HTML-escaped server-side.
-                const row = document.createElement('div');
-                row.className = 'msg-row agent';
+                const responseText = data.response || data.message || '';
+                const parts = appendMessageRow('agent');
+                if (!parts) return;
 
-                const label = document.createElement('span');
-                label.className = 'msg-label agent-label';
-                label.textContent = 'Agent';
-                row.appendChild(label);
-
-                const bubble = document.createElement('div');
-                bubble.className = 'msg-bubble';
-                bubble.textContent = responseText;
-                row.appendChild(bubble);
+                await typeInto(parts.bubble, responseText);
 
                 if (data.pdf_url) {
-                    const link = document.createElement('a');
-                    link.className = 'pdf-attachment';
-                    link.href = data.pdf_url;
-                    link.target = '_blank';
-                    link.rel = 'noopener';
-                    link.textContent = 'Download quotation PDF';
-                    row.appendChild(link);
+                    const usedAccreditation =
+                        Array.isArray(data.tools_used) &&
+                        data.tools_used.indexOf('generate_accreditation_report') !== -1;
+                    attachGeneratedFile(
+                        parts.row,
+                        data.pdf_url,
+                        usedAccreditation ? 'Accreditation_Roadmap.pdf' : 'Quotation.pdf'
+                    );
                 }
 
                 if (data.status === 'MANUAL_REVIEW_REQUIRED' || data.status === 'LOW_CONFIDENCE') {
                     const chip = document.createElement('div');
                     chip.className = 'flag-chip';
                     chip.textContent = data.status.replace(/_/g, ' ');
-                    row.appendChild(chip);
+                    parts.row.appendChild(chip);
                 }
 
-                // Tool trace — shows what the agent actually consulted, so a
+                // Tool trace - shows what the agent actually consulted, so a
                 // company-specific answer is visibly sourced rather than asserted.
-                if (Array.isArray(data.tools_used) && data.tools_used.length) {
-                    const trace = document.createElement('div');
-                    trace.className = 'tool-trace';
-                    [...new Set(data.tools_used)].forEach((t, i) => {
-                        const chip = document.createElement('span');
-                        chip.className = 'tool-chip';
-                        chip.style.animationDelay = (i * 60) + 'ms';
-                        chip.textContent = TOOL_LABELS[t] || t.replace(/_/g, ' ');
-                        trace.appendChild(chip);
-                    });
-                    row.appendChild(trace);
-                }
+                attachToolTrace(parts.row, data.tools_used);
+                scrollAgentLog();
 
-                log.appendChild(row);
-                log.scrollTop = log.scrollHeight;
+                if (isQuote) loadAgentData();
+                return data;
 
-                if (isQuote) {
-                    loadAgentData();
-                }
             } catch (e) {
                 console.error(e);
-                stopAgentThinking();
+                if (progress) progress.remove(); else stopAgentThinking();
 
-                // Intelligent client-side chatbot fallback
-                const { name, industry } = getCompanyInfo();
-                
-                // Show typing indicator
-                log.innerHTML += `
-                    <div class="msg-row agent" id="agent-typing-indicator">
-                      <span class="msg-label agent-label">Agent</span>
-                      <div class="msg-bubble"><em>Thinking...</em></div>
-                    </div>
-                `;
-                log.scrollTop = log.scrollHeight;
-                
-                setTimeout(() => {
-                    const typingEl = document.getElementById('agent-typing-indicator');
-                    if (typingEl) typingEl.remove();
-                    
-                    // Generate Quote special handling
-                    if (msg === 'Generate Quote') {
-                        log.innerHTML += `
-                            <div class="msg-row agent">
-                              <span class="msg-label agent-label">Agent</span>
-                              <div class="msg-bubble">Here is a draft quotation based on your company profile and the latest pricing guidelines. I have deducted 1 from your daily quota.</div>
-                              <div class="pdf-attachment" onclick="generateQuotePDF()">
-                                  <div class="pdf-icon">
-                                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                                  </div>
-                                  <div class="pdf-details">
-                                      <span class="pdf-title">CairoAI_Quotation.pdf</span>
-                                      <span class="pdf-size">28 KB \u00B7 Click to Download</span>
-                                  </div>
-                                  <button class="pdf-download-btn">
-                                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                  </button>
-                              </div>
-                              <div class="flag-chip">MANUAL REVIEW REQUIRED</div>
-                              <p class="disclaimer-line">General guidance based on document analysis \u2014 not a compliance audit. Verify against the original tender before submission.</p>
-                            </div>
-                        `;
-                        log.scrollTop = log.scrollHeight;
-                        loadAgentData();
-                        return;
-                    }
-                    
-                    // Use the chatbot engine for ALL other messages
-                    const response = getAgentResponse(msg, name, industry);
-                    
-                    log.innerHTML += `
-                        <div class="msg-row agent">
-                          <span class="msg-label agent-label">Agent</span>
-                          <div class="msg-bubble">${response}</div>
-                        </div>
-                    `;
-                    log.scrollTop = log.scrollHeight;
-                }, 800);
+                // Say what went wrong. This replaces a client-side fallback that
+                // invented an answer when the API was unreachable - including a
+                // fake quotation PDF and a fake "MANUAL REVIEW REQUIRED" flag,
+                // rendered exactly like a real one. A visible failure is far
+                // safer than a fabricated quotation.
+                let text;
+                if (e.status === 402) {
+                    text = "You've used your quotation allowance for today, so I can't generate another one until it resets.";
+                } else if (e.status === 429) {
+                    text = "The system is at capacity right now. Give it a moment and ask me again.";
+                } else if (e.status === 403) {
+                    text = "This account doesn't have the Agent enabled, so I can't answer that.";
+                } else {
+                    text = "I couldn't reach the agent service just then, so I don't have an answer for you. "
+                         + "Nothing was generated. Try again in a moment.";
+                }
+                const parts = appendMessageRow('agent');
+                if (parts) await typeInto(parts.bubble, text);
+            } finally {
+                setAgentBusy(false);
             }
         }
+
+        function setAgentBusy(busy) {
+            const input = document.getElementById('agentInput');
+            const send = document.querySelector('.input-row .bracket-btn');
+            if (input) input.disabled = busy;
+            if (send) {
+                send.disabled = busy;
+                send.textContent = busy ? 'Working' : 'Send';
+            }
+        }
+
+        async function sendAgentMessage() {
+            const input = document.getElementById('agentInput');
+            if (!input) return;
+            const msg = input.value.trim();
+            if (!msg) return;
+            input.value = '';
+
+            // "What's Due This Week" reads the calendar directly, because the
+            // agent has no calendar tool. The previous version fell back to
+            // claiming "You have 2 events due this week" whenever that fetch
+            // failed, which was simply untrue.
+            if (msg === "What's Due This Week") {
+                appendMessage('user', msg);
+                startAgentThinking(false);
+                try {
+                    const calRes = await fetch('/api/calendar-events', {
+                        headers: { 'X-Company-ID': getCompanyId() }
+                    });
+                    if (!calRes.ok) throw new Error('calendar unavailable');
+                    const calData = await calRes.json();
+                    const evtCount = (calData.events || []).length;
+                    stopAgentThinking();
+                    const parts = appendMessageRow('agent');
+                    await typeInto(parts.bubble, evtCount === 0
+                        ? "Nothing is due this week according to your calendar."
+                        : "You have " + evtCount + " event" + (evtCount === 1 ? '' : 's')
+                          + " due this week. Open the Calendar tab for the full detail.");
+                } catch (e) {
+                    stopAgentThinking();
+                    const parts = appendMessageRow('agent');
+                    await typeInto(parts.bubble,
+                        "I couldn't read your calendar just then, so I can't tell you what's due. "
+                        + "Try the Calendar tab directly.");
+                }
+                return;
+            }
+
+            const isQuote = msg === 'Generate Quote';
+            await runAgentTurn(msg, {
+                action: isQuote ? 'generate_quote' : 'chat',
+                stages: isQuote ? 'quote' : null,
+                progressLabel: isQuote ? 'Generating quotation' : null
+            });
+        }
+
+        // --- opening conversation ---------------------------------------------
+
+        function greetingForNow() {
+            const h = new Date().getHours();
+            if (h < 12) return 'Good morning';
+            if (h < 17) return 'Good afternoon';
+            return 'Good evening';
+        }
+
+        function vaultVettedKey() { return 'dolo_vault_vetted_' + getCompanyId(); }
+
+        // Opens with two messages: a greeting, then what happens once the vault
+        // is complete. The second message reflects the vault's real state, so it
+        // names the documents still outstanding rather than describing a generic
+        // flow the user may already have finished.
+        async function openAgentConversation() {
+            const log = agentLog();
+            if (!log || log.dataset.opened === '1') return;
+            log.dataset.opened = '1';
+            log.innerHTML = '';
+
+            const first = appendMessageRow('agent');
+            await typeInto(first.bubble,
+                greetingForNow() + ". What's on today's agenda?");
+
+            let status = null;
+            try {
+                const res = await fetch('/api/vault-status', {
+                    headers: { 'X-Company-ID': getCompanyId() }
+                });
+                if (res.ok) status = await res.json();
+            } catch (e) { /* fall through to the generic wording */ }
+
+            const second = appendMessageRow('agent');
+
+            if (status && status.complete) {
+                await typeInto(second.bubble,
+                    "Your Compliance Vault is complete - all " + status.required_count
+                    + " required documents are in. I can vet your company now and put together "
+                    + "a list of accreditations, licences and certifications that would "
+                    + "strengthen your standing on government tenders, as a PDF you can keep.");
+
+                if (!localStorage.getItem(vaultVettedKey())) {
+                    localStorage.setItem(vaultVettedKey(), String(Date.now()));
+                    await runAgentTurn(
+                        'My Compliance Vault is complete. Vet my company and generate the '
+                        + 'accreditation roadmap PDF for my industry.',
+                        { hideUserMessage: true, stages: 'vet', progressLabel: 'Vetting your company' }
+                    );
+                }
+            } else {
+                const missing = (status && status.missing || []).map(m => m.label);
+                let text = "Once you've uploaded every required document in the Compliance Vault, "
+                         + "I'll vet your company and give you a list of accreditations, licences "
+                         + "and certifications you can get to strengthen your tender applications - "
+                         + "delivered as a PDF with links.";
+                if (missing.length) {
+                    text += "\n\nStill outstanding:\n- " + missing.join("\n- ");
+                }
+                await typeInto(second.bubble, text);
+            }
+        }
+
+        // Called after a vault upload succeeds: if that upload completed the set,
+        // the vet runs without the user having to ask.
+        async function maybeAutoVetAfterUpload() {
+            if (localStorage.getItem(vaultVettedKey())) return;
+            try {
+                const res = await fetch('/api/vault-status', {
+                    headers: { 'X-Company-ID': getCompanyId() }
+                });
+                if (!res.ok) return;
+                const status = await res.json();
+                if (!status.complete) return;
+            } catch (e) {
+                return;
+            }
+            localStorage.setItem(vaultVettedKey(), String(Date.now()));
+            const parts = appendMessageRow('agent');
+            await typeInto(parts.bubble,
+                "That's your Compliance Vault complete. Vetting your company now.");
+            await runAgentTurn(
+                'My Compliance Vault is now complete. Vet my company and generate the '
+                + 'accreditation roadmap PDF for my industry.',
+                { hideUserMessage: true, stages: 'vet', progressLabel: 'Vetting your company' }
+            );
+        }
+
 
         const originalSwitchTabAgent = switchTab;
         switchTab = function(tabId, element) {
             originalSwitchTabAgent(tabId, element);
             if (tabId === 'agent') {
                 loadAgentData();
+                // Writes the greeting and the vault explainer. Guarded inside by
+                // log.dataset.opened, so revisiting the tab does not repeat them
+                // or wipe the conversation so far.
+                openAgentConversation();
             }
         };
 
@@ -2599,6 +2956,10 @@ exportCsvBtn.addEventListener('click', () => {
                     if (block) {
                         block.classList.add('uploaded');
                     }
+
+                    // If that upload completed the required set, vet straight
+                    // away rather than waiting to be asked.
+                    maybeAutoVetAfterUpload();
                 }
             } catch(e) {
                 console.error(e);
@@ -3079,6 +3440,10 @@ exportCsvBtn.addEventListener('click', () => {
         }
         initLuxuryTheme();
         window.addEventListener('DOMContentLoaded', loadAgentData);
+        // Agent is the landing tab, so switchTab never fires for it on a fresh
+        // load and the opening messages would only appear if you navigated away
+        // and back.
+        window.addEventListener('DOMContentLoaded', openAgentConversation);
     </script>
 
 

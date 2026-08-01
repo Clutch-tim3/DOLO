@@ -1,6 +1,7 @@
 import os
 import uuid
 from fpdf import FPDF
+from agent.file_paths import generated_dir, public_url
 from agent.quotation.quote_audit_log import finalize_quote
 
 def generate_quote_document(company_profile: dict, priced_items: list, is_final: bool = False) -> dict:
@@ -133,15 +134,20 @@ def generate_quote_document(company_profile: dict, priced_items: list, is_final:
     pdf.set_text_color(150, 150, 150)
     pdf.cell(0, 5, disclaimer, ln=1, align='C')
     
+    # Written through file_paths rather than to a repo-relative directory: the
+    # deployed bundle is read-only, so os.makedirs("static/downloads") raised
+    # OSError in production and the quote failed at the point of delivery. The
+    # old "/static/downloads/<name>" URL was wrong too - it only resolved
+    # locally, via the StaticFiles mount, while the endpoint that serves
+    # quotations reads from a different directory entirely.
     filename = f"quote_{uuid.uuid4().hex[:8]}.pdf"
-    os.makedirs("static/downloads", exist_ok=True)
-    filepath = os.path.join("static", "downloads", filename)
-    pdf.output(filepath)
-    
+    filepath = generated_dir() / filename
+    pdf.output(str(filepath))
+
     return {
         "status": "success",
         "document": "Multi-page Bid Response Document successfully generated.",
-        "pdf_url": f"/static/downloads/{filename}",
+        "pdf_url": public_url(filename),
         "has_flags": has_flags
     }
 

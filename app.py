@@ -22,6 +22,12 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
+# .env.local holds the developer's own key. It exists because the Firebase CLI
+# loads .env at DEPLOY time and sets every key in it as a plaintext env var on
+# the function, which shadows the Secret Manager binding - so .env must stay
+# free of secrets. Firebase never deploys .env.local, so this is a no-op in
+# production, where the key arrives from Secret Manager instead.
+load_dotenv(".env.local", override=True)
 # Presence check only. This previously printed the full ANTHROPIC_API_KEY on
 # every startup; on Firebase that writes the live secret into Cloud Logging,
 # where anyone with log-viewer access can read it.
@@ -581,6 +587,51 @@ async def api_serve_quotation(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Quotation not found")
     return FileResponse(str(file_path))
+
+@app.get("/api/vault-status")
+async def api_vault_status(request: Request):
+    """
+    Which of the required Compliance Vault documents this company has.
+
+    The Agent page polls this to decide whether the vault is complete enough to
+    offer vetting, so it can say what is still outstanding instead of the old
+    hardcoded "Auditing vault..." animation that ran on a timer and checked
+    nothing.
+    """
+    company_id = request.headers.get("X-Company-ID", "starter_corp")
+    from agent.tool_dispatch import _get_vault_status
+
+    try:
+        return _get_vault_status(company_id)
+    except Exception:
+        logger.exception("Vault status lookup failed", extra={"company_id": company_id})
+        raise HTTPException(status_code=500, detail="Could not read vault status")
+
+
+@app.get("/api/generated/{filename}")
+async def api_serve_generated(filename: str):
+    """
+    Serves anything the agent generated (quotation PDFs, accreditation reports).
+
+    These used to be written to static/downloads and linked as
+    /static/downloads/<name>, which only worked locally: the deployed bundle is
+    read-only so the write failed, and the URL pointed at the StaticFiles mount
+    rather than at the directory the files actually live in. agent/file_paths.py
+    now owns that location for both writing and reading.
+    """
+    from agent.file_paths import safe_generated_path
+
+    try:
+        # filename arrives from the URL, so it is untrusted - this rejects
+        # traversal rather than trusting the path segment.
+        file_path = safe_generated_path(filename)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found or expired")
+    return FileResponse(str(file_path), media_type="application/pdf")
+
 
 @app.delete("/api/companies/{company_name}")
 async def api_delete_company(company_name: str):
