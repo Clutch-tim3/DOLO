@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent.parent / "agent_memory.db"
+from agent.db_paths import AGENT_MEMORY_DB as DB_PATH
 
 def init_db():
     schema_path = Path(__file__).parent / "schema.sql"

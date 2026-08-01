@@ -3,7 +3,11 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "procurement.db"
+# Routed through agent.db_paths so cost_tracking, rate_limiter and
+# daily_summary all resolve procurement.db to the SAME file. This module used
+# to special-case K_SERVICE to /tmp/data on its own, which would have split the
+# database in two once the other modules moved to /tmp/dolo-db.
+from agent.db_paths import PROCUREMENT_DB as DB_PATH
 
 def _get_db():
     conn = sqlite3.connect(str(DB_PATH))

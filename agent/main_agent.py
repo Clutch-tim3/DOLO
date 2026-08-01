@@ -7,10 +7,22 @@ from agent.quotation.quote_audit_log import log_draft_quote, finalize_quote
 from agent.onboarding.vet_company import vet_company_document, onboarding_tools
 from agent.navigation.app_help import get_app_help, app_help_tools
 from agent.claude_client import call_claude_with_tracking
+from agent.tool_dispatch import execute_tool
 import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Ceiling on request/execute round-trips per user message. Without this a model
+# that keeps re-calling a failing tool would loop until the rate limiter stops it.
+MAX_TOOL_ITERATIONS = 8
+
+# Needs headroom for thinking + tool_use blocks + the final answer. The old 800
+# truncated multi-tool turns mid-block.
+MAX_TOKENS_PER_TURN = 4096
 
 SYSTEM_PROMPT = """
-You are the Agent for the Donington Vale procurement platform (DOLO). 
+You are the Agent for the CAIROAI procurement platform (DOLO). 
 Your capabilities are: company memory retrieval, app navigation help, quotation generation, onboarding vetting, and calendar assistance.
 
 HARD CONSTRAINTS:
@@ -20,7 +32,28 @@ HARD CONSTRAINTS:
 - Never present onboarding advice as compliance-verified or guaranteed. It is always non-binding guidance.
 - Company memory lives in the DB, not your context. You must call get_company_profile and get_company_documents at the start of every session before answering anything company-specific.
 - You must not write to the company profile without explicit per-field user confirmation.
+
+SESSION CONTEXT:
+- The company_id for this session is: {company_id}
+- Use that value for the company_id argument of every tool that takes one. Never
+  ask the user for their company_id and never guess one — you already have it.
+
+OUTPUT FORMAT:
+- The chat window renders your reply as plain text, so markdown syntax is shown
+  literally. Do not use **bold**, *italics*, `backticks`, # headings or [](links).
+- For lists, write each item on its own line starting with "- ". Use blank lines
+  between paragraphs. Keep replies short and conversational.
 """
+
+
+def build_system_prompt(company_id: str) -> str:
+    """
+    The tool schemas mark company_id as required, so the model needs its value.
+    Without it Claude stops and asks the user for an ID they don't know, and the
+    company-memory tools never fire. Injecting it here is safe because
+    tool_dispatch pins company_id server-side regardless of what the model sends.
+    """
+    return SYSTEM_PROMPT.format(company_id=company_id)
 
 def generate_draft_quote_flow(company_id: str, tender_file_path: str):
     """
@@ -39,7 +72,10 @@ def generate_draft_quote_flow(company_id: str, tender_file_path: str):
     return {
         "quote_id": quote_id,
         "draft_document": doc["document"],
-        "has_flags": doc["has_flags"]
+        "has_flags": doc["has_flags"],
+        # generate_quote_document writes the PDF and returns its URL; this used to
+        # be dropped here, so the download button had nothing to point at.
+        "pdf_url": doc.get("pdf_url"),
     }
 
 def finalize_quote_flow(quote_id: str, priced_items: list):
@@ -53,34 +89,97 @@ def finalize_quote_flow(quote_id: str, priced_items: list):
     finalize_quote(quote_id, priced_items)
     return "Quote finalized successfully!"
 
+def _tool_result_content(result) -> str:
+    """Tool results must be text (or content blocks) — serialize anything else."""
+    if isinstance(result, str):
+        return result
+    try:
+        return json.dumps(result, default=str)
+    except (TypeError, ValueError):
+        return str(result)
+
+
 def process_agent_chat(company_id: str, user_message: str):
     """
-    Handles a generic chat message from the user, calling Claude with tools.
+    Handles a chat message from the user, running the full agentic tool loop:
+
+        send  -> stop_reason == "tool_use"? -> execute tools locally
+              -> append tool_result blocks  -> send again
+              -> repeat until stop_reason == "end_turn"
+
+    Returns a dict:
+        {"message": <final assistant text>, "pdf_url": <str|None>, "tools_used": [...]}
+
+    Previously this made a single call and, if Claude asked for a tool, pasted
+    the raw JSON of the request into the chat bubble — the tools never ran.
     """
     messages = [{"role": "user", "content": user_message}]
-    
-    # Combine all tools
     all_tools = memory_tools + quotation_tools + onboarding_tools + app_help_tools
-    
-    # Call Claude (Requires max_tokens to be set)
-    response = call_claude_with_tracking(
-        company_id=company_id,
-        messages=messages,
-        system=SYSTEM_PROMPT,
-        tools=all_tools,
-        max_tokens=800
-    )
-    
-    # Process potential tool calls or just return text
-    # (For this test, we return the text content, and stringify tool calls if any)
-    reply_text = response.get("content", "")
-    tool_calls = response.get("tool_calls", [])
-    
-    if tool_calls:
-        reply_text += "\n\n[Agent requested tools:]\n" + json.dumps(tool_calls, indent=2)
-        
+    system_prompt = build_system_prompt(company_id)
+
+    tools_used = []
+    pdf_url = None
+    reply_text = ""
+
+    for _ in range(MAX_TOOL_ITERATIONS):
+        response = call_claude_with_tracking(
+            company_id=company_id,
+            messages=messages,
+            system=system_prompt,
+            tools=all_tools,
+            max_tokens=MAX_TOKENS_PER_TURN,
+        )
+
+        reply_text = response.get("content", "") or reply_text
+
+        if response.get("stop_reason") != "tool_use":
+            break
+
+        # Preserve the assistant turn verbatim — the tool_use blocks in it are
+        # what the tool_result blocks below refer to by id.
+        messages.append({"role": "assistant", "content": response["blocks"]})
+
+        tool_results = []
+        for call in response.get("tool_calls", []):
+            result, is_error = execute_tool(call["name"], call["input"], company_id)
+            tools_used.append(call["name"])
+
+            if not is_error and isinstance(result, dict) and result.get("pdf_url"):
+                pdf_url = result["pdf_url"]
+
+            if is_error:
+                logger.warning(
+                    "Agent tool failed",
+                    extra={"company_id": company_id, "extra_data": {"tool": call["name"], "error": str(result)}},
+                )
+
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": call["id"],
+                "content": _tool_result_content(result),
+                "is_error": is_error,
+            })
+
+        # All results for one assistant turn go back in a single user message.
+        messages.append({"role": "user", "content": tool_results})
+    else:
+        # Loop ran to the cap without Claude finishing its turn.
+        logger.warning(
+            "Agent hit MAX_TOOL_ITERATIONS",
+            extra={"company_id": company_id, "extra_data": {"tools_used": tools_used}},
+        )
+        reply_text = reply_text or (
+            "I wasn't able to finish that — I kept needing more steps than I'm "
+            "allowed in one go. Try narrowing the request."
+        )
+
     if not reply_text:
         reply_text = "*(No text response)*"
-        
-    return reply_text
+
+    try:
+        log_conversation(company_id, user_message, reply_text, tools_used)
+    except Exception:
+        logger.exception("Failed to log conversation")
+
+    return {"message": reply_text, "pdf_url": pdf_url, "tools_used": tools_used}
 

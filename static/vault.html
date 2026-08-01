@@ -3,30 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donington Vale — Compliance Vault</title>
+    <title>CairoAI — Compliance Vault</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="static/style.css?v=19.0">
+    <link rel="stylesheet" href="static/ui-polish.css?v=1.1">
     <style>
-        .page-container { padding-top: 80px; max-width: 1200px; margin: 0 auto; }
-        .filter-bar { display: flex; gap: 8px; margin-bottom: 24px; }
-        .filter-btn { background: transparent; border: 1px solid rgba(197,168,128,0.2); color: #fff; padding: 6px 12px; font-size: 11px; cursor: pointer; border-radius: 2px; }
-        .filter-btn.active { border-color: var(--accent-gold); color: var(--accent-gold); }
-        .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; margin-bottom: 60px; }
-        .doc-list { list-style: none; padding: 0; margin: 16px 0 0 0; font-size: 11px; }
-        .doc-item { margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
-        .doc-tag { font-weight: 600; text-transform: uppercase; font-size: 10px; padding: 2px 6px; border-radius: 2px; }
-        .tag-valid { color: #999; }
-        .tag-expiring { color: var(--accent-gold); border: 1px solid var(--accent-gold); }
-        .tag-expired { color: #e05c5c; border: 1px solid #e05c5c; }
-        .tag-missing { color: #e05c5c; }
-        
-        .card-compliant { border-top: 2px solid rgba(255,255,255,0.1); }
-        .card-attention { border-top: 2px solid var(--accent-gold); }
-        .card-non_compliant { border-top: 2px solid #e05c5c; }
-        
-        #summaryBanner { font-size: 12px; color: var(--accent-gold); margin-bottom: 24px; letter-spacing: 0.05em; font-weight: 500; text-transform: uppercase; }
+        /* ==================================================================
+           COMPLIANCE VAULT
+           ------------------------------------------------------------------
+           Rebuilt around one question: "what needs my attention first?"
+           A KPI band answers it at a glance, every company carries a
+           compliance ring you can read without counting rows, and cards are
+           risk-graded and sorted worst-first.
+           ================================================================== */
+        .page-container { padding-top: 80px; max-width: 1240px; margin: 0 auto; padding-bottom: 90px; }
+
+        /* All vault component styling — hero, KPI band, cards, rings, filters,
+           light theme and mobile — lives in ui-polish.css so workspace.html's
+           #tab-archive copy renders identically. Only this page's container
+           sizing remains here. */
+
+        @media (max-width: 880px) {
+            .page-container { padding-top: 64px; padding-left: 14px; padding-right: 14px; padding-bottom: 96px; }
+        }
     </style>
 </head>
 <body>
@@ -34,7 +35,7 @@
     <!-- NATIVE MOBILE APP HEADER -->
     <header class="mobile-app-header">
         <div class="mobile-app-brand">
-            <span>DONINGTON VALE</span>
+            <span>CAIROAI</span>
             <span class="brand-badge">PRO</span>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -56,7 +57,7 @@
             </a>
         </div>
         <div class="nav-center">
-            <span class="logo">DONINGTON VALE</span>
+            <span class="logo">CAIROAI</span>
         </div>
         <div class="nav-right" style="display:flex; justify-content:flex-end; align-items: center; gap: 12px;">
             <button type="button" class="theme-toggle-btn" onclick="toggleLuxuryTheme()">
@@ -76,7 +77,7 @@
                 <span>ACCURACY</span>
             </a>
             <a href="/sort" class="back-link" style="flex-direction:row-reverse;">
-                <span>SORT TENDERS</span>
+                <span>BATCH ANALYSIS</span>
                 <svg class="back-arrow" width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(180deg); margin-right:0; margin-left:8px;">
                     <path d="M6 1L1 6M1 6L6 11M1 6H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
@@ -85,24 +86,59 @@
     </nav>
 
     <main class="page-container">
-        <div style="margin-bottom: 32px;">
+        <div class="vault-hero">
             <span class="category-label">REGULATORY STANDING</span>
-            <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">COMPLIANCE VAULT.</h1>
+            <h1 class="hero-title" style="font-size: 36px; text-align: left;">COMPLIANCE VAULT.</h1>
             <div id="summaryBanner"></div>
         </div>
-        
-        <div class="filter-bar">
-            <button class="filter-btn active" data-filter="all">ALL</button>
-            <button class="filter-btn" data-filter="expiring">EXPIRING SOON</button>
-            <button class="filter-btn" data-filter="expired">EXPIRED / MISSING</button>
-            <button class="filter-btn" data-filter="compliant">COMPLIANT</button>
+
+        <!-- KPI band: answers "what needs attention first" before any scrolling -->
+        <div class="vault-stats" id="vaultStats">
+            <div class="stat-tile tile-total">
+                <span class="k">Companies</span>
+                <span class="v" id="kpiTotal">—</span>
+                <span class="sub">tracked in the ledger</span>
+            </div>
+            <div class="stat-tile tile-ok">
+                <span class="k">Compliant</span>
+                <span class="v" id="kpiOk">—</span>
+                <span class="sub">all documents valid</span>
+            </div>
+            <div class="stat-tile tile-warn">
+                <span class="k">Expiring soon</span>
+                <span class="v" id="kpiWarn">—</span>
+                <span class="sub">renew before closing dates</span>
+            </div>
+            <div class="stat-tile tile-bad">
+                <span class="k">Expired / missing</span>
+                <span class="v" id="kpiBad">—</span>
+                <span class="sub">blocks tender eligibility</span>
+            </div>
         </div>
 
-        <div class="profile-card" id="emptyState" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 120px; margin-bottom: 60px;">
-            <div style="text-align: center;">
-                <span class="card-tag">NO COMPANIES IN ARCHIVE</span>
-                <h3 class="card-title" style="font-size:14px; margin-top:8px;">COMPLIANCE TRACKING BEGINS ONCE COMPANIES ARE ADDED TO THE LEDGER</h3>
-            </div>
+        <div class="section-rule"></div>
+
+        <div class="filter-bar" id="filterBar">
+            <button class="filter-btn active" data-filter="all">All <span class="n" id="cAll">0</span></button>
+            <button class="filter-btn" data-filter="expired">Expired / Missing <span class="n" id="cExpired">0</span></button>
+            <button class="filter-btn" data-filter="expiring">Expiring Soon <span class="n" id="cExpiring">0</span></button>
+            <button class="filter-btn" data-filter="compliant">Compliant <span class="n" id="cCompliant">0</span></button>
+        </div>
+
+        <div id="emptyState" style="display:none;">
+            <span class="category-label">NO COMPANIES IN ARCHIVE</span>
+            <h3 style="font-family:'Cinzel',serif; font-size:15px; letter-spacing:.08em; color:var(--accent-gold); margin:10px 0 8px;">NOTHING TO TRACK YET</h3>
+            <p style="font-size:13px; color:var(--text-muted); max-width:44ch; margin:0 auto; line-height:1.6;">
+                Compliance tracking begins once companies are added to the ledger. Add one from the dashboard to start monitoring document expiry.
+            </p>
+        </div>
+
+        <div id="noMatch" style="display:none;">
+            <span class="category-label">NO MATCHES</span>
+            <h3 style="font-family:'Cinzel',serif; font-size:15px; letter-spacing:.08em; color:var(--accent-gold); margin:10px 0 8px;">NOTHING IN THIS CATEGORY</h3>
+            <p style="font-size:13px; color:var(--text-muted); max-width:44ch; margin:0 auto; line-height:1.6;">
+                No companies match this filter right now — which is usually good news.
+            </p>
         </div>
 
         <div class="grid-container" id="vaultGrid" style="display:none;"></div>
@@ -117,90 +153,152 @@
             'cipc_registration': 'CIPC Registration'
         };
         
+        const STATUS_LABEL = {
+            compliant: 'READY',
+            attention_needed: 'ACTION SOON',
+            non_compliant: 'BLOCKED'
+        };
+        // Worst first: a vault is a to-do list, not an alphabetical directory.
+        const RISK_ORDER = { non_compliant: 0, attention_needed: 1, compliant: 2 };
+
         function renderTag(doc) {
-            if(doc.status === 'valid') {
-                return `<span class="doc-tag tag-valid">Valid ${doc.expiry_date ? 'until ' + doc.expiry_date : ''}</span>`;
-            } else if(doc.status === 'expiring_soon') {
-                return `<span class="doc-tag tag-expiring">Expires in ${doc.days_until_expiry} days</span>`;
-            } else if(doc.status === 'expired') {
-                return `<span class="doc-tag tag-expired">EXPIRED ${Math.abs(doc.days_until_expiry)} days ago</span>`;
-            } else {
-                return `<span class="doc-tag tag-missing">Not on file</span>`;
+            if (doc.status === 'valid') {
+                return `<span class="doc-tag tag-valid">Valid${doc.expiry_date ? ' &middot; ' + doc.expiry_date : ''}</span>`;
+            } else if (doc.status === 'expiring_soon') {
+                return `<span class="doc-tag tag-expiring">${doc.days_until_expiry}d left</span>`;
+            } else if (doc.status === 'expired') {
+                return `<span class="doc-tag tag-expired">Expired ${Math.abs(doc.days_until_expiry)}d</span>`;
             }
+            return `<span class="doc-tag tag-missing">Not on file</span>`;
         }
-        
+
+        /** Circular progress ring — reads as a single glance instead of a row count. */
+        function ringSvg(pct) {
+            const r = 26, c = 2 * Math.PI * r;
+            const offset = c * (1 - pct / 100);
+            return `
+                <div class="ring">
+                    <svg width="62" height="62" viewBox="0 0 62 62">
+                        <circle class="track" cx="31" cy="31" r="${r}" fill="none" stroke-width="4"/>
+                        <circle class="fill"  cx="31" cy="31" r="${r}" fill="none" stroke-width="4"
+                                stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"/>
+                    </svg>
+                    <span class="pct">${pct}%</span>
+                </div>`;
+        }
+
         let allCompanies = [];
-        
+
         async function loadVault() {
             try {
                 const res = await fetch('/api/compliance-status');
                 allCompanies = await res.json();
-                renderGrid('all');
-            } catch(e) { console.error(e); }
+            } catch (e) {
+                console.error('Failed to load compliance status:', e);
+                allCompanies = [];
+            }
+            updateCounts();
+            renderGrid('all');
         }
-        
+
+        function tally() {
+            const t = { total: allCompanies.length, compliant: 0, attention_needed: 0, non_compliant: 0 };
+            allCompanies.forEach(c => { if (t[c.overall_status] !== undefined) t[c.overall_status]++; });
+            return t;
+        }
+
+        function updateCounts() {
+            const t = tally();
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            set('kpiTotal', t.total);
+            set('kpiOk', t.compliant);
+            set('kpiWarn', t.attention_needed);
+            set('kpiBad', t.non_compliant);
+            set('cAll', t.total);
+            set('cExpired', t.non_compliant);
+            set('cExpiring', t.attention_needed);
+            set('cCompliant', t.compliant);
+
+            const summary = document.getElementById('summaryBanner');
+            if (!summary) return;
+            if (t.total === 0) { summary.textContent = ''; return; }
+            const issues = t.attention_needed + t.non_compliant;
+            summary.innerHTML = issues === 0
+                ? `Every tracked company is <b>fully compliant</b>. Nothing is blocking a submission right now.`
+                : `<span class="sev">${issues}</span> of <b>${t.total}</b> ${t.total === 1 ? 'company' : 'companies'} ${issues === 1 ? 'needs' : 'need'} attention — `
+                  + `<b>${t.attention_needed}</b> expiring soon, <span class="sev">${t.non_compliant}</span> expired or missing.`;
+        }
+
         function renderGrid(filter) {
             const grid = document.getElementById('vaultGrid');
             const empty = document.getElementById('emptyState');
-            const summary = document.getElementById('summaryBanner');
+            const noMatch = document.getElementById('noMatch');
             grid.innerHTML = '';
-            
-            if(allCompanies.length === 0) {
-                empty.style.display = 'flex';
+
+            if (allCompanies.length === 0) {
+                empty.style.display = 'block';
+                noMatch.style.display = 'none';
                 grid.style.display = 'none';
-                summary.textContent = '';
                 return;
             }
-            
             empty.style.display = 'none';
-            grid.style.display = 'grid';
-            
-            let issues = 0;
-            let expiredCount = 0;
-            let expiringCount = 0;
-            
+
             const filtered = allCompanies.filter(c => {
-                if(c.overall_status === 'non_compliant') expiredCount++;
-                if(c.overall_status === 'attention_needed') expiringCount++;
-                if(c.overall_status !== 'compliant') issues++;
-                
-                if(filter === 'all') return true;
-                if(filter === 'compliant' && c.overall_status === 'compliant') return true;
-                if(filter === 'expiring' && c.overall_status === 'attention_needed') return true;
-                if(filter === 'expired' && c.overall_status === 'non_compliant') return true;
+                if (filter === 'all') return true;
+                if (filter === 'compliant') return c.overall_status === 'compliant';
+                if (filter === 'expiring') return c.overall_status === 'attention_needed';
+                if (filter === 'expired') return c.overall_status === 'non_compliant';
                 return false;
-            });
-            
-            summary.textContent = issues > 0 ? `${issues} COMPANIES REQUIRE ATTENTION — ${expiringCount} EXPIRING SOON, ${expiredCount} EXPIRED OR MISSING` : 'ALL COMPANIES COMPLIANT';
-            
+            }).sort((a, b) => (RISK_ORDER[a.overall_status] ?? 9) - (RISK_ORDER[b.overall_status] ?? 9));
+
+            if (filtered.length === 0) {
+                noMatch.style.display = 'block';
+                grid.style.display = 'none';
+                return;
+            }
+            noMatch.style.display = 'none';
+            grid.style.display = 'grid';
+
             filtered.forEach(c => {
+                const docs = c.documents || [];
+                const valid = docs.filter(d => d.status === 'valid').length;
+                const pct = docs.length ? Math.round((valid / docs.length) * 100) : 0;
+
                 const card = document.createElement('div');
-                card.className = `profile-card card-${c.overall_status}`;
-                
-                const docsHtml = c.documents.map(d => `
+                card.className = `vault-card card-${c.overall_status}`;
+
+                const docsHtml = docs.map(d => `
                     <li class="doc-item">
-                        <span style="color:#fff;">${docNames[d.type]}</span>
+                        <span class="doc-name">${docNames[d.type] || d.type}</span>
                         ${renderTag(d)}
-                    </li>
-                `).join('');
-                
+                    </li>`).join('');
+
                 card.innerHTML = `
-                    <span class="card-tag">${c.company_id}</span>
-                    <h3 class="card-title">${c.company_name}</h3>
+                    <div class="vc-head">
+                        ${ringSvg(pct)}
+                        <div class="vc-meta">
+                            <span class="vc-id">${c.company_id}</span>
+                            <h3 class="vc-name">${c.company_name}</h3>
+                        </div>
+                        <span class="vc-status">${STATUS_LABEL[c.overall_status] || c.overall_status}</span>
+                    </div>
                     <ul class="doc-list">${docsHtml}</ul>
-                `;
+                    <div class="vc-foot">
+                        <span class="vc-count">${valid} / ${docs.length} VERIFIED</span>
+                        <span class="vc-progress"><i style="width:${pct}%"></i></span>
+                    </div>`;
                 grid.appendChild(card);
             });
         }
-        
+
         document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', () => {
                 document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                e.target.classList.add('active');
-                renderGrid(e.target.dataset.filter);
+                btn.classList.add('active');           // btn, not e.target: the count <span> is a child
+                renderGrid(btn.dataset.filter);
             });
         });
-        
+
         window.addEventListener('DOMContentLoaded', loadVault);
     </script>
 
@@ -215,7 +313,7 @@
         </a>
         <a href="/sort" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Sort</span>
+            <span>Batch</span>
         </a>
         <a href="/vault" class="mobile-nav-tab active">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>

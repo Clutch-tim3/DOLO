@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "procurement.db"
+from agent.db_paths import PROCUREMENT_DB as DB_PATH
 
 def generate_daily_summary():
     """Generates a daily summary report for Monitoring & Alerting."""

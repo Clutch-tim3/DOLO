@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donington Vale â€” Workspace Console</title>
+    <title>CairoAI — Workspace Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="static/style.css?v=18.0">
+    <link rel="stylesheet" href="static/ui-polish.css?v=1.1">
     <style>
         body { margin: 0; padding: 0; background-color: var(--bg-color, #000000); color: var(--text-primary, #e4e4e7); font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
         
@@ -108,7 +109,7 @@
         .form-input, .form-select { background: var(--input-bg); border: 1px solid var(--input-border); color: var(--text-white); padding: 10px 14px; border-radius: 6px; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; outline: none; transition: border-color 0.2s, background 0.3s ease; }
         .form-input:focus, .form-select:focus { border-color: var(--accent-gold); }
 
-        /* â”€â”€ Signature Corner-Bracket Button â”€â”€ */
+        /* ── Signature Corner-Bracket Button ── */
         .corner-btn {
           position: relative;
           display: inline-flex;
@@ -375,6 +376,331 @@
 
         /* Console page-container override (no top padding needed inside tabs) */
         .content-section .page-container { padding-top: 0; }
+
+/* ==========================================================================
+   AGENT CONSOLE — signature UI layer
+   ========================================================================== */
+
+/* Side blocks removed: the conversation gets the full column.
+   Selectors are ID-scoped because style.css ships a higher-specificity
+   `#tab-agent .agent-grid { grid-template-columns: 1fr 300px }` that a plain
+   class selector cannot outrank. */
+#tab-agent .agent-grid,
+.agent-grid { display: block; }
+#tab-agent .chat-panel,
+.chat-panel {
+    height: calc(100vh - 300px);
+    min-height: 520px;
+    max-height: 900px;
+    border-radius: 6px;
+    position: relative;
+}
+
+/* --- chat header: category-label + live pulse-dot ------------------------ */
+.chat-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 14px 28px;
+    border-bottom: 0.5px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.015);
+}
+.chat-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.chat-head-title {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.24em;
+    text-transform: uppercase; color: var(--accent-gold); white-space: nowrap;
+}
+.chat-head-sub {
+    font-size: 11px; color: var(--text-muted); letter-spacing: 0.04em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* pulse-dot — 7px, 2s ease-out ring, matches the brand spec */
+.pulse-dot { position: relative; width: 7px; height: 7px; flex-shrink: 0; }
+.pulse-dot i {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: #52c27c; box-shadow: 0 0 11px rgba(82,194,124,0.75);
+}
+.pulse-dot::after {
+    content: ''; position: absolute; inset: 0; border-radius: 50%;
+    border: 1px solid #52c27c; animation: pulseRing 2s cubic-bezier(0.16,1,0.3,1) infinite;
+}
+@keyframes pulseRing {
+    0%   { transform: scale(1);   opacity: 0.55; }
+    100% { transform: scale(3.4); opacity: 0; }
+}
+
+/* --- thinking / processing indicator ------------------------------------ */
+.agent-thinking {
+    display: flex; align-items: center; gap: 11px;
+    padding: 12px 16px; border-radius: 3px;
+    background: rgba(255,255,255,0.03);
+    border: 0.5px solid rgba(197,168,128,0.22);
+    width: fit-content;
+}
+.think-dots { display: inline-flex; gap: 5px; }
+.think-dots span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent-gold); opacity: 0.35;
+    animation: thinkBounce 1.25s ease-in-out infinite;
+}
+.think-dots span:nth-child(2) { animation-delay: 0.16s; }
+.think-dots span:nth-child(3) { animation-delay: 0.32s; }
+@keyframes thinkBounce {
+    0%, 80%, 100% { transform: translateY(0);     opacity: 0.3; }
+    40%           { transform: translateY(-5px);  opacity: 1;   }
+}
+.think-label {
+    font-size: 12px; letter-spacing: 0.06em; color: var(--text-muted);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+/* gold shimmer travelling across the status label while work is in flight */
+.think-label span {
+    background: linear-gradient(90deg,
+        var(--text-muted) 0%, var(--accent-gold) 42%, var(--text-muted) 84%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 2.4s linear infinite;
+}
+@keyframes shimmer {
+    0%   { background-position: 130% 0; }
+    100% { background-position: -30% 0; }
+}
+
+/* --- tool trace: what the agent actually did ---------------------------- */
+.tool-trace { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tool-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent-gold);
+    background: rgba(197,168,128,0.10);
+    border: 0.5px solid rgba(197,168,128,0.32);
+    padding: 3px 9px; border-radius: 20px;
+    animation: chipIn 0.32s cubic-bezier(0.25,0.8,0.4,1) both;
+}
+.tool-chip::before {
+    content: ''; width: 4px; height: 4px; border-radius: 50%;
+    background: var(--accent-gold); flex-shrink: 0;
+}
+@keyframes chipIn {
+    from { opacity: 0; transform: translateY(5px) scale(0.94); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* message entrance */
+.msg-row { animation: msgIn 0.34s cubic-bezier(0.25,0.8,0.4,1) both; }
+@keyframes msgIn {
+    from { opacity: 0; transform: translateY(9px); }
+    to   { opacity: 1; transform: none; }
+}
+/* preserve newlines from plain-text agent replies */
+.msg-bubble { white-space: pre-wrap; }
+
+/* --- signature button animation ----------------------------------------- */
+/* The filled variant used to kill the corner brackets, leaving Send inert.
+   It now gets a gold sweep + lift, and the brackets invert over the fill. */
+.bracket-btn.filled {
+    position: relative; overflow: hidden;
+    transition: transform 0.25s cubic-bezier(0.25,0.8,0.4,1),
+                box-shadow 0.25s cubic-bezier(0.25,0.8,0.4,1),
+                opacity 0.25s ease;
+}
+.bracket-btn.filled::before,
+.bracket-btn.filled::after { display: block; content: ''; }
+.bracket-btn.filled::before {
+    top: 0; left: -140%; width: 55%; height: 100%; border: none;
+    background: linear-gradient(100deg,
+        transparent, rgba(255,255,255,0.55), transparent);
+    transform: skewX(-18deg); transition: left 0.55s cubic-bezier(0.25,0.8,0.4,1);
+}
+.bracket-btn.filled::after { display: none; }
+.bracket-btn.filled:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(197,168,128,0.34);
+    opacity: 1;
+}
+.bracket-btn.filled:hover::before { left: 140%; }
+.bracket-btn.filled:active { transform: translateY(0); }
+.bracket-btn.filled:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.bracket-btn.filled:disabled::before { display: none; }
+
+/* quick-action chips get the same lift language */
+.quick-chip {
+    position: relative;
+    transition: border-color 0.22s ease, color 0.22s ease,
+                transform 0.22s cubic-bezier(0.25,0.8,0.4,1),
+                background 0.22s ease;
+}
+.quick-chip:hover {
+    transform: translateY(-2px);
+    background: rgba(197,168,128,0.09);
+}
+.quick-chip:active { transform: translateY(0); }
+
+/* focus ring on the composer */
+.agent-input { transition: border-color 0.22s ease, box-shadow 0.22s ease; }
+.agent-input:focus {
+    outline: none; border-color: rgba(197,168,128,0.55);
+    box-shadow: 0 0 0 3px rgba(197,168,128,0.10);
+}
+
+/* --- mobile: workspace collapses to Agent + Generate Quotation ---------- */
+@media (max-width: 880px) {
+    #tab-agent .agent-grid, .agent-grid { display: block; }
+    #tab-agent .chat-panel, .chat-panel { height: calc(100vh - 250px); min-height: 400px; }
+    .chat-scroll { padding: 18px 16px 6px; gap: 16px; }
+    .msg-row { max-width: 92%; }
+    .chat-head { padding: 11px 16px; }
+    .chat-head-sub { display: none; }
+    .input-row { padding: 12px 16px 16px; gap: 8px; }
+    .quick-actions { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+    .quick-actions::-webkit-scrollbar { display: none; }
+
+    /* Only Agent and Generate Quotation are reachable from the console on a
+       phone; Vault / Batch / Calendar / System live in the bottom nav. */
+    .nav-list .nav-item[data-tab="archive"],
+    .nav-list .nav-item[data-tab="sort"],
+    .nav-list .nav-item[data-tab="calendar"],
+    .nav-list .nav-item[data-tab="system"] { display: none; }
+}
+
+body.light-theme .chat-head { background: rgba(20,16,10,0.02); border-bottom-color: var(--border-faint); }
+body.light-theme .agent-thinking { background: rgba(20,16,10,0.03); }
+
+/* ==========================================================================
+   GENERATE QUOTATION — numbered step rail + "what you get" panel
+   ========================================================================== */
+.quote-layout {
+    display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 22px; align-items: start; max-width: 1120px;
+}
+.quote-card {
+    padding: 24px 26px 22px; border-radius: 10px;
+    background: linear-gradient(158deg, rgba(255,255,255,.05), rgba(255,255,255,.014));
+    border: 1px solid rgba(255,255,255,.07);
+}
+
+/* step rail: the connector line makes this read as a sequence, not a form */
+.quote-steps { list-style: none; margin: 0; padding: 0; }
+.qstep { position: relative; display: grid; grid-template-columns: 30px 1fr; gap: 14px; padding-bottom: 22px; }
+.qstep:last-of-type { padding-bottom: 0; }
+.qstep::before {
+    content: ''; position: absolute; left: 14px; top: 32px; bottom: 4px; width: 1px;
+    background: linear-gradient(rgba(197,168,128,.42), rgba(197,168,128,.06));
+}
+.qstep:last-of-type::before { display: none; }
+.qstep-num {
+    width: 30px; height: 30px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px; font-weight: 700; color: var(--accent-gold);
+    background: rgba(197,168,128,.13);
+    border: 1px solid rgba(197,168,128,.42);
+    z-index: 1;
+}
+.qstep-body { min-width: 0; }
+.qstep-title {
+    display: block; margin-bottom: 10px;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 11px; font-weight: 600; letter-spacing: .18em;
+    text-transform: uppercase; color: #e4e4e7;
+}
+.qstep-title em {
+    font-style: normal; margin-left: 8px;
+    font-size: 9.5px; letter-spacing: .12em; color: var(--text-muted);
+}
+
+.quote-drop {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 18px; cursor: pointer; text-align: left;
+    border: 1px dashed rgba(197,168,128,.34);
+    background: rgba(197,168,128,.035);
+    border-radius: 8px;
+}
+.quote-drop svg { flex-shrink: 0; }
+.quote-drop .file-drop-text { font-size: 12.5px; font-weight: 500; color: var(--text-white); }
+.quote-hint { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.quote-drop.dragover { border-color: rgba(197,168,128,.75); background: rgba(197,168,128,.09); }
+.quote-file-label {
+    margin-top: 10px; padding: 8px 12px; border-radius: 6px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 11.5px;
+    color: var(--accent-gold); background: rgba(197,168,128,.10);
+    border: 1px solid rgba(197,168,128,.3);
+}
+
+.quote-select {
+    width: 100%; box-sizing: border-box; border-radius: 6px;
+    background: rgba(0,0,0,.3); color: var(--text-white);
+    border: 1px solid rgba(255,255,255,.1);
+    padding: 11px 13px; font-size: 13px; font-family: inherit; outline: none;
+}
+.quote-select:focus { border-color: rgba(197,168,128,.55); box-shadow: 0 0 0 3px rgba(197,168,128,.10); }
+.quote-run { width: 100%; padding: 13px 20px !important; font-size: 11.5px !important; letter-spacing: .16em; }
+
+.quote-done {
+    margin-top: 22px; padding: 18px 20px; border-radius: 8px;
+    background: rgba(197,168,128,.10);
+    border: 1px solid rgba(197,168,128,.36);
+    box-shadow: inset 0 0 40px rgba(197,168,128,.06);
+}
+.quote-done-head {
+    display: flex; align-items: center; gap: 9px;
+    font-family: 'Cinzel', serif; font-size: 14px; font-weight: 600;
+    letter-spacing: .08em; color: var(--accent-gold);
+}
+.quote-done-sub { font-size: 12px; color: var(--text-muted); margin: 7px 0 0; line-height: 1.55; }
+.quote-dl {
+    display: inline-block; margin-top: 13px; padding: 9px 16px; border-radius: 999px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11.5px; font-weight: 700; letter-spacing: .08em;
+    color: #000; background: var(--accent-gold); text-decoration: none;
+    transition: transform .24s cubic-bezier(.25,.8,.4,1), box-shadow .24s cubic-bezier(.25,.8,.4,1);
+}
+.quote-dl:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(197,168,128,.36); }
+
+.quote-aside {
+    padding: 22px 22px 20px; border-radius: 10px;
+    background: rgba(255,255,255,.02);
+    border: 1px solid rgba(255,255,255,.06);
+}
+.quote-includes { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.quote-includes li {
+    position: relative; padding-left: 16px;
+    font-size: 12px; line-height: 1.6; color: var(--text-muted);
+}
+.quote-includes li::before {
+    content: ''; position: absolute; left: 0; top: 7px;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--accent-gold);
+}
+.quote-includes b {
+    display: block; margin-bottom: 2px;
+    font-size: 12px; font-weight: 600; letter-spacing: .02em; color: #e4e4e7;
+}
+.quote-note {
+    margin: 18px 0 0; padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,.06);
+    font-size: 11.5px; line-height: 1.55; color: var(--text-muted); font-style: italic;
+}
+
+body.light-theme .quote-card,
+body.light-theme .quote-aside { background: rgba(20,16,10,.03); border-color: rgba(20,16,10,.1); }
+body.light-theme .qstep-title,
+body.light-theme .quote-includes b { color: #17130d; }
+body.light-theme .quote-select { background: rgba(20,16,10,.03); color: #17130d; border-color: rgba(20,16,10,.14); }
+
+@media (max-width: 980px) {
+    .quote-layout { grid-template-columns: 1fr; gap: 16px; }
+}
+@media (max-width: 880px) {
+    .quote-card { padding: 18px 16px 16px; }
+    .qstep { grid-template-columns: 26px 1fr; gap: 11px; padding-bottom: 18px; }
+    .qstep::before { left: 12px; top: 28px; }
+    .qstep-num { width: 26px; height: 26px; font-size: 11px; }
+    .quote-drop { flex-direction: column; align-items: flex-start; gap: 9px; padding: 14px; }
+    .quote-aside { padding: 16px; }
+    .quote-dl:hover { transform: none; box-shadow: none; }
+}
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -387,7 +713,7 @@
     <!-- NATIVE MOBILE APP HEADER -->
     <header class="mobile-app-header">
         <div class="mobile-app-brand">
-            <span>DONINGTON VALE</span>
+            <span>CAIROAI</span>
             <span class="brand-badge">PRO</span>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -405,37 +731,39 @@
         <div>
             <div class="sidebar-brand">
                 <div class="brand-logo">
-                    <span>DONINGTON VALE</span>
+                    <svg viewBox="0 0 100 100" width="24" height="24" xmlns="http://www.w3.org/2000/svg" style="margin-right: 8px;">
+                      <polygon points="50,15 41,33 59,33" fill="#e6d4ba"/>
+                      <polygon points="39,37 31,53 69,53 61,37" fill="#dbb993"/>
+                      <polygon points="29,57 21,73 79,73 71,57" fill="#c39d73"/>
+                      <polygon points="19,77 11,93 89,93 81,77" fill="#bc9061"/>
+                    </svg>
+                    <span>CAIROAI</span>
                     <span class="brand-badge">CONSOLE</span>
                 </div>
             </div>
             <ul class="nav-list">
-                <li class="nav-item active" onclick="switchTab('agent', this); clearNotifications();">
+                <li class="nav-item active" data-tab="agent" onclick="switchTab('agent', this); clearNotifications();">
                     <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>
                     <span>Agent</span>
                     <span id="agentNotifBadge" style="display:none; background:#C8331F; color:#fff; font-size:10px; font-weight:700; min-width:18px; height:18px; border-radius:50%; align-items:center; justify-content:center; margin-left:auto;">0</span>
                 </li>
-                <li class="nav-item" onclick="switchTab('evaluation', this)">
-                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg></span>
-                    <span>Single Evaluation</span>
-                </li>
-                <li class="nav-item" onclick="switchTab('sort', this)">
-                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v18M7 21l-4-4M7 21l4-4M17 21V3M17 3l4 4M17 3l-4 4"/></svg></span>
-                    <span>Sort Tenders</span>
-                </li>
-                <li class="nav-item" onclick="switchTab('archive', this)">
-                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 15h6M12 12v3"/></svg></span>
-                    <span>Smart Compliance Vault</span>
-                </li>
-                <li class="nav-item" onclick="switchTab('calendar', this)">
-                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
-                    <span>Calendar &amp; Deadlines</span>
-                </li>
-                <li class="nav-item" onclick="switchTab('quotation', this)">
+                <li class="nav-item" data-tab="quotation" onclick="switchTab('quotation', this);">
                     <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
                     <span>Generate Quotation</span>
                 </li>
-                <li class="nav-item" onclick="switchTab('system', this)">
+                <li class="nav-item" data-tab="archive" onclick="switchTab('archive', this);">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 15h6M12 12v3"/></svg></span>
+                    <span>Smart Compliance Vault</span>
+                </li>
+                <li class="nav-item" data-tab="sort" onclick="switchTab('sort', this);">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v18M7 21l-4-4M7 21l4-4M17 21V3M17 3l4 4M17 3l-4 4"/></svg></span>
+                    <span>Batch Tender Analysis</span>
+                </li>
+                <li class="nav-item" data-tab="calendar" onclick="switchTab('calendar', this);">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+                    <span>Calendar &amp; Deadlines</span>
+                </li>
+                <li class="nav-item" data-tab="system" onclick="switchTab('system', this);">
                     <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
                     <span>System Status</span>
                 </li>
@@ -471,204 +799,18 @@
         <!-- Beginner Guided Onboarding Banner -->
         <div class="guided-banner">
             <div class="guided-text">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> <strong>Beginner Guide:</strong> Welcome to the Donington Vale Console. Use the left sidebar to navigate. The <strong>Smart Compliance Vault</strong> checks and auto-sorts your company documents to prevent tender disqualification.
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg> <strong>Beginner Guide:</strong> Welcome to the CairoAI Console. Use the left sidebar to navigate. The <strong>Smart Compliance Vault</strong> checks and auto-sorts your company documents to prevent tender disqualification.
             </div>
         </div>
 
-        <!-- TAB 1: SINGLE EVALUATION (Native UI) -->
-        <section id="tab-evaluation" class="content-section">
-    <main class="page-container">
-        <div style="margin-bottom: 40px;">
-            <span class="category-label">PERFORMANCE VALIDATION</span>
-            <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 24px; text-align: left;">TRACK RECORD.</h1>
-        </div>
 
-        <div style="display: flex; gap: 16px; margin-bottom: 40px;" id="statsRow">
-            <div class="stat-block"><div class="category-label">OVERALL ACCURACY</div><div class="stat-val gold" id="acc_val">--%</div></div>
-            <div class="stat-block"><div class="category-label">TOTAL TRACKED</div><div class="stat-val" id="total_val">--</div></div>
-            <div class="stat-block"><div class="category-label">WON / LOST / PENDING</div><div class="stat-val" style="font-size: 24px; padding-top:4px;" id="wlp_val">-- / -- / --</div></div>
-            <div class="stat-block"><div class="category-label">PRECISION (PURSUE CALLS)</div><div class="stat-val" id="prec_val">--%</div></div>
-        </div>
-
-        <div style="margin-bottom: 48px; max-width: 600px;">
-            <span class="category-label">6-MONTH TREND</span>
-            <div class="trend-container" id="trendContainer"></div>
-        </div>
-
-        <section class="results-section" style="padding-bottom:60px;">
-            <h2 class="column-title" style="margin-bottom:24px;">TRACKED OUTCOMES</h2>
-            
-            <div class="profile-card" id="emptyState" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 120px;">
-                <div style="text-align: center;">
-                    <span class="card-tag">NO OUTCOMES TRACKED YET</span>
-                    <h3 class="card-title" style="font-size:14px; margin-top:8px;">MARK A TENDER RESULT FROM SINGLE PREDICTIONS OR BATCH SORT TO BEGIN</h3>
-                </div>
-            </div>
-
-            <div class="specs-table-wrapper" style="width:100%; display:none;" id="outcomesTableWrapper">
-                <table class="specs-table" style="width:100%; text-align:left;">
-                    <thead>
-                        <tr>
-                            <th class="spec-label">Date Tracked</th>
-                            <th class="spec-label">Tender / Filename</th>
-                            <th class="spec-label">Supplier</th>
-                            <th class="spec-label">Recommendation</th>
-                            <th class="spec-label">Predicted Prob.</th>
-                            <th class="spec-label">Actual Outcome</th>
-                            <th class="spec-label">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="outcomesBody"></tbody>
-                </table>
-            </div>
-        </section>
-    </main>
-
-    <!-- Inline Update Form Template -->
-    <template id="updateFormTemplate">
-        <tr class="expanded-row">
-            <td colspan="7" style="border-bottom: 1px solid rgba(255,255,255,0.05); padding: 16px;">
-                <form class="updateOutcomeForm" style="display:flex; gap:16px; align-items:flex-end;">
-                    <input type="hidden" name="prediction_id">
-                    <div style="flex:1;">
-                        <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Outcome</label>
-                        <select name="actual_outcome" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px;">
-                            <option value="won">Won</option>
-                            <option value="lost">Lost</option>
-                            <option value="withdrawn">Withdrawn</option>
-                            <option value="pending">Pending</option>
-                        </select>
-                    </div>
-                    <div style="flex:1;">
-                        <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Date (Optional)</label>
-                        <input type="date" name="outcome_date" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:7px;">
-                    </div>
-                    <div style="flex:2;">
-                        <label style="font-size:11px; color:#999; display:block; margin-bottom:4px;">Notes</label>
-                        <input type="text" name="notes" placeholder="e.g. Lost on price" style="width:100%; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px;">
-                    </div>
-                    <div>
-                        <button type="submit" class="corner-btn" style="padding:8px 16px; font-size:11px;">
-                            <span>SAVE</span>
-                            <span class="bracket bracket-tr"></span><span class="bracket bracket-bl"></span>
-                        </button>
-                    </div>
-                </form>
-            </td>
-        </tr>
-    </template>
-
-    <script>
-        async function loadAccuracy() {
-            try {
-                const statRes = await fetch('/api/accuracy-stats');
-                const stats = await statRes.json();
-                
-                document.getElementById('acc_val').textContent = stats.total_tracked > 0 ? stats.accuracy_pct.toFixed(1) + '%' : '--%';
-                document.getElementById('total_val').textContent = stats.total_tracked;
-                document.getElementById('wlp_val').textContent = `${stats.won} / ${stats.lost} / ${stats.pending}`;
-                document.getElementById('prec_val').textContent = stats.total_tracked > 0 ? stats.precision_actual.toFixed(1) + '%' : '--%';
-                
-                const trendContainer = document.getElementById('trendContainer');
-                trendContainer.innerHTML = '';
-                stats.accuracy_trend.forEach(t => {
-                    const w = document.createElement('div');
-                    w.className = 'trend-bar-wrapper';
-                    w.innerHTML = `
-                        <div class="trend-bar" style="height: ${t.accuracy_pct}%"></div>
-                        <div class="trend-label">${t.month}</div>
-                    `;
-                    trendContainer.appendChild(w);
-                });
-
-                const outRes = await fetch('/api/tracked-outcomes');
-                const outcomes = await outRes.json();
-                
-                if(outcomes.length > 0) {
-                    document.getElementById('emptyState').style.display = 'none';
-                    document.getElementById('outcomesTableWrapper').style.display = 'block';
-                    
-                    const tbody = document.getElementById('outcomesBody');
-                    tbody.innerHTML = '';
-                    const template = document.getElementById('updateFormTemplate');
-                    
-                    outcomes.forEach(o => {
-                        const tr = document.createElement('tr');
-                        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
-                        
-                        let outColor = '#999';
-                        let outStyle = '';
-                        if(o.actual_outcome === 'won') { outColor = 'var(--accent-gold)'; }
-                        else if(o.actual_outcome === 'lost') { outColor = '#666'; }
-                        else if(o.actual_outcome === 'withdrawn') { outColor = '#e05c5c'; }
-                        else if(o.actual_outcome === 'pending') { outColor = 'var(--accent-gold)'; outStyle = 'border:1px dashed var(--accent-gold); padding:2px 6px; background:transparent;'; }
-                        
-                        const dateStr = o.created_at ? o.created_at.split('T')[0] : '--';
-                        const prob = o.sa_adjusted_probability ? (o.sa_adjusted_probability*100).toFixed(1)+'%' : (o.predicted_probability ? (o.predicted_probability*100).toFixed(1)+'%' : '--');
-                        
-                        tr.innerHTML = `
-                            <td style="color:#999">${dateStr}</td>
-                            <td style="color:#fff">${o.filename || o.tender_identifier}</td>
-                            <td style="color:#fff">${o.supplier_name}</td>
-                            <td style="color:${o.recommendation==='PURSUE'?'var(--accent-gold)':'#999'}">${o.recommendation || '--'}</td>
-                            <td>${prob}</td>
-                            <td><span style="color:${outColor}; ${outStyle} font-weight:600; text-transform:uppercase; font-size:11px;">${o.actual_outcome}</span></td>
-                            <td>
-                                <button class="corner-btn update-btn" style="padding:4px 8px; font-size:10px;">
-                                    <span>UPDATE</span>
-                                    <span class="bracket bracket-tr" style="width:4px; height:4px;"></span>
-                                    <span class="bracket bracket-bl" style="width:4px; height:4px;"></span>
-                                </button>
-                            </td>
-                        `;
-                        
-                        tr.querySelector('.update-btn').addEventListener('click', () => {
-                            const next = tr.nextElementSibling;
-                            if(next && next.classList.contains('expanded-row')) {
-                                next.remove();
-                                return;
-                            }
-                            const formRow = template.content.cloneNode(true);
-                            const form = formRow.querySelector('form');
-                            form.querySelector('[name="prediction_id"]').value = o.prediction_id;
-                            form.querySelector('[name="actual_outcome"]').value = o.actual_outcome;
-                            form.querySelector('[name="outcome_date"]').value = o.outcome_date || '';
-                            form.querySelector('[name="notes"]').value = o.notes || '';
-                            
-                            form.addEventListener('submit', async (e) => {
-                                e.preventDefault();
-                                const fd = new FormData(form);
-                                await fetch('/api/track-outcome', {
-                                    method: 'POST',
-                                    headers: {'Content-Type': 'application/json'},
-                                    body: JSON.stringify(Object.fromEntries(fd.entries()))
-                                });
-                                loadAccuracy();
-                            });
-                            tr.after(formRow);
-                        });
-                        
-                        tbody.appendChild(tr);
-                    });
-                }
-            } catch(e) {
-                console.error(e);
-            }
-        }
-        
-        window.addEventListener('DOMContentLoaded', loadAccuracy);
-    </script>
-
-</section>
-
-        <!-- TAB 2: SORT & RANK TENDERS (MATCHES MAIN SITE 400+ DATASET PIPELINE) -->
-        <section id="tab-sort" class="content-section">
+            <section id="tab-sort" class="content-section">
     <main class="page-container">
         <section class="prediction-panel" id="bulkSortPanel">
             <div class="panel-container">
                 <div class="panel-header">
                     <span class="category-label">BATCH TENDER ANALYSIS</span>
-                    <h2 class="section-title">SORT TENDERS BY PROBABILITY</h2>
+                    <h2 class="section-title">RANK TENDERS BY WIN PROBABILITY</h2>
                     <button class="close-btn" id="closeSortBtn" style="display:none;">CLOSE</button>
                 </div>
                 
@@ -730,7 +872,7 @@
 <section class="hero-section">
             <div class="hero-content" style="max-width: 800px; margin: 0 auto; text-align: center;">
                 <span class="category-label">BATCH PROCUREMENT PIPELINE</span>
-                <h1 class="hero-title" style="font-size: 48px; margin-top: 12px; margin-bottom: 24px;">SORT TENDERS.</h1>
+                <h1 class="hero-title" style="font-size: 48px; margin-top: 12px; margin-bottom: 24px;">BATCH TENDER ANALYSIS.</h1>
                 <p class="hero-subtitle" style="font-size: 16px; margin: 0 auto 32px auto; max-width: 600px;">
                     Upload multiple tender documents at once. Our engine will read each document, run the hard eligibility screening, and process it through the ML ensemble to rank your best opportunities.
                 </p>
@@ -1190,24 +1332,60 @@ exportCsvBtn.addEventListener('click', () => {
         <!-- TAB 3: SMART COMPLIANCE VAULT (BLOCK GRID WITH AUTO-SORTING) -->
         <section id="tab-archive" class="content-section">
 <main class="page-container">
-    <div style="margin-bottom: 32px;">
+    <!-- Mirrors static/vault.html. Component styles come from ui-polish.css so
+         the two renderings cannot drift apart. -->
+    <div class="vault-hero">
         <span class="category-label">REGULATORY STANDING</span>
-        <h1 class="hero-title" style="font-size: 36px; margin-top: 12px; margin-bottom: 16px; text-align: left;">COMPLIANCE VAULT.</h1>
+        <h1 class="hero-title" style="font-size: 36px; text-align: left;">COMPLIANCE VAULT.</h1>
         <div id="summaryBanner"></div>
     </div>
-    
-    <div class="filter-bar">
-        <button class="filter-btn active" data-filter="all">ALL</button>
-        <button class="filter-btn" data-filter="expiring">EXPIRING SOON</button>
-        <button class="filter-btn" data-filter="expired">EXPIRED / MISSING</button>
-        <button class="filter-btn" data-filter="compliant">COMPLIANT</button>
+
+    <div class="vault-stats" id="vaultStats">
+        <div class="stat-tile tile-total">
+            <span class="k">Companies</span>
+            <span class="v" id="kpiTotal">&mdash;</span>
+            <span class="sub">tracked in the ledger</span>
+        </div>
+        <div class="stat-tile tile-ok">
+            <span class="k">Compliant</span>
+            <span class="v" id="kpiOk">&mdash;</span>
+            <span class="sub">all documents valid</span>
+        </div>
+        <div class="stat-tile tile-warn">
+            <span class="k">Expiring soon</span>
+            <span class="v" id="kpiWarn">&mdash;</span>
+            <span class="sub">renew before closing dates</span>
+        </div>
+        <div class="stat-tile tile-bad">
+            <span class="k">Expired / missing</span>
+            <span class="v" id="kpiBad">&mdash;</span>
+            <span class="sub">blocks tender eligibility</span>
+        </div>
     </div>
 
-    <div class="profile-card" id="emptyState" style="border-style: dashed; display: flex; align-items: center; justify-content: center; min-height: 120px; margin-bottom: 60px;">
-        <div style="text-align: center;">
-            <span class="card-tag">NO COMPANIES IN ARCHIVE</span>
-            <h3 class="card-title" style="font-size:14px; margin-top:8px;">COMPLIANCE TRACKING BEGINS ONCE COMPANIES ARE ADDED TO THE LEDGER</h3>
-        </div>
+    <div class="section-rule"></div>
+
+    <div class="filter-bar" id="filterBar">
+        <button class="filter-btn active" data-filter="all">All <span class="n" id="cAll">0</span></button>
+        <button class="filter-btn" data-filter="expired">Expired / Missing <span class="n" id="cExpired">0</span></button>
+        <button class="filter-btn" data-filter="expiring">Expiring Soon <span class="n" id="cExpiring">0</span></button>
+        <button class="filter-btn" data-filter="compliant">Compliant <span class="n" id="cCompliant">0</span></button>
+    </div>
+
+    <div id="emptyState" style="display:none;">
+        <span class="category-label">NO COMPANIES IN ARCHIVE</span>
+        <h3 style="font-family:'Cinzel',serif; font-size:15px; letter-spacing:.08em; color:var(--accent-gold); margin:10px 0 8px;">NOTHING TO TRACK YET</h3>
+        <p style="font-size:13px; color:var(--text-muted); max-width:44ch; margin:0 auto; line-height:1.6;">
+            Compliance tracking begins once companies are added to the ledger. Add one from the dashboard to start monitoring document expiry.
+        </p>
+    </div>
+
+    <div id="noMatch" style="display:none;">
+        <span class="category-label">NO MATCHES</span>
+        <h3 style="font-family:'Cinzel',serif; font-size:15px; letter-spacing:.08em; color:var(--accent-gold); margin:10px 0 8px;">NOTHING IN THIS CATEGORY</h3>
+        <p style="font-size:13px; color:var(--text-muted); max-width:44ch; margin:0 auto; line-height:1.6;">
+            No companies match this filter right now &mdash; which is usually good news.
+        </p>
     </div>
 
     <div class="grid-container" id="vaultGrid" style="display:none;"></div>
@@ -1222,90 +1400,152 @@ exportCsvBtn.addEventListener('click', () => {
         'cipc_registration': 'CIPC Registration'
     };
     
+    const STATUS_LABEL = {
+        compliant: 'READY',
+        attention_needed: 'ACTION SOON',
+        non_compliant: 'BLOCKED'
+    };
+    // Worst first: a vault is a to-do list, not an alphabetical directory.
+    const RISK_ORDER = { non_compliant: 0, attention_needed: 1, compliant: 2 };
+
     function renderTag(doc) {
-        if(doc.status === 'valid') {
-            return `<span class="doc-tag tag-valid">Valid ${doc.expiry_date ? 'until ' + doc.expiry_date : ''}</span>`;
-        } else if(doc.status === 'expiring_soon') {
-            return `<span class="doc-tag tag-expiring">Expires in ${doc.days_until_expiry} days</span>`;
-        } else if(doc.status === 'expired') {
-            return `<span class="doc-tag tag-expired">EXPIRED ${Math.abs(doc.days_until_expiry)} days ago</span>`;
-        } else {
-            return `<span class="doc-tag tag-missing">Not on file</span>`;
+        if (doc.status === 'valid') {
+            return `<span class="doc-tag tag-valid">Valid${doc.expiry_date ? ' &middot; ' + doc.expiry_date : ''}</span>`;
+        } else if (doc.status === 'expiring_soon') {
+            return `<span class="doc-tag tag-expiring">${doc.days_until_expiry}d left</span>`;
+        } else if (doc.status === 'expired') {
+            return `<span class="doc-tag tag-expired">Expired ${Math.abs(doc.days_until_expiry)}d</span>`;
         }
+        return `<span class="doc-tag tag-missing">Not on file</span>`;
     }
-    
+
+    /** Circular progress ring — reads as a single glance instead of a row count. */
+    function ringSvg(pct) {
+        const r = 26, c = 2 * Math.PI * r;
+        const offset = c * (1 - pct / 100);
+        return `
+            <div class="ring">
+                <svg width="62" height="62" viewBox="0 0 62 62">
+                    <circle class="track" cx="31" cy="31" r="${r}" fill="none" stroke-width="4"/>
+                    <circle class="fill"  cx="31" cy="31" r="${r}" fill="none" stroke-width="4"
+                            stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"/>
+                </svg>
+                <span class="pct">${pct}%</span>
+            </div>`;
+    }
+
     let allCompanies = [];
-    
+
     async function loadVault() {
         try {
             const res = await fetch('/api/compliance-status');
             allCompanies = await res.json();
-            renderGrid('all');
-        } catch(e) { console.error(e); }
+        } catch (e) {
+            console.error('Failed to load compliance status:', e);
+            allCompanies = [];
+        }
+        updateCounts();
+        renderGrid('all');
     }
-    
+
+    function tally() {
+        const t = { total: allCompanies.length, compliant: 0, attention_needed: 0, non_compliant: 0 };
+        allCompanies.forEach(c => { if (t[c.overall_status] !== undefined) t[c.overall_status]++; });
+        return t;
+    }
+
+    function updateCounts() {
+        const t = tally();
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+        set('kpiTotal', t.total);
+        set('kpiOk', t.compliant);
+        set('kpiWarn', t.attention_needed);
+        set('kpiBad', t.non_compliant);
+        set('cAll', t.total);
+        set('cExpired', t.non_compliant);
+        set('cExpiring', t.attention_needed);
+        set('cCompliant', t.compliant);
+
+        const summary = document.getElementById('summaryBanner');
+        if (!summary) return;
+        if (t.total === 0) { summary.textContent = ''; return; }
+        const issues = t.attention_needed + t.non_compliant;
+        summary.innerHTML = issues === 0
+            ? `Every tracked company is <b>fully compliant</b>. Nothing is blocking a submission right now.`
+            : `<span class="sev">${issues}</span> of <b>${t.total}</b> ${t.total === 1 ? 'company' : 'companies'} ${issues === 1 ? 'needs' : 'need'} attention — `
+              + `<b>${t.attention_needed}</b> expiring soon, <span class="sev">${t.non_compliant}</span> expired or missing.`;
+    }
+
     function renderGrid(filter) {
         const grid = document.getElementById('vaultGrid');
         const empty = document.getElementById('emptyState');
-        const summary = document.getElementById('summaryBanner');
+        const noMatch = document.getElementById('noMatch');
         grid.innerHTML = '';
-        
-        if(allCompanies.length === 0) {
-            empty.style.display = 'flex';
+
+        if (allCompanies.length === 0) {
+            empty.style.display = 'block';
+            noMatch.style.display = 'none';
             grid.style.display = 'none';
-            summary.textContent = '';
             return;
         }
-        
         empty.style.display = 'none';
-        grid.style.display = 'grid';
-        
-        let issues = 0;
-        let expiredCount = 0;
-        let expiringCount = 0;
-        
+
         const filtered = allCompanies.filter(c => {
-            if(c.overall_status === 'non_compliant') expiredCount++;
-            if(c.overall_status === 'attention_needed') expiringCount++;
-            if(c.overall_status !== 'compliant') issues++;
-            
-            if(filter === 'all') return true;
-            if(filter === 'compliant' && c.overall_status === 'compliant') return true;
-            if(filter === 'expiring' && c.overall_status === 'attention_needed') return true;
-            if(filter === 'expired' && c.overall_status === 'non_compliant') return true;
+            if (filter === 'all') return true;
+            if (filter === 'compliant') return c.overall_status === 'compliant';
+            if (filter === 'expiring') return c.overall_status === 'attention_needed';
+            if (filter === 'expired') return c.overall_status === 'non_compliant';
             return false;
-        });
-        
-        summary.textContent = issues > 0 ? `${issues} COMPANIES REQUIRE ATTENTION â€” ${expiringCount} EXPIRING SOON, ${expiredCount} EXPIRED OR MISSING` : 'ALL COMPANIES COMPLIANT';
-        
+        }).sort((a, b) => (RISK_ORDER[a.overall_status] ?? 9) - (RISK_ORDER[b.overall_status] ?? 9));
+
+        if (filtered.length === 0) {
+            noMatch.style.display = 'block';
+            grid.style.display = 'none';
+            return;
+        }
+        noMatch.style.display = 'none';
+        grid.style.display = 'grid';
+
         filtered.forEach(c => {
+            const docs = c.documents || [];
+            const valid = docs.filter(d => d.status === 'valid').length;
+            const pct = docs.length ? Math.round((valid / docs.length) * 100) : 0;
+
             const card = document.createElement('div');
-            card.className = `profile-card card-${c.overall_status}`;
-            
-            const docsHtml = c.documents.map(d => `
+            card.className = `vault-card card-${c.overall_status}`;
+
+            const docsHtml = docs.map(d => `
                 <li class="doc-item">
-                    <span style="color:#fff;">${docNames[d.type]}</span>
+                    <span class="doc-name">${docNames[d.type] || d.type}</span>
                     ${renderTag(d)}
-                </li>
-            `).join('');
-            
+                </li>`).join('');
+
             card.innerHTML = `
-                <span class="card-tag">${c.company_id}</span>
-                <h3 class="card-title">${c.company_name}</h3>
+                <div class="vc-head">
+                    ${ringSvg(pct)}
+                    <div class="vc-meta">
+                        <span class="vc-id">${c.company_id}</span>
+                        <h3 class="vc-name">${c.company_name}</h3>
+                    </div>
+                    <span class="vc-status">${STATUS_LABEL[c.overall_status] || c.overall_status}</span>
+                </div>
                 <ul class="doc-list">${docsHtml}</ul>
-            `;
+                <div class="vc-foot">
+                    <span class="vc-count">${valid} / ${docs.length} VERIFIED</span>
+                    <span class="vc-progress"><i style="width:${pct}%"></i></span>
+                </div>`;
             grid.appendChild(card);
         });
     }
-    
+
     document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', () => {
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-            renderGrid(e.target.dataset.filter);
+            btn.classList.add('active');           // btn, not e.target: the count <span> is a child
+            renderGrid(btn.dataset.filter);
         });
     });
-    
+
     window.addEventListener('DOMContentLoaded', loadVault);
 </script>
 
@@ -1465,40 +1705,72 @@ exportCsvBtn.addEventListener('click', () => {
             <h2 style="font-family: 'Cinzel', serif; font-size: 24px; font-weight: 600; color: var(--text-white); margin-top: 0; margin-bottom: 8px; letter-spacing: 0.08em;">Automated PDF Quotation Generator</h2>
             <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Upload your tender PDF and click generate. The system automatically extracts requirements, calculates PPPFA scores, and builds an official PDF quotation.</p>
 
-            <div class="ws-card" style="max-width: 680px;">
-                <!-- Step 1: Upload Tender PDF -->
-                <div style="font-size: 11px; font-weight: 700; color: var(--accent-gold); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 12px;">STEP 1: UPLOAD TENDER DOCUMENT <span style="color:#e05c5c;">*</span></div>
-                <div class="file-drop-area" onclick="document.getElementById('quoteTenderFile').click()" style="padding: 28px; margin-bottom: 16px;">
-                    <div style="margin-bottom: 8px;"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
-                    <div class="file-drop-text" style="font-size: 13px; font-weight: 500; color: var(--text-white);">Drop Tender PDF here or click to browse</div>
-                    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Automatically extracts title, scope of work &amp; target pricing</div>
-                </div>
-                <input type="file" id="quoteTenderFile" accept=".pdf" style="display: none;" onchange="onQuoteTenderFileSelect(this)">
-                <div id="quoteTenderFileLabel" style="font-size: 12px; color: var(--accent-gold); margin-bottom: 20px; display: none; font-family: 'JetBrains Mono', monospace;"></div>
+            <div class="quote-layout">
+                <div class="quote-card">
+                    <ol class="quote-steps">
+                        <li class="qstep">
+                            <span class="qstep-num">1</span>
+                            <div class="qstep-body">
+                                <span class="qstep-title">Upload tender document <em>required</em></span>
+                                <div class="file-drop-area quote-drop" id="quoteDropZone" onclick="document.getElementById('quoteTenderFile').click()">
+                                    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#c5a880" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                    <div>
+                                        <div class="file-drop-text">Drop the tender PDF here, or click to browse</div>
+                                        <div class="quote-hint">Title, scope of work and target pricing are extracted automatically</div>
+                                    </div>
+                                </div>
+                                <input type="file" id="quoteTenderFile" accept=".pdf" style="display:none;" onchange="onQuoteTenderFileSelect(this)">
+                                <div id="quoteTenderFileLabel" class="quote-file-label" style="display:none;"></div>
+                            </div>
+                        </li>
 
-                <!-- Step 2: Select Bidding Supplier -->
-                <div class="form-group" style="margin-bottom: 24px;">
-                    <label class="form-label">STEP 2: BIDDING COMPANY (VAULT ARCHIVE)</label>
-                    <select id="quoteCompanySelect" class="form-select">
-                        <option value="DONINGTON VALE (Medical)">DONINGTON VALE (Medical/Health, MAAA0012345)</option>
-                        <option value="DOLO SECURITY SERVICES">DOLO SECURITY SERVICES (Security, MAAA0098765)</option>
-                        <option value="APEX CONSTRUCTION">APEX CONSTRUCTION (Construction, MAAA0054321)</option>
-                    </select>
+                        <li class="qstep">
+                            <span class="qstep-num">2</span>
+                            <div class="qstep-body">
+                                <span class="qstep-title">Bidding company <em>from vault archive</em></span>
+                                <select id="quoteCompanySelect" class="quote-select">
+                                    <option value="CAIROAI (Medical)">CAIROAI &mdash; Medical / Health &middot; MAAA0012345</option>
+                                    <option value="DOLO SECURITY SERVICES">DOLO SECURITY SERVICES &mdash; Security &middot; MAAA0098765</option>
+                                    <option value="APEX CONSTRUCTION">APEX CONSTRUCTION &mdash; Construction &middot; MAAA0054321</option>
+                                </select>
+                            </div>
+                        </li>
+
+                        <li class="qstep">
+                            <span class="qstep-num">3</span>
+                            <div class="qstep-body">
+                                <span class="qstep-title">Generate <em>builds the official PDF</em></span>
+                                <button type="button" class="corner-btn quote-run" onclick="generateQuotationPDF()">
+                                    <span class="bracket bracket-tr"></span>
+                                    <span class="bracket bracket-bl"></span>
+                                    <span>GENERATE QUOTATION PDF</span>
+                                </button>
+                            </div>
+                        </li>
+                    </ol>
+
+                    <!-- Success state uses brand gold, not Material green (#4CAF50):
+                         gold is this system's "verified" colour everywhere else. -->
+                    <div id="quoteDownloadArea" class="quote-done" style="display:none;">
+                        <div class="quote-done-head">
+                            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            Quotation generated
+                        </div>
+                        <p class="quote-done-sub">Includes the proposal summary, PPPFA 80/20 preference scorecard and itemised pricing.</p>
+                        <a id="quoteDownloadLink" href="#" target="_blank" class="quote-dl">Download quotation PDF &rarr;</a>
+                    </div>
                 </div>
 
-                <div style="display: flex; justify-content: flex-end;">
-                    <button type="button" class="corner-btn" style="width: 100%;" onclick="generateQuotationPDF()">
-                        <span class="bracket bracket-tr"></span>
-                        <span class="bracket bracket-bl"></span>
-                        <span>GENERATE QUOTATION PDF</span>
-                    </button>
-                </div>
-
-                <div id="quoteDownloadArea" style="margin-top: 24px; display: none; padding: 20px; background: rgba(76,175,80,0.1); border: 1px solid rgba(76,175,80,0.3); border-radius: 8px;">
-                    <div style="color: #4CAF50; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#4CAF50" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Quotation PDF Generated Successfully!</div>
-                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">Includes LLM Proposal Summary, PPPFA 80/20 preference scorecard, and itemized pricing.</div>
-                    <a id="quoteDownloadLink" href="#" target="_blank" style="color: var(--accent-gold); font-size: 13px; font-weight: 600; font-family: 'JetBrains Mono', monospace; display: inline-block; margin-top: 12px;">Download Quotation PDF âž”</a>
-                </div>
+                <aside class="quote-aside">
+                    <span class="category-label">What the document contains</span>
+                    <ul class="quote-includes">
+                        <li><b>Cover &amp; supplier information</b>Bidder details, CSD number, B-BBEE status and registration, pulled from your vault.</li>
+                        <li><b>PPPFA scorecard</b>80/20 or 90/10 preference points, calculated against the tender's stated framework.</li>
+                        <li><b>Itemised pricing schedule</b>Line items with unit pricing, subtotal, VAT at 15% and the total.</li>
+                        <li><b>Review flags</b>Anything the pricing engine could not source confidently is marked TBC rather than guessed.</li>
+                    </ul>
+                    <p class="quote-note">Every quotation is a draft until you confirm flagged prices. Nothing is submitted automatically.</p>
+                </aside>
             </div>
         </section>
 
@@ -1690,11 +1962,20 @@ exportCsvBtn.addEventListener('click', () => {
             <div id="agentActiveState" class="agent-grid" style="display:none;">
                 <!-- CHAT PANEL -->
                 <section class="chat-panel">
+                    <div class="chat-head">
+                        <div class="chat-head-left">
+                            <span class="pulse-dot" aria-hidden="true"><i></i></span>
+                            <span class="chat-head-title">Agent</span>
+                            <span class="chat-head-sub">Answers from your records &mdash; never assumptions</span>
+                        </div>
+                        <button class="quick-chip" onclick="clearAgentChat()" title="Start a new conversation">New chat</button>
+                    </div>
+
                     <div id="agentMessageLog" class="chat-scroll">
                         <div class="msg-row agent">
                             <span class="msg-label agent-label">Agent</span>
                             <div class="msg-bubble">
-                                Good afternoon. I've loaded your profile — Donington Vale (Pty) Ltd,
+                                Good afternoon. I've loaded your profile — CairoAI (Pty) Ltd,
                                 B-BBEE Level 1, registered in Centurion, Gauteng. What would you
                                 like to work on?
                             </div>
@@ -1713,45 +1994,20 @@ exportCsvBtn.addEventListener('click', () => {
                     </div>
                 </section>
 
-                <!-- SIDEBAR -->
-                <aside class="sidebar">
-                    <div class="ws-card">
-                        <p class="ws-label">Company</p>
-                        <p id="sidebarCompanyName" class="company-name">Loading...</p>
-                        <p id="sidebarCompanyMeta" class="company-meta">...</p>
-                        <span id="sidebarCompanyTier" class="tier-badge">...</span>
-                    </div>
-
-                    <div class="ws-card">
-                        <p class="ws-label">Track Record</p>
-                        <div class="stat-grid">
-                            <div class="stat-cell">
-                                <p class="stat-cell-label">Total Wins</p>
-                                <p id="statTotalWins" class="stat-cell-value gold">-</p>
-                            </div>
-                            <div class="stat-cell">
-                                <p class="stat-cell-label">Win Rate</p>
-                                <p id="statWinRate" class="stat-cell-value">-</p>
-                            </div>
-                            <div class="stat-cell">
-                                <p class="stat-cell-label">B-BBEE</p>
-                                <p id="statBbbee" class="stat-cell-value gold">-</p>
-                            </div>
-                            <div class="stat-cell">
-                                <p class="stat-cell-label">Incumbent</p>
-                                <p id="statIncumbent" class="stat-cell-value">-</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="ws-card">
-                        <p class="ws-label">Document Vault</p>
-                        <div id="sidebarVaultDocs">
-                            <div style="font-size:11px; color:#666;">Loading documents...</div>
-                        </div>
-                        <p class="footer-note">Agent uses these documents to tailor quotations and eligibility checks. Nothing is inferred beyond what's uploaded.</p>
-                    </div>
-                </aside>
+                <!-- Side blocks (Company / Track Record / Document Vault) removed:
+                     the conversation is the product here, so it takes the full
+                     width. The hidden stubs keep loadAgentData() working without
+                     needing a null-guard on every field it writes to. -->
+                <div id="agentDataStubs" hidden>
+                    <span id="sidebarCompanyName"></span>
+                    <span id="sidebarCompanyMeta"></span>
+                    <span id="sidebarCompanyTier"></span>
+                    <span id="statTotalWins"></span>
+                    <span id="statWinRate"></span>
+                    <span id="statBbbee"></span>
+                    <span id="statIncumbent"></span>
+                    <div id="sidebarVaultDocs"></div>
+                </div>
             </div>
         </section>
 
@@ -1759,7 +2015,7 @@ exportCsvBtn.addEventListener('click', () => {
 
     <!-- TOAST NOTIFICATION FOR MISTAKE PREVENTION -->
     <div id="toastNotification" class="toast-notify">
-        <div id="toastTitle" style="font-weight: 600; font-size: 13px; color: var(--accent-gold); margin-bottom: 4px;">âš ï¸ Auto-Sorted Document</div>
+        <div id="toastTitle" style="font-weight: 600; font-size: 13px; color: var(--accent-gold); margin-bottom: 4px;">⚠️ Auto-Sorted Document</div>
         <div id="toastMessage" style="font-size: 12px; color: #ccc; line-height: 1.4;">Document classified and moved into proper compliance block.</div>
     </div>
 
@@ -1772,7 +2028,7 @@ exportCsvBtn.addEventListener('click', () => {
             document.querySelectorAll('.content-section').forEach(sec => sec.classList.remove('active'));
             const target = document.getElementById('tab-' + tabId);
             if (target) target.classList.add('active');
-            const titles = {'evaluation': 'Single Tender Evaluation', 'sort': 'Batch Tender Sorting & Ranking', 'archive': 'Smart Compliance Archive & Vault', 'calendar': 'Calendar & Submission Deadlines', 'quotation': 'Automated Quotation Generator', 'system': 'System Status & Configuration', 'agent': 'Company-Aware Assistant'};
+            const titles = {'sort': 'Batch Tender Analysis', 'archive': 'Smart Compliance Archive & Vault', 'calendar': 'Calendar & Submission Deadlines', 'quotation': 'Automated Quotation Generator', 'system': 'System Status & Configuration', 'agent': 'Company-Aware Assistant'};
             const c = document.getElementById('tabTitleHeader');
             if (c && titles[tabId]) c.textContent = titles[tabId];
         }
@@ -1801,7 +2057,8 @@ exportCsvBtn.addEventListener('click', () => {
                         return;
                     } else {
                         if(locked) locked.style.display = 'none';
-                        if(active) active.style.display = 'grid';
+                        // see note below — 'block', not 'grid'
+                        if(active) active.style.display = 'block';
                     }
 
                     const cName = document.getElementById('sidebarCompanyName');
@@ -1849,12 +2106,15 @@ exportCsvBtn.addEventListener('click', () => {
                 const locked = document.getElementById('agentLockedState');
                 const active = document.getElementById('agentActiveState');
                 if(locked) locked.style.display = 'none';
-                if(active) active.style.display = 'grid';
-                
+                // 'block', not 'grid': the side column is gone, and an inline
+                // display:grid beats the stylesheet, re-creating the empty
+                // 300px track beside the chat.
+                if(active) active.style.display = 'block';
+
                 const cName = document.getElementById('sidebarCompanyName');
                 const cMeta = document.getElementById('sidebarCompanyMeta');
                 const cTier = document.getElementById('sidebarCompanyTier');
-                if(cName) cName.textContent = 'Donington Vale';
+                if(cName) cName.textContent = 'CairoAI';
                 if(cMeta) cMeta.textContent = 'Reg. 2026/250499/07 \u00B7 Centurion, GP';
                 if(cTier) cTier.textContent = 'Pro Plan';
                 
@@ -1889,8 +2149,8 @@ exportCsvBtn.addEventListener('click', () => {
             doc.setTextColor(255, 255, 255);
             doc.setFont("helvetica", "bold");
             doc.setFontSize(24);
-            // Default to Donington Vale based on mock company info
-            doc.text("DONINGTON VALE", 15, 20);
+            // Default to CairoAI based on mock company info
+            doc.text("CAIROAI", 15, 20);
             
             doc.setFontSize(10);
             doc.text("Reg: 2026/250499/07", 150, 16);
@@ -1956,7 +2216,129 @@ exportCsvBtn.addEventListener('click', () => {
             doc.text("This is an AI-generated draft quotation based on current retail pricing.", 105, 270, null, null, "center");
             doc.text("Prices are subject to change and must be independently verified.", 105, 275, null, null, "center");
             
-            doc.save("Donington_Vale_Quotation.pdf");
+            doc.save("CairoAI_Quotation.pdf");
+        }
+
+        // The backend reads X-Company-ID to resolve the subscription tier. If the
+        // header is absent it defaults to "starter_corp", which has agent_enabled:
+        // false, so /api/agent/chat returns 403 before Claude is ever called.
+        // Valid ids come from MOCK_CLIENT_REGISTRY in agent/subscription.py:
+        // starter_corp | pro_corp | enterprise_corp
+        function getCompanyId() {
+            return localStorage.getItem('cairoai-company-id') || 'pro_corp';
+        }
+
+        /* ------------------------------------------------------------------
+           Agent thinking / processing indicator
+           ------------------------------------------------------------------
+           The backend answers in one shot (no token streaming), so instead of
+           faking a stream we surface honest *stage* feedback: the agent is
+           working, roughly how long it has been, and afterwards which tools it
+           actually ran. Stages advance on a timer because the request is
+           opaque until it returns — they are deliberately worded as activity,
+           never as a claim that a specific tool has completed.
+           ------------------------------------------------------------------ */
+        const TOOL_LABELS = {
+            get_company_profile: 'company profile',
+            get_company_documents: 'documents',
+            update_company_profile: 'profile update',
+            search_conversation_history: 'past conversations',
+            get_app_help: 'app knowledge',
+            vet_company_document: 'document vetting',
+            generate_draft_quote: 'quotation builder',
+            finalize_quotation: 'quote finalisation'
+        };
+
+        const CHAT_STAGES = [
+            { at: 0,     text: 'Thinking' },
+            { at: 1600,  text: 'Checking your records' },
+            { at: 4500,  text: 'Cross-referencing documents' },
+            { at: 9000,  text: 'Composing the answer' },
+            { at: 16000, text: 'Still working — this one is taking a moment' }
+        ];
+        const QUOTE_STAGES = [
+            { at: 0,     text: 'Reading the tender document' },
+            { at: 2000,  text: 'Extracting line items' },
+            { at: 5000,  text: 'Sourcing prices' },
+            { at: 9000,  text: 'Building the quotation PDF' },
+            { at: 16000, text: 'Still working — larger documents take longer' }
+        ];
+
+        let _thinkTimers = [];
+
+        function startAgentThinking(isQuote) {
+            stopAgentThinking();
+            const log = document.getElementById('agentMessageLog');
+            if (!log) return;
+
+            const stages = isQuote ? QUOTE_STAGES : CHAT_STAGES;
+
+            const row = document.createElement('div');
+            row.className = 'msg-row agent';
+            row.id = 'agentThinkingRow';
+
+            const label = document.createElement('span');
+            label.className = 'msg-label agent-label';
+            label.textContent = 'Agent';
+            row.appendChild(label);
+
+            const box = document.createElement('div');
+            box.className = 'agent-thinking';
+            box.setAttribute('role', 'status');
+            box.setAttribute('aria-live', 'polite');
+            box.innerHTML = '<span class="think-dots"><span></span><span></span><span></span></span>' +
+                            '<span class="think-label"><span id="agentThinkText"></span></span>';
+            row.appendChild(box);
+
+            log.appendChild(row);
+            log.scrollTop = log.scrollHeight;
+
+            const setText = (t) => {
+                const el = document.getElementById('agentThinkText');
+                if (el) el.textContent = t + '…';
+            };
+            setText(stages[0].text);
+            stages.slice(1).forEach(s => {
+                _thinkTimers.push(setTimeout(() => setText(s.text), s.at));
+            });
+
+            // Lock the composer so a second request can't race the first.
+            const send = document.querySelector('.input-row .bracket-btn');
+            const input = document.getElementById('agentInput');
+            if (send) { send.disabled = true; send.textContent = 'Working'; }
+            if (input) input.disabled = true;
+        }
+
+        function stopAgentThinking() {
+            _thinkTimers.forEach(clearTimeout);
+            _thinkTimers = [];
+            const row = document.getElementById('agentThinkingRow');
+            if (row) row.remove();
+
+            const send = document.querySelector('.input-row .bracket-btn');
+            const input = document.getElementById('agentInput');
+            if (send) { send.disabled = false; send.textContent = 'Send'; }
+            if (input) input.disabled = false;
+        }
+
+        function clearAgentChat() {
+            stopAgentThinking();
+            const log = document.getElementById('agentMessageLog');
+            if (!log) return;
+            log.innerHTML = '';
+            const row = document.createElement('div');
+            row.className = 'msg-row agent';
+            const label = document.createElement('span');
+            label.className = 'msg-label agent-label';
+            label.textContent = 'Agent';
+            const bubble = document.createElement('div');
+            bubble.className = 'msg-bubble';
+            bubble.textContent = 'New conversation. What would you like to work on?';
+            row.appendChild(label);
+            row.appendChild(bubble);
+            log.appendChild(row);
+            const input = document.getElementById('agentInput');
+            if (input) input.focus();
         }
 
         async function sendAgentMessage() {
@@ -2042,40 +2424,87 @@ exportCsvBtn.addEventListener('click', () => {
                 return;
             }
 
+            const isQuote = msg === 'Generate Quote';
+            startAgentThinking(isQuote);
+
             try {
                 const res = await fetch('/api/agent/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: msg, action: msg === 'Generate Quote' ? 'generate_quote' : 'chat', tender_file_path: '' })
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // Without this the backend falls back to "starter_corp", whose
+                        // tier has agent_enabled: false -> every request 403s.
+                        'X-Company-ID': getCompanyId()
+                    },
+                    body: JSON.stringify({ message: msg, action: isQuote ? 'generate_quote' : 'chat', tender_file_path: '' })
                 });
-                
+
                 if (!res.ok) {
                     throw new Error('API not available');
                 }
 
                 const data = await res.json();
-                
+                stopAgentThinking();
+
                 let responseText = data.response || data.message || '';
-                let flagHtml = '';
-                if (data.status === 'MANUAL_REVIEW_REQUIRED' || data.status === 'LOW_CONFIDENCE') {
-                    flagHtml = '<div class="flag-chip">' + data.status.replace(/_/g, ' ') + '</div>';
+
+                // Built with DOM APIs + textContent, never innerHTML: the reply is
+                // model output and is no longer HTML-escaped server-side.
+                const row = document.createElement('div');
+                row.className = 'msg-row agent';
+
+                const label = document.createElement('span');
+                label.className = 'msg-label agent-label';
+                label.textContent = 'Agent';
+                row.appendChild(label);
+
+                const bubble = document.createElement('div');
+                bubble.className = 'msg-bubble';
+                bubble.textContent = responseText;
+                row.appendChild(bubble);
+
+                if (data.pdf_url) {
+                    const link = document.createElement('a');
+                    link.className = 'pdf-attachment';
+                    link.href = data.pdf_url;
+                    link.target = '_blank';
+                    link.rel = 'noopener';
+                    link.textContent = 'Download quotation PDF';
+                    row.appendChild(link);
                 }
 
-                log.innerHTML += `
-                    <div class="msg-row agent">
-                      <span class="msg-label agent-label">Agent</span>
-                      <div class="msg-bubble">${responseText}</div>
-                      ${flagHtml}
-                    </div>
-                `;
+                if (data.status === 'MANUAL_REVIEW_REQUIRED' || data.status === 'LOW_CONFIDENCE') {
+                    const chip = document.createElement('div');
+                    chip.className = 'flag-chip';
+                    chip.textContent = data.status.replace(/_/g, ' ');
+                    row.appendChild(chip);
+                }
+
+                // Tool trace — shows what the agent actually consulted, so a
+                // company-specific answer is visibly sourced rather than asserted.
+                if (Array.isArray(data.tools_used) && data.tools_used.length) {
+                    const trace = document.createElement('div');
+                    trace.className = 'tool-trace';
+                    [...new Set(data.tools_used)].forEach((t, i) => {
+                        const chip = document.createElement('span');
+                        chip.className = 'tool-chip';
+                        chip.style.animationDelay = (i * 60) + 'ms';
+                        chip.textContent = TOOL_LABELS[t] || t.replace(/_/g, ' ');
+                        trace.appendChild(chip);
+                    });
+                    row.appendChild(trace);
+                }
+
+                log.appendChild(row);
                 log.scrollTop = log.scrollHeight;
-                
-                if (msg === 'Generate Quote') {
+
+                if (isQuote) {
                     loadAgentData();
                 }
             } catch (e) {
                 console.error(e);
-                
+                stopAgentThinking();
+
                 // Intelligent client-side chatbot fallback
                 const { name, industry } = getCompanyInfo();
                 
@@ -2103,7 +2532,7 @@ exportCsvBtn.addEventListener('click', () => {
                                       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                                   </div>
                                   <div class="pdf-details">
-                                      <span class="pdf-title">Donington_Vale_Quotation.pdf</span>
+                                      <span class="pdf-title">CairoAI_Quotation.pdf</span>
                                       <span class="pdf-size">28 KB \u00B7 Click to Download</span>
                                   </div>
                                   <button class="pdf-download-btn">
@@ -2160,9 +2589,9 @@ exportCsvBtn.addEventListener('click', () => {
 
                 if (data.status === 'success') {
                     if (data.auto_sorted) {
-                        showToast('âš ï¸ Auto-Sorted Document', `You uploaded into ${data.intended_block_label}, but this document is a ${data.detected_label}. We automatically sorted it into ${data.detected_label} to prevent disqualification!`);
+                        showToast('⚠️ Auto-Sorted Document', `You uploaded into ${data.intended_block_label}, but this document is a ${data.detected_label}. We automatically sorted it into ${data.detected_label} to prevent disqualification!`);
                     } else {
-                        showToast('âœ“ Document Validated', `Saved directly into ${data.detected_label}.`);
+                        showToast('✓ Document Validated', `Saved directly into ${data.detected_label}.`);
                     }
 
                     // Highlight block
@@ -2197,7 +2626,7 @@ exportCsvBtn.addEventListener('click', () => {
 
         async function generateQuotationPDF() {
             if (!quoteSelectedTenderFile) {
-                showToast('âš ï¸ Missing Tender PDF', 'Please upload a Tender PDF file to generate the quotation.');
+                showToast('⚠️ Missing Tender PDF', 'Please upload a Tender PDF file to generate the quotation.');
                 return;
             }
 
@@ -2210,7 +2639,7 @@ exportCsvBtn.addEventListener('click', () => {
             formData.append('supplier_name', company);
 
             try {
-                showToast('âš™ï¸ Processing PDF', 'Parsing tender requirements & generating official quotation...');
+                showToast('⚙️ Processing PDF', 'Parsing tender requirements & generating official quotation...');
                 const res = await fetch('/api/generate-quotation', {
                     method: 'POST',
                     body: formData
@@ -2221,7 +2650,7 @@ exportCsvBtn.addEventListener('click', () => {
                     const link = document.getElementById('quoteDownloadLink');
                     link.href = data.pdf_url;
                     area.style.display = 'block';
-                    showToast('âœ“ Quotation Ready', 'Your official PDF quotation is ready to download.');
+                    showToast('✓ Quotation Ready', 'Your official PDF quotation is ready to download.');
                 }
             } catch(e) {
                 console.error(e);
@@ -2229,7 +2658,7 @@ exportCsvBtn.addEventListener('click', () => {
                 const { jsPDF } = window.jspdf;
                 let doc = new jsPDF();
                 
-                const companyName = company || "DONINGTON VALE";
+                const companyName = company || "CAIROAI";
                 
                 // Use the new spectacular Bid Response prototype
                 doc = generateComplexBidResponse(doc, companyName);
@@ -2272,12 +2701,12 @@ exportCsvBtn.addEventListener('click', () => {
 
         async function computeWsEvaluation() {
             if (!wsSelectedTenderFile) {
-                showToast('âš ï¸ Missing File', 'Please select a Tender PDF file to compute estimates.');
+                showToast('⚠️ Missing File', 'Please select a Tender PDF file to compute estimates.');
                 return;
             }
 
             const resPanel = document.getElementById('wsEvalResultPanel');
-            resPanel.innerHTML = '<div style="text-align:center; padding:60px 0; color:var(--accent-gold);"><div style="font-size:32px; margin-bottom:12px;">âš™ï¸</div><div>Computing probability & PPPFA score via Conquest Engine...</div></div>';
+            resPanel.innerHTML = '<div style="text-align:center; padding:60px 0; color:var(--accent-gold);"><div style="font-size:32px; margin-bottom:12px;">⚙️</div><div>Computing probability & PPPFA score via Conquest Engine...</div></div>';
 
             const formData = new FormData();
             formData.append('tender_file', wsSelectedTenderFile);
@@ -2341,7 +2770,7 @@ exportCsvBtn.addEventListener('click', () => {
         async function runWsBatchSort() {
             if (wsBatchFiles.length === 0) return;
 
-            showToast('âš™ï¸ Scoring Batch', `Evaluating ${wsBatchFiles.length} tender documents via Conquest Engine...`);
+            showToast('⚙️ Scoring Batch', `Evaluating ${wsBatchFiles.length} tender documents via Conquest Engine...`);
 
             for (let file of wsBatchFiles) {
                 const formData = new FormData();
@@ -2352,7 +2781,7 @@ exportCsvBtn.addEventListener('click', () => {
                     wsRankedTendersList.unshift({
                         tender_id: data.tender_identifier || 'Tender_' + Math.random().toString(36).substr(2, 6),
                         title: file.name,
-                        supplier: data.supplier_name || 'DONINGTON VALE',
+                        supplier: data.supplier_name || 'CAIROAI',
                         prob: data.sa_adjusted_probability || data.win_probability || data.base_probability || 0.65,
                         rec: data.recommendation || 'PURSUE',
                         framework: '80/20'
@@ -2363,7 +2792,7 @@ exportCsvBtn.addEventListener('click', () => {
             }
 
             renderWsRankedTable();
-            showToast('âœ“ Batch Analysis Complete', `Ranked ${wsBatchFiles.length} newly uploaded tenders.`);
+            showToast('✓ Batch Analysis Complete', `Ranked ${wsBatchFiles.length} newly uploaded tenders.`);
         }
 
         async function loadWsRankedPipeline() {
@@ -2376,7 +2805,7 @@ exportCsvBtn.addEventListener('click', () => {
                         wsRankedTendersList.push({
                             tender_id: item.tender_identifier || item.prediction_id || 'Tender',
                             title: item.filename || item.tender_identifier || 'Tender Submission',
-                            supplier: item.supplier_name || 'DONINGTON VALE',
+                            supplier: item.supplier_name || 'CAIROAI',
                             prob: item.sa_adjusted_probability || item.predicted_probability || 0.0,
                             rec: item.recommendation || 'PASS',
                             framework: (item.sa_analysis && item.sa_analysis.evaluation_system) || '80/20'
@@ -2512,7 +2941,7 @@ exportCsvBtn.addEventListener('click', () => {
                 }).join('');
 
                 html += `
-                    <div style="min-height: 90px; padding: 8px; border-right: 1px solid var(--border-faint); border-bottom: 1px solid var(--border-faint); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(197,168,128,0.06)'" onmouseout="this.style.background='transparent'" onclick="showToast('ðŸ“… Date Info', 'Day ${i}: ${dayEvents.length} scheduled milestones.')">
+                    <div style="min-height: 90px; padding: 8px; border-right: 1px solid var(--border-faint); border-bottom: 1px solid var(--border-faint); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(197,168,128,0.06)'" onmouseout="this.style.background='transparent'" onclick="showToast('📅 Date Info', 'Day ${i}: ${dayEvents.length} scheduled milestones.')">
                         <div style="font-size: 12px; font-weight: ${isToday ? '700' : '400'}; color: ${isToday ? 'var(--accent-gold)' : 'var(--text-white)'}; margin-bottom: 6px;">${i}</div>
                         <div style="display: flex; flex-wrap: wrap; gap: 4px;">${dots}</div>
                     </div>
@@ -2659,19 +3088,19 @@ exportCsvBtn.addEventListener('click', () => {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             <span>Console</span>
         </a>
-        <a href="/sort.html?v=5" class="mobile-nav-tab ">
+        <a href="/sort" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Sort</span>
+            <span>Batch</span>
         </a>
         <a href="/vault" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
             <span>Vault</span>
         </a>
-        <a href="/calendar.html?v=5" class="mobile-nav-tab ">
+        <a href="/calendar" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <span>Calendar</span>
         </a>
-        <a href="/system.html?v=5" class="mobile-nav-tab ">
+        <a href="/system" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             <span>System</span>
         </a>

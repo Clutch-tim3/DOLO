@@ -3,17 +3,161 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donington Vale — Batch Analysis</title>
+    <title>CAIROAI — Batch Tender Analysis</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="static/style.css?v=16.0">
+    <link rel="stylesheet" href="static/ui-polish.css?v=1.1">
     <style>
-        .page-container {
-            padding-top: 80px;
+        /* ==================================================================
+           BATCH TENDER ANALYSIS
+           ------------------------------------------------------------------
+           Rebuilt for density. The explanation leads, then the whole control
+           surface sits in one two-column panel so the primary action is
+           reachable without scrolling on a 720px viewport.
+           ================================================================== */
+        .page-container { padding-top: 68px; }
+        /* 28px on desktop; the mobile query restores clearance for the
+           bottom nav bar, which only exists on small screens. */
+        .batch-page { max-width: 1180px; margin: 0 auto; padding-bottom: 28px; }
+
+        /* --- hero: compact, left-aligned, explanation-first --------------- */
+        .batch-hero { margin-bottom: 16px; }
+        .batch-hero .hero-title {
+            font-size: 30px !important;
+            margin: 6px 0 8px !important;
+            text-align: left;
         }
-        .hero-section {
-            margin-bottom: 40px;
+        .batch-lede {
+            font-size: 13px; line-height: 1.55; color: var(--text-muted);
+            max-width: 78ch; margin: 0 0 12px;
+        }
+        .batch-steps {
+            list-style: none; display: flex; flex-wrap: wrap; gap: 8px;
+            padding: 0; margin: 0;
+        }
+        .batch-steps li {
+            display: inline-flex; align-items: center; gap: 8px;
+            font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+            color: var(--text-muted);
+            padding: 6px 13px 6px 7px; border-radius: 999px;
+            border: 1px solid rgba(255,255,255,.08);
+            background: rgba(255,255,255,.02);
+        }
+        .batch-steps b {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 18px; height: 18px; border-radius: 50%;
+            background: rgba(197,168,128,.16); color: var(--accent-gold);
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: 10px; font-weight: 700;
+        }
+
+        /* --- the one control panel --------------------------------------- */
+        /* .prediction-panel still carried max-width:540px from when it was a
+           slide-over drawer, which squeezed the two-column form down to ~340px. */
+        #bulkSortPanel { max-width: none !important; width: 100% !important; }
+        .batch-panel {
+            padding: 22px 24px 20px !important;
+            border-radius: 10px;
+            background: linear-gradient(158deg, rgba(255,255,255,.05), rgba(255,255,255,.014));
+            border: 1px solid rgba(255,255,255,.07);
+        }
+        .batch-form {
+            display: grid; grid-template-columns: 1.15fr 1fr; gap: 26px;
+            align-items: start;
+        }
+        .batch-col { display: flex; flex-direction: column; min-width: 0; }
+        .batch-label {
+            display: flex; align-items: baseline; gap: 8px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 10px; font-weight: 600; letter-spacing: .2em;
+            text-transform: uppercase; color: #e4e4e7; margin-bottom: 9px;
+        }
+        .batch-label span {
+            font-size: 9.5px; letter-spacing: .12em;
+            color: var(--text-muted); font-weight: 500;
+        }
+
+        .batch-drop {
+            display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+            padding: 14px; border-radius: 8px;
+            border: 1px dashed rgba(197,168,128,.32);
+            background: rgba(197,168,128,.035);
+            transition: border-color .22s cubic-bezier(.25,.8,.4,1), background .22s cubic-bezier(.25,.8,.4,1);
+        }
+        .batch-drop.dragover, .batch-drop:hover {
+            border-color: rgba(197,168,128,.7); background: rgba(197,168,128,.08);
+        }
+        .batch-add { padding: 8px 15px !important; font-size: 10.5px !important; }
+        .batch-drop-hint { font-size: 11.5px; color: var(--text-muted); }
+        .batch-clear {
+            margin-left: auto; display: none;
+            background: transparent; border: none; cursor: pointer;
+            color: var(--accent-gold); font-size: 10px; font-weight: 700;
+            letter-spacing: .14em; padding: 4px 6px;
+        }
+        .batch-clear:hover { text-decoration: underline; }
+
+        .batch-files {
+            margin-top: 10px; display: flex; flex-direction: column; gap: 5px;
+            font-size: 12px; color: #ccc;
+            max-height: 132px; overflow-y: auto;
+        }
+
+        .batch-input {
+            width: 100%; box-sizing: border-box;
+            background: rgba(0,0,0,.3); color: var(--text-white);
+            border: 1px solid rgba(255,255,255,.1);
+            padding: 11px 13px; font-size: 13px; border-radius: 6px;
+            outline: none; font-family: inherit;
+        }
+        .batch-input:focus {
+            border-color: rgba(197,168,128,.55);
+            box-shadow: 0 0 0 3px rgba(197,168,128,.10);
+        }
+        .batch-run {
+            margin-top: auto; width: 100%; padding: 13px 20px !important;
+            font-size: 11.5px !important; letter-spacing: .16em;
+        }
+        .batch-form .batch-col:last-child { min-height: 100%; }
+
+        #batchProgressContainer { margin-top: 18px; }
+        .batch-progress-text { font-size: 12px; color: var(--accent-gold); margin-bottom: 7px; }
+        .batch-progress-track {
+            width: 100%; height: 3px; border-radius: 999px;
+            background: rgba(255,255,255,.09); overflow: hidden;
+        }
+        #batchProgressBar {
+            height: 100%; width: 0%; border-radius: 999px;
+            background: linear-gradient(90deg, #bc9061, #e6d4ba);
+            transition: width .3s ease;
+        }
+
+        .results-section { margin-top: 26px; }
+
+        body.light-theme .batch-panel { background: rgba(20,16,10,.03); border-color: rgba(20,16,10,.1); }
+        body.light-theme .batch-label { color: #17130d; }
+        body.light-theme .batch-input { background: rgba(20,16,10,.03); color: #17130d; border-color: rgba(20,16,10,.14); }
+
+        @media (max-width: 880px) {
+            /* Tightened so the primary action (Run) clears the fold on a
+               375x812 phone; one-column stacking makes every gap count. */
+            .page-container { padding-top: 58px; padding-left: 13px; padding-right: 13px; padding-bottom: 92px; }
+            .batch-hero { margin-bottom: 12px; }
+            .batch-hero .hero-title { font-size: 23px !important; margin: 4px 0 6px !important; }
+            .batch-lede { font-size: 12.5px; line-height: 1.5; margin-bottom: 10px; }
+            .batch-steps { gap: 6px; }
+            .batch-steps li { font-size: 9.5px; padding: 4px 9px 4px 5px; }
+            .batch-steps b { width: 16px; height: 16px; font-size: 9px; }
+            .batch-panel { padding: 14px 13px 13px !important; }
+            .batch-form { grid-template-columns: 1fr; gap: 14px; }
+            .batch-label { margin-bottom: 7px; }
+            .batch-drop { padding: 11px; gap: 9px; }
+            .batch-input { padding: 10px 12px; }
+            .batch-run { margin-top: 4px; padding: 12px 18px !important; }
+            .batch-files { max-height: 96px; }
+            .batch-drop:hover { border-color: rgba(197,168,128,.32); background: rgba(197,168,128,.035); }
         }
         /* Override panel styles so they appear inline rather than absolute/fixed slide-overs */
         #bulkSortPanel {
@@ -34,9 +178,11 @@
         #bulkSortPanel .close-btn {
             display: none; /* No close button since it's a page */
         }
-        #sortResultsSection {
-            display: block !important; /* Always visible block but empty state shows by default */
-        }
+        /* Was `display: block !important`, which overrode the element's own
+           inline display:none and kept an empty 519px results panel on screen
+           at all times — the main reason this page felt spread out. The
+           section is now shown by the JS only once results exist. */
+        #sortResultsSection { margin-bottom: 0; }
         
         /* Light Mode Text Visibility Overrides for sort.html */
         body.light-theme #batchSummaryText,
@@ -51,7 +197,7 @@
     <!-- NATIVE MOBILE APP HEADER -->
     <header class="mobile-app-header">
         <div class="mobile-app-brand">
-            <span>DONINGTON VALE</span>
+            <span>CAIROAI</span>
             <span class="brand-badge">PRO</span>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -73,7 +219,7 @@
             </a>
         </div>
         <div class="nav-center">
-            <span class="logo">DONINGTON VALE</span>
+            <span class="logo">CAIROAI</span>
         </div>
         <div class="nav-right" style="display:flex; justify-content:flex-end; align-items:center; gap:12px;">
             <button type="button" class="theme-toggle-btn" onclick="toggleLuxuryTheme()">
@@ -83,77 +229,73 @@
         </div>
     </nav>
 
-    <main class="page-container">
+    <main class="page-container batch-page">
+        <!-- Explanation first: it frames everything below it. Compact and
+             left-aligned so the working controls stay above the fold. -->
+        <header class="batch-hero">
+            <span class="category-label">BATCH PROCUREMENT PIPELINE</span>
+            <h1 class="hero-title">BATCH TENDER ANALYSIS.</h1>
+            <p class="batch-lede">
+                Upload multiple tenders at once. Each document is read, screened against
+                the hard eligibility rules, then ranked by the ML ensemble so you can see
+                which bids are worth your time.
+            </p>
+            <ol class="batch-steps" aria-label="How batch analysis works">
+                <li><b>1</b> Add documents</li>
+                <li><b>2</b> Pick supplier &amp; engine</li>
+                <li><b>3</b> Run &amp; rank</li>
+            </ol>
+        </header>
+
         <section class="prediction-panel" id="bulkSortPanel">
-            <div class="panel-container">
-                <div class="panel-header">
-                    <span class="category-label">BATCH TENDER ANALYSIS</span>
-                    <h2 class="section-title">SORT TENDERS BY PROBABILITY</h2>
-                    <button class="close-btn" id="closeSortBtn" style="display:none;">CLOSE</button>
-                </div>
-                
-                <p class="column-desc" style="margin-bottom: 24px;">
-                    Upload multiple tender documents at once. Each will be automatically matched against your archive and ranked by estimated win probability.
-                </p>
-                
-                <form id="bulkSortForm" class="predict-form" enctype="multipart/form-data">
-                    <div class="form-group" style="position: relative;">
-                        <label>Upload Tender Documents (PDF/DOCX)</label>
-                        
-                        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
-                            <button type="button" id="addMoreFilesBtn" class="corner-btn" style="padding: 8px 16px; font-size: 11px;">
+            <div class="panel-container batch-panel">
+                <button class="close-btn" id="closeSortBtn" style="display:none;">CLOSE</button>
+
+                <form id="bulkSortForm" class="batch-form" enctype="multipart/form-data">
+                    <!-- left: documents -->
+                    <div class="batch-col">
+                        <label class="batch-label" for="addMoreFilesBtn">Tender documents <span>PDF / DOCX</span></label>
+                        <div class="batch-drop" id="batchDropZone">
+                            <button type="button" id="addMoreFilesBtn" class="corner-btn batch-add">
                                 <span>+ ADD FILES</span>
                                 <span class="bracket bracket-tr"></span>
                                 <span class="bracket bracket-bl"></span>
                             </button>
-                            <input type="file" id="batch_tender_files" accept=".pdf,.docx" multiple style="display: none;">
-                            <button type="button" id="clear_batch_files" style="background: transparent; border: none; color: var(--accent-gold); font-size: 12px; font-weight: bold; cursor: pointer; display: none; padding: 4px 8px;">[CLEAR ALL]</button>
+                            <input type="file" id="batch_tender_files" accept=".pdf,.docx" multiple style="display:none;">
+                            <span class="batch-drop-hint">or drop them here</span>
+                            <button type="button" id="clear_batch_files" class="batch-clear">CLEAR ALL</button>
                         </div>
-                        
-                        <!-- Accumulated file list -->
-                        <div id="batch_files_list" style="margin-top:12px; font-size:12px; color:#ccc; display:flex; flex-direction:column; gap:4px; max-height: 150px; overflow-y: auto;"></div>
+                        <div id="batch_files_list" class="batch-files"></div>
                     </div>
-                    
-                    <div class="form-group">
-                        <label for="batch_supplier_name">Assess as (Supplier Name)</label>
-                        <select id="batch_supplier_select" style="width:100%; margin-bottom:8px; background:rgba(0,0,0,0.5); color:#fff; border:1px solid #333; padding:8px; display:none;">
+
+                    <!-- right: parameters -->
+                    <div class="batch-col">
+                        <label class="batch-label" for="batch_supplier_name">Assess as <span>supplier profile</span></label>
+                        <select id="batch_supplier_select" class="batch-input" style="display:none; margin-bottom:8px;">
                             <option value="">-- Manual Entry --</option>
                         </select>
-                        <input type="text" id="batch_supplier_name" name="supplier_name" placeholder="Enter supplier name">
-                        <small style="color:#666; font-size: 11px; margin-top: 4px;">This is the single supplier profile the batch will be evaluated against.</small>
-                    </div>
+                        <input type="text" id="batch_supplier_name" name="supplier_name" class="batch-input" placeholder="Enter supplier name">
 
-                    <div class="form-group" style="margin-top: 16px;">
-                        <label for="batch_model_version" style="color: var(--accent-gold); font-weight: 600;">Active Model Engine</label>
-                        <select id="batch_model_version" name="model_version" style="width:100%; background:rgba(255,255,255,0.05); color:var(--text-white); border:1px solid var(--border-faint); padding:12px 16px; font-size:13px; outline:none; transition: border-color 0.3s ease;">
-                            <option value="sailor">SAILOR (Legacy V2)</option>
-                            <option value="conquest">CONQUEST (New Ensemble)</option>
+                        <label class="batch-label" for="batch_model_version" style="margin-top:16px;">Model engine <span>scoring</span></label>
+                        <select id="batch_model_version" name="model_version" class="batch-input">
+                            <option value="conquest">CONQUEST — New Ensemble (0.86 AUC)</option>
+                            <option value="sailor">SAILOR — Legacy V2 (0.82 AUC)</option>
                         </select>
-                    </div>
 
-                    <button type="submit" class="submit-btn corner-btn" id="runBatchBtn">
-                        <span>RUN BATCH ANALYSIS</span>
-                        <span class="bracket bracket-tr"></span>
-                        <span class="bracket bracket-bl"></span>
-                    </button>
+                        <button type="submit" class="submit-btn corner-btn batch-run" id="runBatchBtn">
+                            <span>RUN BATCH ANALYSIS</span>
+                            <span class="bracket bracket-tr"></span>
+                            <span class="bracket bracket-bl"></span>
+                        </button>
+                    </div>
                 </form>
-                
-                <div id="batchProgressContainer" style="margin-top: 24px; display: none;">
-                    <div style="font-size: 13px; color: var(--accent-gold); margin-bottom: 8px;" id="batchProgressText">Processing 0 of 0 tenders...</div>
-                    <div style="width: 100%; height: 2px; background: rgba(255,255,255,0.1); position: relative;">
-                        <div id="batchProgressBar" style="height: 100%; width: 0%; background: var(--accent-gold); transition: width 0.3s ease;"></div>
+
+                <div id="batchProgressContainer" style="display:none;">
+                    <div class="batch-progress-text" id="batchProgressText">Processing 0 of 0 tenders...</div>
+                    <div class="batch-progress-track">
+                        <div id="batchProgressBar"></div>
                     </div>
                 </div>
-            </div>
-        </section>
-
-<section class="hero-section">
-            <div class="hero-content" style="max-width: 800px; margin: 0 auto; text-align: center;">
-                <span class="category-label">BATCH PROCUREMENT PIPELINE</span>
-                <h1 class="hero-title" style="font-size: 48px; margin-top: 12px; margin-bottom: 24px;">SORT TENDERS.</h1>
-                <p class="hero-subtitle" style="font-size: 16px; margin: 0 auto 32px auto; max-width: 600px;">
-                    Upload multiple tender documents at once. Our engine will read each document, run the hard eligibility screening, and process it through the ML ensemble to rank your best opportunities.
-                </p>
             </div>
         </section>
 
@@ -251,6 +393,38 @@ const addMoreFilesBtn = document.getElementById('addMoreFilesBtn');
 addMoreFilesBtn.addEventListener('click', () => {
     batchTenderFiles.click();
 });
+
+/* The panel advertises "or drop them here", so make that true. Files land in
+   the same accumulatedFiles array the picker uses, filtered to the accepted
+   extensions so a stray image can't enter the batch. */
+(function enableBatchDrop() {
+    const zone = document.getElementById('batchDropZone');
+    if (!zone) return;
+    const ACCEPTED = /\.(pdf|docx)$/i;
+
+    ['dragenter', 'dragover'].forEach(ev =>
+        zone.addEventListener(ev, e => {
+            e.preventDefault(); e.stopPropagation();
+            zone.classList.add('dragover');
+        }));
+    ['dragleave', 'drop'].forEach(ev =>
+        zone.addEventListener(ev, e => {
+            e.preventDefault(); e.stopPropagation();
+            zone.classList.remove('dragover');
+        }));
+
+    zone.addEventListener('drop', e => {
+        const dropped = [...(e.dataTransfer?.files || [])].filter(f => ACCEPTED.test(f.name));
+        const rejected = (e.dataTransfer?.files?.length || 0) - dropped.length;
+        if (dropped.length) {
+            accumulatedFiles.push(...dropped);
+            renderFileList();
+        }
+        if (rejected > 0 && typeof showToast === 'function') {
+            showToast('Unsupported files skipped', `${rejected} file(s) were not PDF or DOCX.`);
+        }
+    });
+})();
 
 function renderFileList() {
     batchFilesList.innerHTML = '';
@@ -676,23 +850,23 @@ exportCsvBtn.addEventListener('click', () => {
 
     <!-- NATIVE MOBILE BOTTOM NAVIGATION BAR -->
     <nav class="mobile-bottom-bar">
-        <a href="/workspace.html?v=5" class="mobile-nav-tab ">
+        <a href="/workspace" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             <span>Console</span>
         </a>
-        <a href="/sort.html?v=5" class="mobile-nav-tab active">
+        <a href="/sort" class="mobile-nav-tab active">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span>Sort</span>
+            <span>Batch</span>
         </a>
         <a href="/vault" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
             <span>Vault</span>
         </a>
-        <a href="/calendar.html?v=5" class="mobile-nav-tab ">
+        <a href="/calendar" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <span>Calendar</span>
         </a>
-        <a href="/system.html?v=5" class="mobile-nav-tab ">
+        <a href="/system" class="mobile-nav-tab ">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             <span>System</span>
         </a>

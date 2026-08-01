@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any
 
-DB_PATH = Path(__file__).parent.parent / "agent_memory.db"
+from agent.db_paths import AGENT_MEMORY_DB as DB_PATH
 
 TIER_CONFIG = {
   "starter": {

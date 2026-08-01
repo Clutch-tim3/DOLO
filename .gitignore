@@ -11,3 +11,12 @@ catboost_info/
 *.log
 *.sqlite
 *.db
+google-cloud-sdk
+gcloud.zip
+
+# Generated quotation PDFs — runtime output, not source
+static/downloads/
+firebase_public/downloads/
+
+# Editor / tooling backups
+*.bak

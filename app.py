@@ -22,7 +22,10 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
-print("APP.PY STARTUP - ANTHROPIC_API_KEY:", os.environ.get("ANTHROPIC_API_KEY"))
+# Presence check only. This previously printed the full ANTHROPIC_API_KEY on
+# every startup; on Firebase that writes the live secret into Cloud Logging,
+# where anyone with log-viewer access can read it.
+print("APP.PY STARTUP - ANTHROPIC_API_KEY present:", bool(os.environ.get("ANTHROPIC_API_KEY")))
 
 # Add root directory to path to allow importing predict and models
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -41,7 +44,10 @@ from agent.main_agent import generate_draft_quote_flow, finalize_quote_flow, pro
 import logging
 from logging.handlers import RotatingFileHandler
 
-os.makedirs(str(PROJECT_ROOT / "logs"), exist_ok=True)
+LOG_DIR = PROJECT_ROOT / "logs"
+if os.environ.get("K_SERVICE"):
+    LOG_DIR = Path("/tmp/logs")
+os.makedirs(str(LOG_DIR), exist_ok=True)
 
 class JSONFormatter(logging.Formatter):
     def format(self, record):
@@ -64,7 +70,7 @@ logger = logging.getLogger("api_monitor")
 logger.setLevel(logging.INFO)
 # Avoid adding multiple handlers in hot reloads
 if not logger.handlers:
-    log_handler = RotatingFileHandler(str(PROJECT_ROOT / "logs" / "api.log"), maxBytes=5000000, backupCount=5)
+    log_handler = RotatingFileHandler(str(LOG_DIR / "api.log"), maxBytes=5000000, backupCount=5)
     log_handler.setFormatter(JSONFormatter())
     logger.addHandler(log_handler)
 
@@ -72,7 +78,12 @@ app = FastAPI()
 
 BATCH_JOBS = {}
 
-DB_PATH = PROJECT_ROOT / "data" / "procurement.db"
+DATA_DIR = PROJECT_ROOT / "data"
+if os.environ.get("K_SERVICE"):
+    DATA_DIR = Path("/tmp/data")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = DATA_DIR / "procurement.db"
 
 def init_db():
     conn = sqlite3.connect(str(DB_PATH))
@@ -120,9 +131,9 @@ app.add_middleware(
 )
 
 # Ensure upload folders exist
-UPLOAD_FOLDER = PROJECT_ROOT / "data" / "archive"
+UPLOAD_FOLDER = DATA_DIR / "archive"
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
-ARCHIVE_JSON_PATH = PROJECT_ROOT / "data" / "company_archive.json"
+ARCHIVE_JSON_PATH = DATA_DIR / "company_archive.json"
 
 # Initialize empty archive if not exists
 if not ARCHIVE_JSON_PATH.exists():
@@ -288,7 +299,7 @@ async def api_generate_quotation(request: Request):
     logger.info("Generate Quotation Request", extra={"endpoint": "/api/generate_quotation"})
     try:
         content_type = request.headers.get("content-type", "")
-        supplier_name = "DONINGTON VALE"
+        supplier_name = "CAIROAI"
         tender_title = "Procurement Tender Quotation"
         evaluation_system = "80/20"
         line_items = []
@@ -297,7 +308,7 @@ async def api_generate_quotation(request: Request):
         if "multipart/form-data" in content_type:
             form = await request.form()
             tender_file = form.get("tender_file")
-            supplier_name = form.get("supplier_name") or "DONINGTON VALE"
+            supplier_name = form.get("supplier_name") or "CAIROAI"
             tender_title = form.get("tender_title") or ""
             evaluation_system = form.get("evaluation_system") or "80/20"
 
@@ -332,7 +343,7 @@ async def api_generate_quotation(request: Request):
                 tender_title = "Procurement Tender Quotation"
         else:
             body = await request.json()
-            supplier_name = body.get("supplier_name", "DONINGTON VALE")
+            supplier_name = body.get("supplier_name", "CAIROAI")
             tender_title = body.get("tender_title", "Tender Quotation")
             line_items = body.get("line_items", [{"description": "Services", "qty": 1, "unit_price": 798116.25}])
             evaluation_system = body.get("evaluation_system", "80/20")
@@ -355,7 +366,8 @@ async def api_generate_quotation(request: Request):
             }
 
         filename = f"Quotation_{uuid.uuid4().hex[:8]}.pdf"
-        out_dir = PROJECT_ROOT / "static" / "generated_quotations"
+        out_dir = DATA_DIR / "generated_quotations"
+        out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / filename
 
         generate_quotation_pdf(
@@ -369,7 +381,7 @@ async def api_generate_quotation(request: Request):
 
         return {
             "status": "success",
-            "pdf_url": f"/static/generated_quotations/{filename}",
+            "pdf_url": f"/api/quotations/{filename}",
             "filename": filename
         }
     except Exception as e:
@@ -431,7 +443,7 @@ async def api_company_profile(request: Request):
     
     # In a real app this would query the DB. We'll return mock data matching the design.
     return {
-        "name": "Donington Vale",
+        "name": "CairoAI",
         "registration": "2026/250499/07",
         "location": "Centurion, GP",
         "tier": "pro" if config.get("agent_enabled") else "starter",
@@ -560,6 +572,14 @@ async def api_serve_file(filename: str):
     file_path = UPLOAD_FOLDER / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(str(file_path))
+
+@app.get("/api/quotations/{filename}")
+async def api_serve_quotation(filename: str):
+    """Serves a generated quotation PDF from the data folder"""
+    file_path = DATA_DIR / "generated_quotations" / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Quotation not found")
     return FileResponse(str(file_path))
 
 @app.delete("/api/companies/{company_name}")
@@ -1563,33 +1583,78 @@ async def api_agent_chat(request: Request, payload: AgentChatRequest):
         quota_check = check_quote_quota(company_id)
         if not quota_check["allowed"]:
             return JSONResponse(status_code=402, content={"error": quota_check["reason"]})
-            
-        # Allow mock tender paths if empty
-        tender_path = payload.tender_file_path or "mock_tender.pdf"
-            
-        # Consume quota before generating
+
+        # Resolve the tender document. The old default was the literal string
+        # "mock_tender.pdf", which does not exist on disk — the flow only ever
+        # got that far after the profile lookup already failed.
+        tender_path = payload.tender_file_path
+        if not tender_path:
+            candidates = sorted(
+                UPLOAD_FOLDER.glob("*.pdf"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if not candidates:
+                return {
+                    "message": (
+                        "I don't have a tender document to quote from yet. "
+                        "Upload one in the Vault or Sort page first, then ask me again."
+                    )
+                }
+            tender_path = str(candidates[0])
+
+        try:
+            result = generate_draft_quote_flow(company_id, tender_path)
+        except Exception:
+            logger.exception(
+                "Quote generation failed", extra={"company_id": company_id}
+            )
+            return {
+                "message": (
+                    "I couldn't build that quotation — the tender document "
+                    "couldn't be parsed. Try a different file."
+                )
+            }
+
+        # The flow returns a plain string on the expected failure paths
+        # (e.g. no company profile on record).
+        if not isinstance(result, dict):
+            return {"message": str(result)}
+
+        # Quota is consumed only once a quote actually exists. It used to be
+        # logged before generation, so failed attempts still burned the
+        # day's allowance.
         log_quote_generation(company_id)
-        
-        result = generate_draft_quote_flow(company_id, tender_path)
-        
-        # Ensure we return the pdf URL from the backend to the frontend
-        if isinstance(result, dict) and "pdf_url" in result:
-            safe_doc = html.escape(result.get("draft_document", ""))
-            result["draft_document"] = safe_doc
-            return {"result": result, "pdf_url": result["pdf_url"]}
-        
-        # Output escaping fallback
-        safe_doc = html.escape(result["draft_document"]) if isinstance(result, dict) and "draft_document" in result else html.escape(str(result))
-        if isinstance(result, dict):
-            result["draft_document"] = safe_doc
-            
-        return {"result": result}
-        
+
+        message = f"Draft quotation ready. Quote ID: {result.get('quote_id', 'n/a')}."
+        if result.get("has_flags"):
+            message += (
+                " Some line items are flagged for manual review, so this "
+                "can't be finalised until you confirm those prices."
+            )
+
+        # NOTE: returned as plain text, not html.escape()d — the client renders
+        # bubbles with textContent. See the comment on the chat branch below.
+        response = {"message": message, "result": result}
+        if result.get("pdf_url"):
+            response["pdf_url"] = result["pdf_url"]
+        return response
+
+
     # Standard chat via Claude
+    #
+    # NOTE: the reply is returned as plain text, NOT html.escape()d. Escaping here
+    # was mangling links and markdown in the bubble. The XSS defence moved to the
+    # client, which now renders the bubble with textContent instead of innerHTML —
+    # that is what makes returning raw text safe. If you ever switch the client
+    # back to innerHTML, you must re-introduce escaping or sanitisation here.
     from agent.claude_client import ClaudeRateLimitExceeded, ClaudeAPIError
     try:
-        reply_text = process_agent_chat(company_id, safe_message)
-        return {"message": html.escape(reply_text)}
+        result = process_agent_chat(company_id, safe_message)
+        response = {"message": result["message"], "tools_used": result.get("tools_used", [])}
+        if result.get("pdf_url"):
+            response["pdf_url"] = result["pdf_url"]
+        return response
     except ClaudeRateLimitExceeded:
         raise HTTPException(status_code=429, detail="Anthropic API rate limit exceeded.")
     except ClaudeAPIError as e:

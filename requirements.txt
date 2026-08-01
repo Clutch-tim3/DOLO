@@ -19,3 +19,9 @@ groq
 anthropic>=0.18.0
 python-dotenv>=1.0.0
 firebase-functions>=0.1.0
+pypdf  
+ 
+fpdf2
+
+
+a2wsgi

@@ -1,9 +1,9 @@
 function getCompanyInfo() {
     const sel = document.getElementById('quoteCompanySelect');
-    let val = sel ? sel.value : "DONINGTON VALE (Medical)";
+    let val = sel ? sel.value : "CAIROAI (Medical)";
     
     let industry = "medical";
-    let name = "Donington Vale";
+    let name = "CAIROAI";
     
     if (val.includes("SECURITY")) {
         industry = "security";

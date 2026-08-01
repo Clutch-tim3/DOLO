@@ -1,0 +1,518 @@
+/* ==========================================================================
+   CairoAI — UI polish layer
+   --------------------------------------------------------------------------
+   Loaded AFTER style.css on every page. It refines the existing design system
+   rather than replacing it: one spacing scale, one motion curve, one set of
+   status pills, and the signature corner-bracket/gold-sweep interaction on
+   every control. Nothing here changes page structure, so it is safe to drop
+   into any page that already links style.css.
+   ========================================================================== */
+
+:root {
+    /* One spacing scale — replaces the ad-hoc 4/6/12/14/16/18/22/28px mix */
+    --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+    --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+    /* One motion curve for everything that is not a spring */
+    --ease-brand: cubic-bezier(0.25, 0.8, 0.4, 1);
+    --dur-fast: 0.18s;
+    --dur-base: 0.26s;
+
+    --radius-sm: 3px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
+    --radius-pill: 999px;
+
+    --gold-rgb: 197, 168, 128;
+}
+
+/* --------------------------------------------------------------------------
+   1. Section rhythm — headers were inconsistent across vault / sort / quote
+   -------------------------------------------------------------------------- */
+.category-label {
+    display: inline-block;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--accent-gold);
+    margin-bottom: var(--sp-2);
+}
+.section-title {
+    font-family: 'Cinzel', serif;
+    letter-spacing: 0.08em;
+    line-height: 1.18;
+    margin-bottom: var(--sp-3);
+}
+.section-lede {
+    max-width: 62ch;
+    font-size: 13.5px;
+    line-height: 1.65;
+    color: var(--text-muted);
+    margin-bottom: var(--sp-5);
+}
+/* A hairline gold rule under a section head reads as structure, not decoration */
+.section-rule {
+    height: 1px;
+    background: linear-gradient(90deg,
+        rgba(var(--gold-rgb), 0.55), rgba(var(--gold-rgb), 0.06) 42%, transparent 72%);
+    margin: var(--sp-4) 0 var(--sp-5);
+}
+
+/* --------------------------------------------------------------------------
+   2. Surfaces — one card treatment, with a restrained hover lift
+   -------------------------------------------------------------------------- */
+.ws-card, .doc-block, .panel-card, .result-card {
+    border-radius: var(--radius-md);
+    transition: transform var(--dur-base) var(--ease-brand),
+                border-color var(--dur-base) var(--ease-brand),
+                box-shadow var(--dur-base) var(--ease-brand);
+}
+.ws-card:hover, .doc-block:hover, .result-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(var(--gold-rgb), 0.34);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.42);
+}
+
+/* --------------------------------------------------------------------------
+   3. Status pills — vault used four bespoke .tag-* styles; unify them
+   -------------------------------------------------------------------------- */
+.doc-tag, .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 11px;
+    border-radius: var(--radius-pill);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+.doc-tag::before, .status-pill::before {
+    content: '';
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+.tag-valid, .status-pill.is-ok {
+    color: var(--accent-gold);
+    background: rgba(var(--gold-rgb), 0.12);
+    border-color: rgba(var(--gold-rgb), 0.42);
+    box-shadow: 0 0 14px rgba(var(--gold-rgb), 0.16);
+}
+.tag-expiring, .status-pill.is-warn {
+    color: #d9a441;
+    background: rgba(217, 164, 65, 0.12);
+    border-color: rgba(217, 164, 65, 0.42);
+}
+.tag-expired, .status-pill.is-error {
+    color: #C8331F;
+    background: rgba(200, 51, 31, 0.12);
+    border-color: rgba(200, 51, 31, 0.48);
+}
+.tag-missing, .status-pill.is-muted {
+    color: #8a8a8a;
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* --------------------------------------------------------------------------
+   4. Controls — the signature interaction, applied consistently
+   -------------------------------------------------------------------------- */
+.bracket-btn, .btn-gold, .corner-btn, button[type="submit"] {
+    transition: transform var(--dur-base) var(--ease-brand),
+                box-shadow var(--dur-base) var(--ease-brand),
+                background var(--dur-base) var(--ease-brand),
+                color var(--dur-base) var(--ease-brand),
+                opacity var(--dur-base) var(--ease-brand);
+}
+/* gold sweep on solid buttons */
+.btn-gold, button[type="submit"], .bracket-btn.filled {
+    position: relative;
+    overflow: hidden;
+}
+.btn-gold::after, button[type="submit"]::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -140%;
+    width: 55%; height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,0.5), transparent);
+    transform: skewX(-18deg);
+    transition: left 0.55s var(--ease-brand);
+    pointer-events: none;
+}
+.btn-gold:hover::after, button[type="submit"]:hover::after { left: 140%; }
+.btn-gold:hover, button[type="submit"]:hover, .corner-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(var(--gold-rgb), 0.30);
+}
+.btn-gold:active, button[type="submit"]:active, .corner-btn:active,
+.bracket-btn:active { transform: translateY(0); }
+
+/* visible keyboard focus — was missing entirely */
+a:focus-visible, button:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid rgba(var(--gold-rgb), 0.75);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+/* form fields */
+input[type="text"], input[type="number"], input[type="search"],
+select, textarea {
+    transition: border-color var(--dur-fast) var(--ease-brand),
+                box-shadow var(--dur-fast) var(--ease-brand);
+}
+input[type="text"]:focus, input[type="number"]:focus,
+select:focus, textarea:focus {
+    border-color: rgba(var(--gold-rgb), 0.55);
+    box-shadow: 0 0 0 3px rgba(var(--gold-rgb), 0.10);
+}
+
+/* --------------------------------------------------------------------------
+   5. Drop zones — the upload affordance was flat and easy to miss
+   -------------------------------------------------------------------------- */
+.file-drop-area {
+    border-radius: var(--radius-md);
+    transition: border-color var(--dur-base) var(--ease-brand),
+                background var(--dur-base) var(--ease-brand),
+                transform var(--dur-base) var(--ease-brand);
+}
+.file-drop-area:hover, .file-drop-area.dragover {
+    border-color: rgba(var(--gold-rgb), 0.6);
+    background: rgba(var(--gold-rgb), 0.06);
+    transform: translateY(-2px);
+}
+
+/* --------------------------------------------------------------------------
+   6. Empty and loading states
+   -------------------------------------------------------------------------- */
+.empty-state {
+    text-align: center;
+    padding: var(--sp-7) var(--sp-5);
+    border: 1px dashed rgba(var(--gold-rgb), 0.28);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 255, 255, 0.015);
+}
+.empty-state h4 {
+    font-family: 'Cinzel', serif;
+    font-size: 15px;
+    letter-spacing: 0.1em;
+    color: var(--accent-gold);
+    margin: 0 0 var(--sp-2);
+}
+.empty-state p {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 46ch;
+    margin: 0 auto;
+    line-height: 1.6;
+}
+
+/* shimmer skeleton for async panels */
+.skeleton {
+    background: linear-gradient(90deg,
+        rgba(255,255,255,0.04) 25%,
+        rgba(var(--gold-rgb), 0.10) 50%,
+        rgba(255,255,255,0.04) 75%);
+    background-size: 220% 100%;
+    animation: uiShimmer 1.5s linear infinite;
+    border-radius: var(--radius-sm);
+}
+@keyframes uiShimmer {
+    0%   { background-position: 130% 0; }
+    100% { background-position: -30% 0; }
+}
+
+/* --------------------------------------------------------------------------
+   7. Tables — batch results were hard to scan
+   -------------------------------------------------------------------------- */
+.item-table, table.results {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+}
+.item-table th, table.results th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #0e0d0b;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    text-align: left;
+    padding: var(--sp-3) var(--sp-3);
+    border-bottom: 1px solid rgba(var(--gold-rgb), 0.22);
+}
+.item-table td, table.results td {
+    padding: var(--sp-3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 13px;
+}
+.item-table tbody tr, table.results tbody tr {
+    transition: background var(--dur-fast) var(--ease-brand);
+}
+.item-table tbody tr:hover, table.results tbody tr:hover {
+    background: rgba(var(--gold-rgb), 0.05);
+}
+/* numbers align on the decimal so columns can be compared at a glance */
+.num, td.num, .item-table td.num {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+body.light-theme .item-table th,
+body.light-theme table.results th { background: #f5f2ec; }
+
+/* --------------------------------------------------------------------------
+   8. Scrollbars
+   -------------------------------------------------------------------------- */
+* { scrollbar-width: thin; scrollbar-color: rgba(var(--gold-rgb), 0.3) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+    background: rgba(var(--gold-rgb), 0.26);
+    border-radius: var(--radius-pill);
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(var(--gold-rgb), 0.45); }
+
+/* --------------------------------------------------------------------------
+   9. Mobile
+   -------------------------------------------------------------------------- */
+@media (max-width: 880px) {
+    .section-lede { font-size: 13px; }
+    .hero-title { font-size: 26px !important; line-height: 1.2; }
+    .empty-state { padding: var(--sp-5) var(--sp-4); }
+
+    /* tables scroll horizontally inside their own container rather than
+       forcing the page to scroll sideways */
+    .table-scroll, .item-table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .item-table, table.results { min-width: 560px; }
+
+    /* comfortable tap targets */
+    button, .corner-btn, .btn-gold, .bracket-btn, .quick-chip, .mobile-nav-tab {
+        min-height: 42px;
+    }
+    input, select, textarea { font-size: 16px; }  /* stops iOS zoom-on-focus */
+
+    /* hover lift is meaningless on touch and causes sticky states */
+    .ws-card:hover, .doc-block:hover, .result-card:hover,
+    .btn-gold:hover, button[type="submit"]:hover, .corner-btn:hover,
+    .file-drop-area:hover { transform: none; box-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+
+/* ==========================================================================
+   COMPONENT: COMPLIANCE VAULT
+   --------------------------------------------------------------------------
+   Used by BOTH static/vault.html and the #tab-archive panel inside
+   workspace.html. Lives here so the two renderings cannot drift apart.
+   ========================================================================== */
+/* --- hero ---------------------------------------------------- */
+.vault-hero { margin-bottom: 26px; }
+.vault-hero .hero-title { margin: 10px 0 10px; }
+#summaryBanner {
+    font-size: 12.5px; color: var(--text-muted); letter-spacing: 0.03em;
+    max-width: 66ch; line-height: 1.6;
+}
+#summaryBanner b { color: var(--accent-gold); font-weight: 600; }
+#summaryBanner .sev { color: #e0655a; font-weight: 600; }
+
+/* --- KPI band ------------------------------------------------- */
+.vault-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 12px; margin: 24px 0 22px;
+}
+.stat-tile {
+    position: relative; overflow: hidden;
+    padding: 16px 18px 15px;
+    border-radius: 8px;
+    background: linear-gradient(160deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012));
+    border: 1px solid rgba(255,255,255,0.07);
+    transition: transform .26s cubic-bezier(.25,.8,.4,1), border-color .26s cubic-bezier(.25,.8,.4,1);
+}
+.stat-tile::after {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+    background: var(--tile-accent, rgba(197,168,128,.5));
+}
+.stat-tile:hover { transform: translateY(-3px); border-color: rgba(197,168,128,.34); }
+.stat-tile .k {
+    display: block; font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 9.5px; font-weight: 600; letter-spacing: .2em;
+    text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px;
+}
+.stat-tile .v {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 30px; font-weight: 700; line-height: 1;
+    color: var(--tile-accent, var(--accent-gold));
+    font-variant-numeric: tabular-nums;
+}
+.stat-tile .sub { display:block; margin-top:6px; font-size: 10.5px; color: var(--text-muted); }
+.tile-total    { --tile-accent: #e4e4e7; }
+.tile-ok       { --tile-accent: #52c27c; }
+.tile-warn     { --tile-accent: #d9a441; }
+.tile-bad      { --tile-accent: #e0655a; }
+
+/* --- filters --------------------------------------------------- */
+.filter-bar { display: flex; gap: 8px; margin-bottom: 22px; flex-wrap: wrap; }
+.filter-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: transparent; border: 1px solid rgba(255,255,255,.12);
+    color: var(--text-muted);
+    padding: 8px 14px; font-size: 10.5px; font-weight: 600;
+    letter-spacing: .14em; text-transform: uppercase;
+    cursor: pointer; border-radius: 999px;
+    transition: all .2s cubic-bezier(.25,.8,.4,1);
+}
+.filter-btn .n {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px; padding: 1px 7px; border-radius: 999px;
+    background: rgba(255,255,255,.07); color: inherit;
+}
+.filter-btn:hover { border-color: rgba(197,168,128,.45); color: #fff; transform: translateY(-2px); }
+.filter-btn.active {
+    border-color: var(--accent-gold); color: var(--accent-gold);
+    background: rgba(197,168,128,.10);
+    box-shadow: 0 0 18px rgba(197,168,128,.15);
+}
+.filter-btn.active .n { background: rgba(197,168,128,.22); }
+
+/* --- company cards --------------------------------------------- */
+.grid-container {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(390px, 1fr));
+    gap: 16px; margin-bottom: 40px;
+}
+.vault-card {
+    position: relative; overflow: hidden;
+    padding: 20px 20px 16px 22px;
+    border-radius: 10px;
+    background: linear-gradient(158deg, rgba(255,255,255,.05), rgba(255,255,255,.014));
+    border: 1px solid rgba(255,255,255,.07);
+    transition: transform .26s cubic-bezier(.25,.8,.4,1),
+                border-color .26s cubic-bezier(.25,.8,.4,1),
+                box-shadow .26s cubic-bezier(.25,.8,.4,1);
+}
+/* risk grading reads before any text does */
+.vault-card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--risk, var(--accent-gold));
+    box-shadow: 0 0 16px var(--risk-glow, rgba(197,168,128,.5));
+}
+.vault-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--risk-border, rgba(197,168,128,.34));
+    box-shadow: 0 14px 38px rgba(0,0,0,.5);
+}
+.card-compliant     { --risk:#52c27c; --risk-glow:rgba(82,194,124,.45); --risk-border:rgba(82,194,124,.35); }
+.card-attention_needed { --risk:#d9a441; --risk-glow:rgba(217,164,65,.45); --risk-border:rgba(217,164,65,.38); }
+.card-non_compliant { --risk:#e0655a; --risk-glow:rgba(224,101,90,.45); --risk-border:rgba(224,101,90,.4); }
+
+.vc-head { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+.vc-id {
+    display:block; font-family:'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9.5px; letter-spacing: .16em; color: var(--text-muted);
+    text-transform: uppercase; margin-bottom: 4px;
+}
+.vc-name {
+    font-family:'Cinzel', serif; font-size: 17px; font-weight: 600;
+    letter-spacing: .05em; color: #fff; margin: 0; line-height: 1.25;
+}
+.vc-meta { flex: 1; min-width: 0; }
+
+/* compliance ring — the visual anchor */
+.ring { position: relative; width: 62px; height: 62px; flex-shrink: 0; }
+.ring svg { transform: rotate(-90deg); display: block; }
+.ring .track { stroke: rgba(255,255,255,.09); }
+.ring .fill  { stroke: var(--risk, var(--accent-gold)); stroke-linecap: round;
+               transition: stroke-dashoffset .9s cubic-bezier(.25,.8,.4,1); }
+.ring .pct {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family:'JetBrains Mono', ui-monospace, monospace;
+    font-size: 13px; font-weight: 700; color: var(--risk, var(--accent-gold));
+    font-variant-numeric: tabular-nums;
+}
+
+.vc-status {
+    align-self: flex-start;
+    font-family:'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9px; font-weight: 700; letter-spacing: .12em;
+    padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+    color: var(--risk); background: color-mix(in srgb, var(--risk) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--risk) 45%, transparent);
+}
+
+.doc-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:5px; }
+.doc-item {
+    display:flex; justify-content:space-between; align-items:center; gap:12px;
+    padding: 9px 11px; border-radius: 6px;
+    background: rgba(0,0,0,.24);
+    border: 1px solid rgba(255,255,255,.045);
+    transition: border-color .18s cubic-bezier(.25,.8,.4,1), background .18s cubic-bezier(.25,.8,.4,1);
+}
+.doc-item:hover { border-color: rgba(197,168,128,.28); background: rgba(197,168,128,.05); }
+.doc-name { font-size: 12px; letter-spacing:.02em; color:#d8d8dc; }
+
+.vc-foot {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,.06);
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+}
+.vc-progress { flex:1; height:3px; border-radius:999px; background:rgba(255,255,255,.07); overflow:hidden; }
+.vc-progress i { display:block; height:100%; border-radius:999px; background:var(--risk); }
+.vc-count {
+    font-family:'JetBrains Mono', ui-monospace, monospace;
+    font-size:10px; letter-spacing:.08em; color:var(--text-muted); white-space:nowrap;
+}
+
+/* --- empty / no-match ------------------------------------------ */
+#emptyState, #noMatch {
+    text-align:center; padding:56px 24px; border-radius:12px;
+    border:1px dashed rgba(197,168,128,.28);
+    background:rgba(255,255,255,.015); margin-bottom:40px;
+}
+
+/* --- vault: light theme --------------------------------------------------- */
+body.light-theme .stat-tile,
+body.light-theme .vault-card { background: rgba(20,16,10,.03); border-color: rgba(20,16,10,.10); }
+body.light-theme .vc-name { color: #17130d; }
+body.light-theme .doc-item { background: rgba(20,16,10,.03); border-color: rgba(20,16,10,.07); }
+body.light-theme .doc-name { color: #3a3229; }
+body.light-theme .filter-btn { border-color: rgba(20,16,10,.16); }
+
+/* --- vault: mobile -------------------------------------------------------- */
+@media (max-width: 880px) {
+    .vault-hero .hero-title { font-size: 26px !important; }
+    .vault-stats { grid-template-columns: repeat(2, 1fr); gap: 9px; margin: 18px 0 16px; }
+    .stat-tile { padding: 12px 13px 11px; }
+    .stat-tile .v { font-size: 23px; }
+    .stat-tile .sub { display: none; }
+    .filter-bar { gap: 6px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+    .filter-bar::-webkit-scrollbar { display: none; }
+    .filter-btn { flex: 0 0 auto; padding: 7px 12px; font-size: 10px; }
+    .grid-container { grid-template-columns: 1fr; gap: 12px; }
+    .vault-card { padding: 16px 15px 13px 17px; }
+    .ring { width: 52px; height: 52px; }
+    .ring .pct { font-size: 11.5px; }
+    .vc-name { font-size: 15px; }
+    .vault-card:hover, .stat-tile:hover, .filter-btn:hover { transform: none; box-shadow: none; }
+}

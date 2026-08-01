@@ -2,7 +2,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "procurement.db"
+from agent.db_paths import PROCUREMENT_DB as DB_PATH
 
 # Global limit: max 30 requests per minute
 GLOBAL_MAX_REQUESTS_PER_MINUTE = 30

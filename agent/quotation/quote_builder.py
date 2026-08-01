@@ -8,7 +8,7 @@ def generate_quote_document(company_profile: dict, priced_items: list, is_final:
     if is_final and has_flags:
         return {"status": "error", "message": "Cannot finalize quote: unresolved flagged items."}
         
-    company_name = company_profile.get('company_name', 'Donington Vale')
+    company_name = company_profile.get('company_name', 'CAIROAI')
     reg_no = company_profile.get('registration_number', '2026/250499/07')
     bbbee = company_profile.get('bbbee_level', 'Level 2 Contributor')
     
@@ -75,18 +75,33 @@ def generate_quote_document(company_profile: dict, priced_items: list, is_final:
     
     pdf.set_font("Arial", '', 9)
     total_quote = 0.0
+    unpriced = 0
     for item in priced_items:
         desc = str(item["description"])[:45]
         qty = str(item["quantity"])
-        price = item.get("price", 0)
-        total = item.get("total", 0)
+        price = item.get("price")
+        total = item.get("total")
+
+        # price_search deliberately returns price/total = None for anything it
+        # can't source confidently (price_status MANUAL_REVIEW_REQUIRED). That
+        # is the normal flagged path, not an error — it used to raise
+        # `TypeError: unsupported operand +=: float and NoneType` here and kill
+        # the whole quote. Such rows are shown as TBC and left out of the
+        # subtotal so the draft never implies a price nobody quoted.
+        if total is None or price is None:
+            unpriced += 1
+            pdf.cell(90, 8, f" {desc}", border=1)
+            pdf.cell(20, 8, f" {qty}", border=1)
+            pdf.cell(40, 8, " TBC - MANUAL REVIEW", border=1)
+            pdf.cell(40, 8, " TBC", border=1, ln=1)
+            continue
+
         total_quote += total
-        
         pdf.cell(90, 8, f" {desc}", border=1)
         pdf.cell(20, 8, f" {qty}", border=1)
         pdf.cell(40, 8, f" R {price:,.2f}", border=1)
         pdf.cell(40, 8, f" R {total:,.2f}", border=1, ln=1)
-        
+
     pdf.set_font("Arial", 'B', 9)
     pdf.cell(150, 8, " SUBTOTAL (VAT EXCL.):", border=1, align='R')
     pdf.cell(40, 8, f" R {total_quote:,.2f}", border=1, ln=1)
@@ -97,7 +112,22 @@ def generate_quote_document(company_profile: dict, priced_items: list, is_final:
     pdf.cell(150, 8, " TOTAL PRICE (VAT INCL.):", border=1, align='R', fill=True)
     pdf.cell(40, 8, f" R {(total_quote + vat):,.2f}", border=1, ln=1, fill=True)
     
-    pdf.ln(10)
+    pdf.ln(6)
+    if unpriced:
+        # Without this the totals above read as a complete, quotable price
+        # when some line items were never actually priced.
+        pdf.set_font("Arial", 'B', 9)
+        pdf.set_text_color(200, 51, 31)
+        pdf.multi_cell(
+            0,
+            5,
+            f"INCOMPLETE DRAFT: {unpriced} line item(s) could not be priced and are "
+            f"marked TBC above. The totals shown EXCLUDE them and are not a final "
+            f"quotation. Confirm those prices before issuing this document.",
+            align='C',
+        )
+        pdf.ln(4)
+
     disclaimer = "This is an AI-generated draft Bid Response Document for RFB029/26/27."
     pdf.set_font("Arial", 'I', 8)
     pdf.set_text_color(150, 150, 150)
