@@ -20,3 +20,7 @@ firebase_public/downloads/
 
 # Editor / tooling backups
 *.bak
+
+# .env alone does not match .env.local
+.env.local
+.env.*.local

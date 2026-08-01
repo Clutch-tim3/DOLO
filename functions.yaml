@@ -1,0 +1,23 @@
+# GENERATED FILE - DO NOT EDIT BY HAND.
+# Regenerate with: python scripts/gen_functions_yaml.py
+# The Firebase CLI reads this instead of running discovery, so anything
+# missing here is silently dropped from the deploy no matter what the
+# decorators in main.py say.
+endpoints:
+  api:
+    availableMemoryMb: 1024
+    concurrency: null
+    entryPoint: api
+    httpsTrigger: {}
+    ingressSettings: null
+    labels: {}
+    maxInstances: 20
+    minInstances: null
+    platform: gcfv2
+    secretEnvironmentVariables:
+    - key: ANTHROPIC_API_KEY
+    serviceAccountEmail: null
+    timeoutSeconds: 300
+params: []
+requiredAPIs: []
+specVersion: v1alpha1

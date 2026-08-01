@@ -29,7 +29,8 @@
       "**/*.tar.gz",
       "**/*.csv",
 
-      ".env"
+      ".env",
+      ".env.local"
     ]
   },
   "hosting": {

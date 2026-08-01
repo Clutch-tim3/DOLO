@@ -24,4 +24,4 @@ pypdf
 fpdf2
 
 
-a2wsgi
+a2wsgi==1.10.10
