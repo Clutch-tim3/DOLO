@@ -414,9 +414,51 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* Mobile-only. On desktop the hero row still shows the quota, so this would be
-   a second copy of the same number on screen. The mobile block turns it on. */
-.chat-head-quota { display: none; }
+/* Back out of the conversation. On a phone this is the only exit, because the
+   bottom tab bar is hidden so the chat can hold the whole screen. */
+.chat-back {
+    display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
+    padding: 7px 12px 7px 10px; border-radius: 3px;
+    border: 0.5px solid rgba(255,255,255,0.12);
+    color: var(--text-muted); text-decoration: none;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.16em;
+    text-transform: uppercase; white-space: nowrap;
+    transition: color 160ms ease, border-color 160ms ease;
+}
+.chat-back:hover { color: var(--accent-gold); border-color: rgba(197,168,128,0.45); }
+.chat-back svg { flex: 0 0 auto; }
+body.light-theme .chat-back { border-color: var(--border-faint); }
+
+/* The conversation is the page: no masthead, no guide banner, and the panel
+   takes the full height of the console rather than sitting as a block in a
+   scrolling page. Applies at every width, not just on a phone. */
+body[data-active-tab="agent"] .guided-banner { display: none; }
+
+#tab-agent.content-section.active {
+    display: flex; flex-direction: column;
+    flex: 1 1 auto; min-height: 0;
+    /* The section's 28px bottom padding left the composer floating short of the
+       viewport edge. Side padding stays so the panel is still inset on a wide
+       screen. */
+    padding-bottom: 0;
+}
+#tab-agent .agent-grid { flex: 1 1 auto; min-height: 0; }
+#tab-agent .chat-panel {
+    height: 100%; min-height: 0;
+    display: flex; flex-direction: column;
+}
+#tab-agent .chat-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+#tab-agent .input-row { flex: 0 0 auto; }
+
+/* Message body lines.
+   Each line of a reply is its own element so a wrapped list item hangs under
+   its own text instead of running back to the bullet. With the previous single
+   pre-wrap text node every visual line started at the same x, so a bullet that
+   wrapped looked misaligned against the one above it. */
+.msg-line { white-space: pre-wrap; }
+.msg-line.is-bullet { padding-left: 1.15em; text-indent: -1.15em; }
+.msg-line.is-blank { height: 0.55em; }
 
 /* pulse-dot — 7px, 2s ease-out ring, matches the brand spec */
 .pulse-dot { position: relative; width: 7px; height: 7px; flex-shrink: 0; }
@@ -649,41 +691,18 @@ body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
         padding: 8px 12px !important;
     }
 
-    /* Onboarding copy is the most expensive thing on the screen and repeats
-       what the hero says. */
+    /* Onboarding copy is the most expensive thing on a phone. */
     .guided-banner { display: none; }
 
-    /* The hero row is gone on a phone. It was a third band repeating identity
-       the fixed header and the chat head already carry — "CAIROAI", "Agent",
-       "Agent / Answers from your records" in three stacked bars. Its only
-       unique payload was the quota, which now rides in the chat head. */
-    #tab-agent .hero-row { display: none; }
-    /* Quota as a compact gold chip in the chat head — the signature treatment,
-       one band instead of two. */
-    #tab-agent .chat-head-quota {
-        display: inline-flex; align-items: center; flex: 0 0 auto;
-        margin-left: auto;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 10px; letter-spacing: 0.06em; white-space: nowrap;
-        color: var(--accent-gold);
-        padding: 4px 9px; border-radius: 2px;
-        border: 0.5px solid rgba(197,168,128,0.3);
-        background: rgba(197,168,128,0.07);
-    }
-    #tab-agent .quota-line span {
-        font-family: 'JetBrains Mono', monospace;
-        color: var(--accent-gold);
-    }
+    /* On the Agent tab the chat holds the entire screen: the bottom tab bar is
+       hidden and the Back control in the chat head becomes the way out. Without
+       the bar there is nothing to reserve space for at the bottom either. */
+    body[data-active-tab="agent"] .mobile-bottom-bar { display: none; }
+    body[data-active-tab="agent"] .workspace-main { padding-bottom: 0; }
 
-    /* The conversation takes the remaining height. min-height:0 on every
-       ancestor is what allows the scroll area to shrink instead of pushing
-       the composer off-screen. */
-    /* The section's 32px side padding cost 64px of a 375px screen. The
-       conversation now runs edge to edge and the hero carries its own inset. */
-    #tab-agent.content-section.active {
-        display: flex; flex-direction: column;
-        flex: 1 1 auto; min-height: 0; padding: 0;
-    }
+    /* The section's 32px side padding cost 64px of a 375px screen; the
+       conversation now runs edge to edge. */
+    #tab-agent.content-section.active { padding: 0; }
     #tab-agent .agent-grid {
         display: block; flex: 1 1 auto; min-height: 0;
     }
@@ -703,11 +722,15 @@ body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
         padding: 14px 14px 6px; gap: 14px;
     }
 
-    #tab-agent .chat-head { padding: 8px 14px; }
+    #tab-agent .chat-head { padding: 8px 12px; gap: 10px; }
     #tab-agent .chat-head-sub { display: none; }
     #tab-agent .chat-head .quick-chip {
         min-height: 40px; padding: 8px 12px; font-size: 10.5px;
     }
+    #tab-agent .chat-back { min-height: 40px; padding: 8px 11px 8px 9px; }
+    /* The chat head is the only identity band left, so the title sits between
+       Back and New chat rather than hugging the left edge. */
+    #tab-agent .chat-head-left { flex: 1 1 auto; justify-content: center; }
 
     /* Composer pinned to the bottom of the shell. */
     #tab-agent .input-row {
@@ -2120,17 +2143,11 @@ exportCsvBtn.addEventListener('click', () => {
 
         <!-- TAB 7: AGENT -->
                 <section id="tab-agent" class="content-section active">
-            <div class="hero-row">
-                <div>
-                    <p class="kicker">Company-Aware Assistant</p>
-                    <h1 class="hero-title">Agent</h1>
-                    <p class="hero-sub">Ask about your company profile, draft a tender quotation, or check what's due this week. Agent works from your archive — not assumptions.</p>
-                </div>
-                <div class="quota-line">
-                    QUOTES TODAY <span id="agentQuotaCount">0 / 5</span><br>
-                    PLAN <span id="agentQuotaPlan">STARTER</span>
-                </div>
-            </div>
+            <!-- The hero row (kicker / "Agent" / description / QUOTES TODAY) was
+                 removed on purpose. The conversation is the page here, so the
+                 chat panel fills the screen instead of sitting as a block
+                 underneath a masthead. The quota still exists on the API and is
+                 enforced server-side; it simply is not a headline any more. -->
 
             <!-- Locked State -->
             <div id="agentLockedState" class="ws-card" style="display:none; text-align:center; padding: 48px; border: 1px dashed rgba(197,168,128,0.4); margin-bottom: 20px;">
@@ -2143,13 +2160,18 @@ exportCsvBtn.addEventListener('click', () => {
                 <!-- CHAT PANEL -->
                 <section class="chat-panel">
                     <div class="chat-head">
+                        <!-- The way out of the conversation. It is the only exit on a
+                             phone, where the bottom tab bar is hidden so the chat can
+                             hold the whole screen. -->
+                        <a href="/" class="chat-back" aria-label="Leave the conversation">
+                            <svg viewBox="0 0 16 12" width="15" height="11" fill="none" aria-hidden="true">
+                                <path d="M6 1L1 6M1 6L6 11M1 6H15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span>Back</span>
+                        </a>
                         <div class="chat-head-left">
                             <span class="pulse-dot" aria-hidden="true"><i></i></span>
                             <span class="chat-head-title">Agent</span>
-                            <span class="chat-head-sub">Answers from your records &mdash; never assumptions</span>
-                            <!-- Mobile only. The hero row is hidden on a phone, so the quota
-                                 rides here rather than costing its own 54px band. -->
-                            <span class="chat-head-quota" id="agentQuotaCompact"></span>
                         </div>
                         <button class="quick-chip" onclick="clearAgentChat()" title="Start a new conversation">New chat</button>
                     </div>
@@ -2448,17 +2470,10 @@ exportCsvBtn.addEventListener('click', () => {
         // re-created every existing node, which would wipe out a reveal already
         // in progress. Building nodes and setting textContent fixes both.
 
-        // Mirrors the hero row's quota into the chat head, which is the only
-        // place it appears on a phone.
-        function setCompactQuota(sub) {
-            const el = document.getElementById('agentQuotaCompact');
-            if (!el) return;
-            if (sub && sub.usage && sub.features) {
-                el.textContent = sub.usage.quotes_used_today + ' / ' + sub.features.quotes_per_day;
-            } else {
-                el.textContent = '0 / 5';
-            }
-        }
+        // The quota is no longer shown on the Agent page — it is still returned
+        // by the API and still enforced server-side, it just is not a headline.
+        // Kept as a no-op so the two call sites in loadAgentData stay simple.
+        function setCompactQuota() {}
 
         // The top bar carries the Sailor/Conquest selector, which the Agent does
         // not use — /api/agent/chat sends no model. Marking the active tab on
@@ -2495,7 +2510,12 @@ exportCsvBtn.addEventListener('click', () => {
         function appendMessage(role, text) {
             const parts = appendMessageRow(role);
             if (!parts) return null;
-            parts.bubble.textContent = text;
+            // Same per-line structure as a revealed reply, so a pasted multi-line
+            // message aligns the same way the agent's own do.
+            const lines = String(text || '').split('\n');
+            buildLines(parts.bubble, lines).forEach(function (el, i) {
+                el.textContent = lines[i];
+            });
             scrollAgentLog();
             return parts;
         }
@@ -2507,28 +2527,47 @@ exportCsvBtn.addEventListener('click', () => {
         // rather than one glacial character at a time. Characters inside a line
         // are revealed in small batches per animation frame, so a long reply
         // still lands quickly instead of making the user wait for an animation.
+        // Each line becomes its own element rather than one pre-wrap text node.
+        // That is what lets a wrapped list item hang under its own text: with a
+        // single text node every visual line began at the same x, so a bullet
+        // that wrapped ran back under the "-" and read as misaligned.
+        function buildLines(bubble, lines) {
+            bubble.textContent = '';
+            return lines.map(function (line) {
+                const el = document.createElement('div');
+                el.className = 'msg-line';
+                if (!line.trim()) {
+                    el.classList.add('is-blank');
+                } else if (/^\s*[-•]\s+/.test(line)) {
+                    el.classList.add('is-bullet');
+                }
+                bubble.appendChild(el);
+                return el;
+            });
+        }
+
         function typeInto(bubble, text, opts) {
             const options = opts || {};
             const charsPerFrame = options.charsPerFrame || 7;   // ~420 chars/sec at 60fps
             const linePause = options.linePause || 55;          // beat between lines
 
             if (!bubble) return Promise.resolve();
+            const lines = String(text || '').split('\n');
+
             // document.hidden: a backgrounded tab throttles timers heavily, so
             // animating there would leave the caller awaiting a reveal that
             // effectively stops. Show the text and move on.
             if (prefersReducedMotion || !text || document.hidden) {
-                bubble.textContent = text || '';
+                const els = buildLines(bubble, lines);
+                els.forEach(function (el, i) { el.textContent = lines[i]; });
                 scrollAgentLog();
                 return Promise.resolve();
             }
 
-            bubble.textContent = '';
             bubble.classList.add('is-typing');
-
-            const lines = String(text).split('\n');
+            const lineEls = buildLines(bubble, lines);
             let lineIndex = 0;
             let charIndex = 0;
-            let shown = '';
 
             const deadline = Date.now() + 9000;
 
@@ -2538,7 +2577,7 @@ exportCsvBtn.addEventListener('click', () => {
                     if (settled) return;
                     settled = true;
                     bubble.classList.remove('is-typing');
-                    bubble.textContent = text;
+                    lineEls.forEach(function (el, i) { el.textContent = lines[i]; });
                     scrollAgentLog();
                     resolve();
                 }
@@ -2556,15 +2595,14 @@ exportCsvBtn.addEventListener('click', () => {
                     const line = lines[lineIndex];
                     if (charIndex < line.length) {
                         charIndex = Math.min(line.length, charIndex + charsPerFrame);
-                        bubble.textContent = shown + line.slice(0, charIndex);
+                        lineEls[lineIndex].textContent = line.slice(0, charIndex);
                         scrollAgentLog();
                         setTimeout(step, 16);
                         return;
                     }
-                    shown += line + (lineIndex < lines.length - 1 ? '\n' : '');
+                    lineEls[lineIndex].textContent = line;
                     lineIndex += 1;
                     charIndex = 0;
-                    bubble.textContent = shown;
                     scrollAgentLog();
                     // Blank lines are paragraph breaks; do not pause twice on them.
                     setTimeout(step, line.length ? linePause : 0);
@@ -2994,9 +3032,12 @@ exportCsvBtn.addEventListener('click', () => {
             log.dataset.opened = '1';
             log.innerHTML = '';
 
+            // Secretary register: greet, report in, hand the floor back. Warm
+            // and deferential without being servile, and never more than a line
+            // or two before the principal gets to speak.
             const first = appendMessageRow('agent');
             await typeInto(first.bubble,
-                greetingForNow() + ". What's on today's agenda?");
+                greetingForNow() + ". I'm all set on this end — what's on the agenda today?");
 
             let status = null;
             try {
@@ -3010,10 +3051,11 @@ exportCsvBtn.addEventListener('click', () => {
 
             if (status && status.complete) {
                 await typeInto(second.bubble,
-                    "Your Compliance Vault is complete - all " + status.required_count
-                    + " required documents are in. I can vet your company now and put together "
-                    + "a list of accreditations, licences and certifications that would "
-                    + "strengthen your standing on government tenders, as a PDF you can keep.");
+                    "Before you start — your Compliance Vault is in order, all "
+                    + status.required_count + " documents accounted for. If you'd like, "
+                    + "I'll run the vetting now and have an accreditation and licensing "
+                    + "roadmap drawn up for you as a PDF. I'll make a start unless you'd "
+                    + "rather I left it.");
 
                 if (!localStorage.getItem(vaultVettedKey())) {
                     localStorage.setItem(vaultVettedKey(), String(Date.now()));
@@ -3025,12 +3067,13 @@ exportCsvBtn.addEventListener('click', () => {
                 }
             } else {
                 const missing = (status && status.missing || []).map(m => m.label);
-                let text = "Once you've uploaded every required document in the Compliance Vault, "
-                         + "I'll vet your company and give you a list of accreditations, licences "
-                         + "and certifications you can get to strengthen your tender applications - "
-                         + "delivered as a PDF with links.";
+                let text = "One thing for your diary: as soon as the Compliance Vault is "
+                         + "complete, I'll vet the company and prepare a roadmap of the "
+                         + "accreditations, licences and certifications worth pursuing — "
+                         + "delivered as a PDF with the links to follow up.";
                 if (missing.length) {
-                    text += "\n\nStill outstanding:\n- " + missing.join("\n- ");
+                    text += "\n\nStill outstanding, when you have a moment:\n- "
+                          + missing.join("\n- ");
                 }
                 await typeInto(second.bubble, text);
             }
@@ -3053,7 +3096,7 @@ exportCsvBtn.addEventListener('click', () => {
             localStorage.setItem(vaultVettedKey(), String(Date.now()));
             const parts = appendMessageRow('agent');
             await typeInto(parts.bubble,
-                "That's your Compliance Vault complete. Vetting your company now.");
+                "That completes the Compliance Vault. I'll run the vetting now.");
             await runAgentTurn(
                 'My Compliance Vault is now complete. Vet my company and generate the '
                 + 'accreditation roadmap PDF for my industry.',
