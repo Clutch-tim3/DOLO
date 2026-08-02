@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="static/style.css?v=18.0">
-    <link rel="stylesheet" href="static/ui-polish.css?v=1.1">
+    <link rel="stylesheet" href="static/ui-polish.css?v=1.2">
     <style>
         body { margin: 0; padding: 0; background-color: var(--bg-color, #000000); color: var(--text-primary, #e4e4e7); font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
         
@@ -597,17 +597,134 @@ body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
     box-shadow: 0 0 0 3px rgba(197,168,128,0.10);
 }
 
-/* --- mobile: workspace collapses to Agent + Generate Quotation ---------- */
+/* --- mobile: workspace collapses to Agent + Generate Quotation ----------
+   The Agent tab is laid out as an app shell rather than as a scrolling page.
+   Before this, 566px of an 812px viewport was chrome — a 125px top bar, a
+   151px onboarding banner and a 198px hero — so the conversation started
+   two-thirds down the screen and the input sat ~230px below the fold. The
+   fixed header also overlapped the top bar, because nothing reserved space
+   for it.
+
+   The conversation now fills whatever is left after the fixed chrome, and the
+   composer is always on screen. Heights come from flex rather than magic
+   numbers so the shell survives a different header or a taller banner. */
 @media (max-width: 880px) {
-    #tab-agent .agent-grid, .agent-grid { display: block; }
-    #tab-agent .chat-panel, .chat-panel { height: calc(100vh - 250px); min-height: 400px; }
-    .chat-scroll { padding: 18px 16px 6px; gap: 16px; }
-    .msg-row { max-width: 92%; }
-    .chat-head { padding: 11px 16px; }
-    .chat-head-sub { display: none; }
-    .input-row { padding: 12px 16px 16px; gap: 8px; }
-    .quick-actions { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
-    .quick-actions::-webkit-scrollbar { display: none; }
+    /* Reserve space for the two fixed bars instead of letting them overlap. */
+    .workspace-main {
+        padding-top: 56px;
+        padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Compact the desktop top bar: on a phone the fixed header already says
+       where you are, so this only needs to carry the model selector. */
+    .top-bar {
+        padding: 8px 14px;
+        gap: 10px;
+    }
+    .top-bar .tab-title-display { display: none; }
+    /* The theme toggle and model selector sat in a 393px group on a 375px
+       screen. min-width:0 lets it shrink; the select truncates its own label. */
+    .top-bar > div {
+        min-width: 0; flex-wrap: wrap; gap: 8px;
+    }
+    /* !important is needed here and on the toggle below: both carry inline
+       style attributes, which outrank any selector without it. */
+    #workspaceModelSelector {
+        max-width: 168px; min-width: 0;
+        font-size: 16px !important;   /* below 16px iOS zooms the page on focus */
+        min-height: 40px;
+        text-overflow: ellipsis;
+    }
+    .theme-toggle-btn {
+        min-height: 40px !important;
+        padding: 8px 12px !important;
+    }
+
+    /* Onboarding copy is the most expensive thing on the screen and repeats
+       what the hero says. */
+    .guided-banner { display: none; }
+
+    /* Agent hero collapses to one line: title plus the quota as a chip. */
+    #tab-agent .hero-row {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; margin: 0; padding: 10px 14px 8px;
+    }
+    #tab-agent .kicker,
+    #tab-agent .hero-sub { display: none; }
+    #tab-agent .hero-title {
+        font-size: 20px !important; margin: 0; line-height: 1.1;
+    }
+    /* Kept as two stacked lines rather than one row: laid out inline it came
+       to 237px, which together with the title overflowed the row and wrapped
+       the hero to 77px tall. */
+    #tab-agent .quota-line {
+        display: block; flex: 0 0 auto;
+        font-size: 9px; letter-spacing: 0.08em; line-height: 1.35;
+        white-space: nowrap; text-align: right;
+        padding: 5px 8px; border-radius: 2px;
+        border: 0.5px solid rgba(197,168,128,0.3);
+        background: rgba(197,168,128,0.07);
+    }
+    #tab-agent .quota-line span {
+        font-family: 'JetBrains Mono', monospace;
+        color: var(--accent-gold);
+    }
+
+    /* The conversation takes the remaining height. min-height:0 on every
+       ancestor is what allows the scroll area to shrink instead of pushing
+       the composer off-screen. */
+    /* The section's 32px side padding cost 64px of a 375px screen. The
+       conversation now runs edge to edge and the hero carries its own inset. */
+    #tab-agent.content-section.active {
+        display: flex; flex-direction: column;
+        flex: 1 1 auto; min-height: 0; padding: 0;
+    }
+    #tab-agent .agent-grid {
+        display: block; flex: 1 1 auto; min-height: 0;
+    }
+    /* Everything below is scoped to #tab-agent on purpose: style.css carries a
+       parallel #tab-agent-scoped stylesheet, so bare class selectors here lose
+       on specificity and silently do nothing. */
+    #tab-agent .chat-panel,
+    .chat-panel {
+        height: 100%; min-height: 0;
+        display: flex; flex-direction: column;
+        margin: 0; border-radius: 0;
+        border-left: none; border-right: none;
+    }
+    #tab-agent .chat-scroll {
+        flex: 1 1 auto; min-height: 0; overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 14px 14px 6px; gap: 14px;
+    }
+
+    #tab-agent .chat-head { padding: 8px 14px; }
+    #tab-agent .chat-head-sub { display: none; }
+    #tab-agent .chat-head .quick-chip {
+        min-height: 40px; padding: 8px 12px; font-size: 10.5px;
+    }
+
+    /* Composer pinned to the bottom of the shell. */
+    #tab-agent .input-row {
+        flex: 0 0 auto;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+        gap: 8px;
+        background: var(--card-bg, rgba(0,0,0,0.2));
+        border-top: 0.5px solid rgba(255,255,255,0.08);
+    }
+    /* 16px keeps iOS from zooming the whole page in on focus. */
+    #tab-agent .agent-input {
+        font-size: 16px !important; min-height: 44px; padding: 10px 13px;
+    }
+    #tab-agent .input-row .bracket-btn {
+        flex: 0 0 auto; padding: 11px 14px; min-height: 44px;
+    }
+
+    /* Bubbles were capped at 92%, which on a 375px screen left the two
+       speakers almost indistinguishable. */
+    #tab-agent .msg-row { max-width: 88%; }
+    #tab-agent .msg-row.user { margin-left: auto; }
+    #tab-agent .msg-bubble { font-size: 14px; padding: 11px 13px; line-height: 1.55; }
 
     /* Only Agent and Generate Quotation are reachable from the console on a
        phone; Vault / Batch / Calendar / System live in the bottom nav. */
@@ -616,6 +733,8 @@ body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
     .nav-list .nav-item[data-tab="calendar"],
     .nav-list .nav-item[data-tab="system"] { display: none; }
 }
+
+body.light-theme #tab-agent .input-row { background: var(--bg-color); }
 
 body.light-theme .chat-head { background: rgba(20,16,10,0.02); border-bottom-color: var(--border-faint); }
 body.light-theme .agent-thinking { background: rgba(20,16,10,0.03); }
@@ -2030,12 +2149,6 @@ exportCsvBtn.addEventListener('click', () => {
                          the profile the agent had actually loaded. -->
                     <div id="agentMessageLog" class="chat-scroll"></div>
 
-                    <div class="quick-actions">
-                        <button class="quick-chip" onclick="fillAgentPrompt('Generate Quote')">Generate Quote</button>
-                        <button class="quick-chip" onclick="fillAgentPrompt('Check My Odds')">Check My Odds</button>
-                        <button class="quick-chip" onclick="fillAgentPrompt('What\'s Due This Week')">What's Due This Week</button>
-                    </div>
-
                     <div class="input-row">
                         <input id="agentInput" class="agent-input" type="text" placeholder="Ask Agent anything about your company or a tender..." onkeydown="if(event.key === 'Enter') sendAgentMessage()">
                         <button class="bracket-btn filled" onclick="sendAgentMessage()">Send</button>
@@ -3376,10 +3489,7 @@ exportCsvBtn.addEventListener('click', () => {
             }
         }
 
-        function fillAgentPrompt(text) {
-            document.getElementById('agentInput').value = text;
-            sendAgentMessage();
-        }
+        // fillAgentPrompt removed with the quick-action chips it existed to serve.
 
         
 

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="static/style.css?v=16.0">
-    <link rel="stylesheet" href="static/ui-polish.css?v=1.1">
+    <link rel="stylesheet" href="static/ui-polish.css?v=1.2">
     <style>
         .page-container { padding-top: 80px; max-width: 1200px; margin: 0 auto; display: flex; gap: 40px; }
         .main-column { flex: 3; }
@@ -102,7 +102,12 @@
             <div id="conflictBanner" style="display:none; color:#e05c5c; font-size:12px; font-weight:600; text-transform:uppercase;"></div>
         </div>
         
-        <div style="display:flex; gap: 40px;">
+        <!-- Classed so the mobile rules in ui-polish.css can stack these two
+             columns. Unclassed, the flex row never collapsed on a phone: the
+             side column sat at x=384 on a 375px screen and pushed the whole
+             page to 500px, which also stretched the fixed header and bottom
+             bar to 500px because both are width:100%. -->
+        <div class="calendar-layout" style="display:flex; gap: 40px;">
             <div class="main-column">
                 <div class="month-nav">
                     <button class="corner-btn" id="prevMonth" style="padding: 4px 12px;">

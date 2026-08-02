@@ -311,6 +311,44 @@ body.light-theme table.results th { background: #f5f2ec; }
     .ws-card:hover, .doc-block:hover, .result-card:hover,
     .btn-gold:hover, button[type="submit"]:hover, .corner-btn:hover,
     .file-drop-area:hover { transform: none; box-shadow: none; }
+
+    /* The theme toggle carries an inline min-height:32px, so overriding it to a
+       usable tap target needs !important. It appears on every page. */
+    .theme-toggle-btn {
+        min-height: 40px !important;
+        padding: 8px 12px !important;
+    }
+
+    /* Calendar stacked its two columns side by side on a phone because
+       calendar.html had no media queries at all: the side column landed at
+       x=384 on a 375px screen, so the page scrolled sideways and the fixed
+       header and bottom bar — both width:100% — were stretched to match. */
+    .calendar-layout {
+        flex-direction: column !important;
+        gap: 20px !important;
+    }
+    .calendar-layout > .main-column,
+    .calendar-layout > .side-column {
+        flex: 1 1 auto !important;
+        min-width: 0;
+        width: 100%;
+    }
+    .month-nav {
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: space-between;
+    }
+    /* A 7-column month grid cannot be read at 375px without letting the cells
+       shrink; the day numbers stay legible. */
+    .calendar-grid { min-width: 0; }
+    .calendar-grid .weekday-header { padding: 8px 2px; font-size: 9.5px; }
+
+    /* Form controls below 16px make iOS zoom the whole page on focus, which
+       then leaves the user scrolled sideways. */
+    input[type="text"], input[type="number"], input[type="date"],
+    input[type="email"], input[type="search"], select, textarea {
+        font-size: 16px !important;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
