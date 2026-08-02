@@ -414,6 +414,10 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Mobile-only. On desktop the hero row still shows the quota, so this would be
+   a second copy of the same number on screen. The mobile block turns it on. */
+.chat-head-quota { display: none; }
+
 /* pulse-dot — 7px, 2s ease-out ring, matches the brand spec */
 .pulse-dot { position: relative; width: 7px; height: 7px; flex-shrink: 0; }
 .pulse-dot i {
@@ -622,6 +626,11 @@ body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
         gap: 10px;
     }
     .top-bar .tab-title-display { display: none; }
+
+    /* ...and on the Agent tab it carries nothing relevant at all. The
+       Sailor/Conquest selector drives predictions; /api/agent/chat sends no
+       model. Dropping the bar there returns 57px to the conversation. */
+    body[data-active-tab="agent"] .top-bar { display: none; }
     /* The theme toggle and model selector sat in a 393px group on a 375px
        screen. min-width:0 lets it shrink; the select truncates its own label. */
     .top-bar > div {
@@ -644,24 +653,20 @@ body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
        what the hero says. */
     .guided-banner { display: none; }
 
-    /* Agent hero collapses to one line: title plus the quota as a chip. */
-    #tab-agent .hero-row {
-        display: flex; align-items: center; justify-content: space-between;
-        gap: 12px; margin: 0; padding: 10px 14px 8px;
-    }
-    #tab-agent .kicker,
-    #tab-agent .hero-sub { display: none; }
-    #tab-agent .hero-title {
-        font-size: 20px !important; margin: 0; line-height: 1.1;
-    }
-    /* Kept as two stacked lines rather than one row: laid out inline it came
-       to 237px, which together with the title overflowed the row and wrapped
-       the hero to 77px tall. */
-    #tab-agent .quota-line {
-        display: block; flex: 0 0 auto;
-        font-size: 9px; letter-spacing: 0.08em; line-height: 1.35;
-        white-space: nowrap; text-align: right;
-        padding: 5px 8px; border-radius: 2px;
+    /* The hero row is gone on a phone. It was a third band repeating identity
+       the fixed header and the chat head already carry — "CAIROAI", "Agent",
+       "Agent / Answers from your records" in three stacked bars. Its only
+       unique payload was the quota, which now rides in the chat head. */
+    #tab-agent .hero-row { display: none; }
+    /* Quota as a compact gold chip in the chat head — the signature treatment,
+       one band instead of two. */
+    #tab-agent .chat-head-quota {
+        display: inline-flex; align-items: center; flex: 0 0 auto;
+        margin-left: auto;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px; letter-spacing: 0.06em; white-space: nowrap;
+        color: var(--accent-gold);
+        padding: 4px 9px; border-radius: 2px;
         border: 0.5px solid rgba(197,168,128,0.3);
         background: rgba(197,168,128,0.07);
     }
@@ -720,11 +725,15 @@ body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
         flex: 0 0 auto; padding: 11px 14px; min-height: 44px;
     }
 
-    /* Bubbles were capped at 92%, which on a 375px screen left the two
-       speakers almost indistinguishable. */
-    #tab-agent .msg-row { max-width: 88%; }
-    #tab-agent .msg-row.user { margin-left: auto; }
-    #tab-agent .msg-bubble { font-size: 14px; padding: 11px 13px; line-height: 1.55; }
+    /* Reading measure. At 88% with 13px padding the agent's replies ran to 38
+       characters a line, well under the comfortable 45-75. The agent — which
+       writes the long text — now gets the full column, while the user's own
+       messages stay narrow and right-aligned, so the two speakers read as
+       distinct by shape rather than by width alone. */
+    #tab-agent .chat-scroll { padding: 14px 11px 6px; }
+    #tab-agent .msg-row { max-width: 100%; }
+    #tab-agent .msg-row.user { max-width: 84%; margin-left: auto; }
+    #tab-agent .msg-bubble { font-size: 14px; padding: 11px 12px; line-height: 1.55; }
 
     /* Only Agent and Generate Quotation are reachable from the console on a
        phone; Vault / Batch / Calendar / System live in the bottom nav. */
@@ -2138,6 +2147,9 @@ exportCsvBtn.addEventListener('click', () => {
                             <span class="pulse-dot" aria-hidden="true"><i></i></span>
                             <span class="chat-head-title">Agent</span>
                             <span class="chat-head-sub">Answers from your records &mdash; never assumptions</span>
+                            <!-- Mobile only. The hero row is hidden on a phone, so the quota
+                                 rides here rather than costing its own 54px band. -->
+                            <span class="chat-head-quota" id="agentQuotaCompact"></span>
                         </div>
                         <button class="quick-chip" onclick="clearAgentChat()" title="Start a new conversation">New chat</button>
                     </div>
@@ -2204,6 +2216,7 @@ exportCsvBtn.addEventListener('click', () => {
                     const quotaPlan = document.getElementById('agentQuotaPlan');
                     if(quotaCount && sub.usage && sub.features) quotaCount.textContent = sub.usage.quotes_used_today + ' / ' + sub.features.quotes_per_day;
                     if(quotaPlan) quotaPlan.textContent = sub.tier === 'pro' ? 'PRO PLAN' : 'STARTER';
+                    setCompactQuota(sub);
                 }
 
                 const compRes = await fetch('/api/company-profile', { headers: { 'X-Company-ID': 'pro_corp' } });
@@ -2263,7 +2276,8 @@ exportCsvBtn.addEventListener('click', () => {
                 const quotaPlan = document.getElementById('agentQuotaPlan');
                 if(quotaCount) quotaCount.textContent = '0 / 5';
                 if(quotaPlan) quotaPlan.textContent = 'PRO PLAN';
-                
+                setCompactQuota(null);
+
                 const locked = document.getElementById('agentLockedState');
                 const active = document.getElementById('agentActiveState');
                 if(locked) locked.style.display = 'none';
@@ -2433,6 +2447,26 @@ exportCsvBtn.addEventListener('click', () => {
         // containing a tag was parsed as markup), and rebuilding innerHTML
         // re-created every existing node, which would wipe out a reveal already
         // in progress. Building nodes and setting textContent fixes both.
+
+        // Mirrors the hero row's quota into the chat head, which is the only
+        // place it appears on a phone.
+        function setCompactQuota(sub) {
+            const el = document.getElementById('agentQuotaCompact');
+            if (!el) return;
+            if (sub && sub.usage && sub.features) {
+                el.textContent = sub.usage.quotes_used_today + ' / ' + sub.features.quotes_per_day;
+            } else {
+                el.textContent = '0 / 5';
+            }
+        }
+
+        // The top bar carries the Sailor/Conquest selector, which the Agent does
+        // not use — /api/agent/chat sends no model. Marking the active tab on
+        // <body> lets the mobile rules drop that bar on the Agent tab only,
+        // since it sits outside #tab-agent and cannot be reached from there.
+        function markActiveTab(tabId) {
+            document.body.setAttribute('data-active-tab', tabId || '');
+        }
 
         function agentLog() { return document.getElementById('agentMessageLog'); }
 
@@ -3031,6 +3065,7 @@ exportCsvBtn.addEventListener('click', () => {
         const originalSwitchTabAgent = switchTab;
         switchTab = function(tabId, element) {
             originalSwitchTabAgent(tabId, element);
+            markActiveTab(tabId);
             if (tabId === 'agent') {
                 loadAgentData();
                 // Writes the greeting and the vault explainer. Guarded inside by
@@ -3554,6 +3589,8 @@ exportCsvBtn.addEventListener('click', () => {
         // load and the opening messages would only appear if you navigated away
         // and back.
         window.addEventListener('DOMContentLoaded', openAgentConversation);
+        // Agent is the landing tab, so switchTab never fires for it on load.
+        window.addEventListener('DOMContentLoaded', () => markActiveTab('agent'));
     </script>
 
 
