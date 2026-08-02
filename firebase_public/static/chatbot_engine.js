@@ -1,5 +1,5 @@
 /**
- * DOLO Agent Chatbot Engine
+ * CairoAI Agent Chatbot Engine
  * A client-side intelligent chatbot that works on Firebase static hosting
  * without requiring a backend API. Uses company profile context from the vault.
  */
@@ -126,7 +126,7 @@ function getAgentResponse(userMessage, companyName, industry) {
     else if (msg.match(/^(hi|hello|hey|good morning|good afternoon|good evening|howzit|sup|yo)[\s!?.]*$/i)) {
         const hour = new Date().getHours();
         const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
-        response = `${greeting}. I'm your DOLO Agent — ready to assist with anything related to <strong>${companyName}</strong>. You can ask me about your accreditations, tender strategy, company compliance, or anything else. How can I help you today?`;
+        response = `${greeting}. I'm your CairoAI Agent — ready to assist with anything related to <strong>${companyName}</strong>. You can ask me about your accreditations, tender strategy, company compliance, or anything else. How can I help you today?`;
     }
     // --- Help ---
     else if (msg.includes("help") || msg.includes("what can you do") || msg.includes("capabilities") || msg.includes("features")) {

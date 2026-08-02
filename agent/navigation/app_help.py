@@ -31,7 +31,7 @@ def get_app_help(feature_query: str) -> str:
 app_help_tools = [
     {
         "name": "get_app_help",
-        "description": "Retrieves factual information about the DOLO app's features and UI to answer 'how do I...' questions. Prevents describing features that do not exist.",
+        "description": "Retrieves factual information about the CairoAI app's features and UI to answer 'how do I...' questions. Prevents describing features that do not exist.",
         "input_schema": {
             "type": "object",
             "properties": {

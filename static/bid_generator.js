@@ -192,7 +192,7 @@ function generateComplexBidResponse(doc, companyName) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(150,150,150);
-    doc.text(companyName.toUpperCase() + ' - GENERATED VIA DOLO AI (PROTOTYPE BUILD)', 105, 280, null, null, 'center');
+    doc.text(companyName.toUpperCase() + ' - GENERATED VIA CAIROAI (PROTOTYPE BUILD)', 105, 280, null, null, 'center');
     
     return doc;
 }

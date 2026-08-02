@@ -1901,7 +1901,7 @@ exportCsvBtn.addEventListener('click', () => {
                                 <span class="qstep-title">Bidding company <em>from vault archive</em></span>
                                 <select id="quoteCompanySelect" class="quote-select">
                                     <option value="CAIROAI (Medical)">CAIROAI &mdash; Medical / Health &middot; MAAA0012345</option>
-                                    <option value="DOLO SECURITY SERVICES">DOLO SECURITY SERVICES &mdash; Security &middot; MAAA0098765</option>
+                                    <option value="SENTINEL SECURITY SERVICES">SENTINEL SECURITY SERVICES &mdash; Security &middot; MAAA0098765</option>
                                     <option value="APEX CONSTRUCTION">APEX CONSTRUCTION &mdash; Construction &middot; MAAA0054321</option>
                                 </select>
                             </div>
@@ -2948,7 +2948,7 @@ exportCsvBtn.addEventListener('click', () => {
             return 'Good evening';
         }
 
-        function vaultVettedKey() { return 'dolo_vault_vetted_' + getCompanyId(); }
+        function vaultVettedKey() { return 'cairoai_vault_vetted_' + getCompanyId(); }
 
         // Opens with two messages: a greeting, then what happens once the vault
         // is complete. The second message reflects the vault's real state, so it
