@@ -64,7 +64,7 @@ function generateComplexBidResponse(doc, companyName) {
             ['1', 'Proof of Attendance of Compulsory Briefing session.', '[X] YES', '[ ] NO'],
             ['2', 'The Service Providers have to agree with Special Conditions.', '[X] YES', '[ ] NO'],
             ['3', 'The Service Providers have to agree with NHLS General Conditions.', '[X] YES', '[ ] NO'],
-            ['4', 'Fully completed and Signed Bidder\\'s Disclosure SBD4.', '[X] YES', '[ ] NO']
+            ['4', "Fully completed and Signed Bidder's Disclosure SBD4.", '[X] YES', '[ ] NO']
         ],
         theme: 'grid',
         headStyles: { fillColor: cliveRed },

@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="static/style.css?v=18.0">
+    <link rel="stylesheet" href="static/style.css?v=20.0">
     <link rel="stylesheet" href="static/ui-polish.css?v=1.2">
     <style>
         body { margin: 0; padding: 0; background-color: var(--bg-color, #000000); color: var(--text-primary, #e4e4e7); font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
@@ -44,7 +44,12 @@
         }
 
         /* Main Workspace Container */
-        .workspace-main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow-y: auto; background: var(--bg-color); }
+        /* 100dvh, with 100vh left in front of it as the fallback for engines
+           that do not know the unit. On iOS Safari 100vh is the viewport with
+           the toolbars RETRACTED - the tallest it can ever be - so a shell sized
+           to it runs past the visible area and the composer ends up behind
+           Safari's bottom toolbar. dvh tracks the toolbar as it shows and hides. */
+        .workspace-main { flex: 1; display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow-y: auto; background: var(--bg-color); }
 
         .top-bar { padding: 16px 32px; background: var(--topbar-bg); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border-faint); display: flex; justify-content: space-between; align-items: center; sticky: top; z-index: 90; transition: background 0.3s ease; }
         .tab-title-display { font-family: 'Cinzel', serif; font-size: 18px; font-weight: 600; color: var(--text-white); letter-spacing: 0.12em; }
@@ -390,6 +395,7 @@
 #tab-agent .chat-panel,
 .chat-panel {
     height: calc(100vh - 300px);
+    height: calc(100dvh - 300px);
     min-height: 520px;
     max-height: 900px;
     border-radius: 6px;
@@ -744,8 +750,16 @@ body.light-theme .gen-progress-track { background: rgba(20,16,10,0.09); }
     #tab-agent .agent-input {
         font-size: 16px !important; min-height: 44px; padding: 10px 13px;
     }
+    /* The composer is two controls side by side, so they have to look like a
+       pair. The input is a rounded outlined box; the send button was a square
+       solid gold block with no radius, which read as mismatched against it.
+       Same radius, same height, same vertical centring. */
     #tab-agent .input-row .bracket-btn {
-        flex: 0 0 auto; padding: 11px 14px; min-height: 44px;
+        flex: 0 0 auto;
+        min-height: 44px; height: 44px;
+        padding: 0 18px;
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 3px;
     }
 
     /* Reading measure. At 88% with 13px padding the agent's replies ran to 38
