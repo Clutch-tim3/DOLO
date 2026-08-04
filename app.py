@@ -42,6 +42,10 @@ from models.sa_scoring import calculate_total_sa_score, adjust_probability_for_s
 from models.pdf_parser import parse_company_pdf, extract_text_from_pdf, classify_document_type
 from predict.eligibility_gate import check_hard_eligibility
 from models.pdf_parser import parse_tender_document
+# Vault uploads are recorded against the company here; the vault reads from the
+# same table, which is what makes an uploaded document actually appear.
+from agent.memory.company_store import add_company_document
+from agent.tool_dispatch import vault_type_for
 from models.quotation_generator import generate_quotation_pdf
 
 from agent.subscription import get_config, check_quote_quota, get_subscription_status, log_quote_generation
@@ -396,17 +400,35 @@ async def api_generate_quotation(request: Request):
 
 @app.post("/api/archive/upload-document")
 async def api_upload_archive_document(
+    request: Request,
     file: UploadFile = File(...),
     target_block: str = Form("CSD_CERT")
 ):
     """
-    Validates PDF upload against compliance blocks.
-    Auto-sorts misclassified documents into the correct block and alerts user.
+    Accepts a Compliance Vault document: stores it, classifies it, auto-sorts a
+    misfiled one into the block it actually belongs to, and records it against
+    the company.
+
+    NOTE: this used to save and classify the file and then stop. It never called
+    add_company_document, so an upload returned "success" and the document then
+    did not appear in the vault, did not count toward the five required
+    documents, and did not trigger the onboarding vet. It also ignored
+    X-Company-ID, so nothing was tenant-scoped.
     """
+    company_id = request.headers.get("X-Company-ID", "starter_corp")
     try:
         filename = secure_filename(file.filename)
+        if not filename:
+            raise HTTPException(status_code=400, detail="File has no usable name.")
+
+        suffix = Path(filename).suffix.lower()
+        if suffix not in {".pdf", ".docx", ".doc"}:
+            raise HTTPException(
+                status_code=415,
+                detail="Only PDF and Word documents can be filed in the vault.",
+            )
+
         save_path = UPLOAD_FOLDER / f"{uuid.uuid4().hex[:6]}_{filename}"
-        
         with open(save_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
@@ -422,16 +444,45 @@ async def api_upload_archive_document(
             auto_sorted = True
             actual_block = detected_type
 
+        # Persist against the company, which is what makes it show up in the
+        # vault and count toward completeness.
+        parsed_fields = {}
+        try:
+            parsed_fields = parse_company_pdf(save_path) or {}
+        except Exception:
+            logger.exception("Could not parse uploaded document", extra={"company_id": company_id})
+
+        doc_id = None
+        try:
+            doc_id = add_company_document(
+                company_id,
+                # Mapped, not lowercased: the classifier's block names do not
+                # match the vault's required types except by coincidence.
+                vault_type_for(actual_block),
+                str(save_path),
+                parsed_fields,
+                parsed_fields.get("expiry_date"),
+            )
+        except Exception:
+            logger.exception("Could not record document", extra={"company_id": company_id})
+            raise HTTPException(
+                status_code=500,
+                detail="The file was received but could not be filed. Try again.",
+            )
+
         return {
             "status": "success",
+            "document_id": doc_id,
             "filename": filename,
             "intended_block": target_block,
             "actual_block": actual_block,
             "auto_sorted": auto_sorted,
             "detected_type": detected_type,
             "detected_label": cls_info["label"],
-            "intended_block_label": target_block.replace("_", " ")
+            "intended_block_label": target_block.replace("_", " "),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

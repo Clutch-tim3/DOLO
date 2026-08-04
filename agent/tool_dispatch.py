@@ -106,6 +106,29 @@ REQUIRED_DOC_TYPES = [
     "cipc_registration",
 ]
 
+# models/pdf_parser.classify_document_type() names blocks differently from the
+# vault's required types, and only TAX_CLEARANCE happened to line up. Without
+# this map an uploaded CSD report was stored as "csd_cert", which matches
+# nothing, so four of the five required documents could never be satisfied and
+# the vault stayed permanently incomplete.
+CLASSIFIER_TO_VAULT_TYPE = {
+    "CSD_CERT": "csd_report",
+    "BBBEE_CERT": "bbbee_certificate",
+    "TAX_CLEARANCE": "tax_clearance",
+    "CIDB_CERT": "cidb_grading",
+    "CIPC_COR14_3": "cipc_registration",
+}
+
+
+def vault_type_for(classifier_type: str) -> str:
+    """Map a classifier block name onto the vault's document type."""
+    if not classifier_type:
+        return "unknown"
+    return CLASSIFIER_TO_VAULT_TYPE.get(
+        classifier_type.upper(), classifier_type.lower()
+    )
+
+
 DOC_TYPE_LABELS = {
     "tax_clearance": "Tax Clearance Certificate",
     "bbbee_certificate": "B-BBEE Certificate",

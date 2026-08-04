@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="static/style.css?v=20.0">
-    <link rel="stylesheet" href="static/ui-polish.css?v=1.2">
+    <link rel="stylesheet" href="static/ui-polish.css?v=1.3">
     <style>
         body { margin: 0; padding: 0; background-color: var(--bg-color, #000000); color: var(--text-primary, #e4e4e7); font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
         
@@ -924,6 +924,8 @@ body.light-theme .quote-select { background: rgba(20,16,10,.03); color: #17130d;
     <script src="static/bid_generator.js"></script>
     <script src="static/onboarding_engine.js"></script>
     <script src="static/chatbot_engine.js"></script>
+    <!-- Shared with static/vault.html so the two vault renderings cannot drift. -->
+    <script src="static/vault_upload.js?v=1.0"></script>
 </head>
 <body>
 
@@ -1582,6 +1584,32 @@ exportCsvBtn.addEventListener('click', () => {
 
     <div class="section-rule"></div>
 
+    <!-- Adding a document. Mirrors static/vault.html; behaviour is shared via
+         static/vault_upload.js so the two cannot drift. -->
+    <div class="vault-upload" id="wsVaultDropZone" role="button" tabindex="0"
+         aria-label="Add compliance documents — click to browse or drop files here">
+        <div class="vault-upload-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+        </div>
+        <div class="vault-upload-copy">
+            <span class="vault-upload-title">Add compliance documents</span>
+            <span class="vault-upload-sub">
+                Drop files here or click to browse. PDF and Word only — each document is read
+                and filed into the right block automatically, even if it lands in the wrong one.
+            </span>
+        </div>
+        <div class="vault-upload-cta">
+            <button type="button" class="btn-gold">Browse files</button>
+        </div>
+        <input type="file" id="wsVaultFileInput" multiple accept=".pdf,.docx,.doc,application/pdf">
+    </div>
+    <div class="vault-upload-queue" id="wsVaultUploadQueue"></div>
+
     <div class="filter-bar" id="filterBar">
         <button class="filter-btn active" data-filter="all">All <span class="n" id="cAll">0</span></button>
         <button class="filter-btn" data-filter="expired">Expired / Missing <span class="n" id="cExpired">0</span></button>
@@ -2229,8 +2257,6 @@ exportCsvBtn.addEventListener('click', () => {
     </div>
 
     <script>
-        let currentTargetBlock = null;
-
         function switchTab(tabId, element) {
             document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
             if (element) element.classList.add('active');
@@ -3132,44 +3158,33 @@ exportCsvBtn.addEventListener('click', () => {
             }
         };
 
-        function triggerBlockUpload(blockType) {
-            currentTargetBlock = blockType;
-            document.getElementById('archiveFileInput').click();
-        }
-
-        async function handleArchiveFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('target_block', currentTargetBlock || 'CSD_CERT');
-
-            try {
-                const res = await fetch('/api/archive/upload-document', { method: 'POST', body: formData });
-                const data = await res.json();
-
-                if (data.status === 'success') {
-                    if (data.auto_sorted) {
-                        showToast('⚠️ Auto-Sorted Document', `You uploaded into ${data.intended_block_label}, but this document is a ${data.detected_label}. We automatically sorted it into ${data.detected_label} to prevent disqualification!`);
-                    } else {
-                        showToast('✓ Document Validated', `Saved directly into ${data.detected_label}.`);
-                    }
-
-                    // Highlight block
-                    const block = document.getElementById('block-' + data.actual_block);
-                    if (block) {
-                        block.classList.add('uploaded');
-                    }
-
+        // Vault uploader. Replaces triggerBlockUpload/handleArchiveFileUpload,
+        // which were orphaned when the vault was redesigned: nothing called
+        // them and the #archiveFileInput they clicked did not exist, so the
+        // vault had no way to add a document at all.
+        function initWorkspaceVaultUploader() {
+            const zone = document.getElementById('wsVaultDropZone');
+            if (!zone || zone.dataset.wired === '1') return;
+            zone.dataset.wired = '1';
+            initVaultUploader({
+                zone: zone,
+                input: document.getElementById('wsVaultFileInput'),
+                queue: document.getElementById('wsVaultUploadQueue'),
+                notify: showToast,
+                onDone: function (summary) {
+                    if (!summary.filed) return;
+                    if (typeof loadVault === 'function') loadVault();
                     // If that upload completed the required set, vet straight
                     // away rather than waiting to be asked.
-                    maybeAutoVetAfterUpload();
+                    if (typeof maybeAutoVetAfterUpload === 'function') maybeAutoVetAfterUpload();
                 }
-            } catch(e) {
-                console.error(e);
-            }
+            });
         }
+
+        // The zone is in the DOM from the start (the tab is only hidden), so
+        // this can wire on load rather than waiting for the tab to be opened.
+        window.addEventListener('DOMContentLoaded', initWorkspaceVaultUploader);
+
 
         function showToast(title, message) {
             const toast = document.getElementById('toastNotification');

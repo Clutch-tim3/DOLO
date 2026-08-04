@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="static/style.css?v=20.0">
-    <link rel="stylesheet" href="static/ui-polish.css?v=1.2">
+    <link rel="stylesheet" href="static/ui-polish.css?v=1.3">
     <style>
         /* ==================================================================
            COMPLIANCE VAULT
@@ -118,6 +118,33 @@
 
         <div class="section-rule"></div>
 
+        <!-- Adding a document. The vault had no way to do this at all until
+             now; the upload handler existed but nothing called it. -->
+        <div class="vault-upload" id="vaultDropZone" role="button" tabindex="0"
+             aria-label="Add compliance documents — click to browse or drop files here">
+            <div class="vault-upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+            </div>
+            <div class="vault-upload-copy">
+                <span class="vault-upload-title">Add compliance documents</span>
+                <span class="vault-upload-sub">
+                    Drop files here or click to browse. PDF and Word only — each document is
+                    read and filed into the right block automatically, even if it lands in the
+                    wrong one.
+                </span>
+            </div>
+            <div class="vault-upload-cta">
+                <button type="button" class="btn-gold">Browse files</button>
+            </div>
+            <input type="file" id="vaultFileInput" multiple accept=".pdf,.docx,.doc,application/pdf">
+        </div>
+        <div class="vault-upload-queue" id="vaultUploadQueue"></div>
+
         <div class="filter-bar" id="filterBar">
             <button class="filter-btn active" data-filter="all">All <span class="n" id="cAll">0</span></button>
             <button class="filter-btn" data-filter="expired">Expired / Missing <span class="n" id="cExpired">0</span></button>
@@ -144,6 +171,8 @@
         <div class="grid-container" id="vaultGrid" style="display:none;"></div>
     </main>
 
+    <!-- Shared with workspace.html's vault tab so the two cannot drift. -->
+    <script src="static/vault_upload.js?v=1.0"></script>
     <script>
         const docNames = {
             'tax_clearance': 'Tax Clearance',
@@ -300,6 +329,28 @@
         });
 
         window.addEventListener('DOMContentLoaded', loadVault);
+
+        // Uploader. Refreshing the vault afterwards is the point — a filed
+        // document that does not appear until reload reads as a failed upload.
+        window.addEventListener('DOMContentLoaded', function () {
+            initVaultUploader({
+                zone: document.getElementById('vaultDropZone'),
+                input: document.getElementById('vaultFileInput'),
+                queue: document.getElementById('vaultUploadQueue'),
+                notify: function (title, message) {
+                    const q = document.getElementById('vaultUploadQueue');
+                    if (!q) return;
+                    const note = document.createElement('div');
+                    note.className = 'vault-upload-item is-ok';
+                    note.innerHTML = '<span class="name"></span><span class="state">Done</span>';
+                    note.querySelector('.name').textContent = title + ' — ' + message;
+                    q.appendChild(note);
+                },
+                onDone: function (summary) {
+                    if (summary.filed) loadVault();
+                }
+            });
+        });
     </script>
 
     
