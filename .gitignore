@@ -24,3 +24,14 @@ firebase_public/downloads/
 # .env alone does not match .env.local
 .env.local
 .env.*.local
+
+# Credentials — access_token.txt is a live GCP token. It was untracked but not
+# ignored, so a `git add .` would have published it. Cloud sessions commit and
+# push, which makes that a real risk rather than a theoretical one.
+access_token.txt
+*.token
+service-account*.json
+
+# Local run noise
+logs.txt
+scratch_scripts/
