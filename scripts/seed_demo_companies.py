@@ -47,7 +47,11 @@ COMPANIES = {
 def main() -> None:
     for company_id, fields in COMPANIES.items():
         existed = bool(get_company_profile(company_id))
-        update_company_profile(company_id, fields)
+        # confirmed=True is legitimate here and only here: these are constants
+        # committed in this file by a developer running the script by hand, not
+        # values a model inferred from a conversation. Do not copy this call
+        # shape into any path that handles user or model input.
+        update_company_profile(company_id, fields, confirmed=True)
         profile = get_company_profile(company_id)
         verb = "updated" if existed else "created"
         print(f"  {verb:8} {company_id:16} -> {profile.get('company_name')}")

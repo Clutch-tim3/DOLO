@@ -208,7 +208,12 @@ def _generate_accreditation_report(company_id: str, items: list):
 TOOL_REGISTRY = {
     "get_company_profile": lambda company_id: get_company_profile(company_id),
     "get_company_documents": lambda company_id: get_company_documents(company_id),
-    "update_company_profile": lambda company_id, fields: update_company_profile(company_id, fields),
+    # `confirmed` defaults to False, so a model that omits it gets a refusal and
+    # a diff rather than a write. The gate itself lives in company_store; this
+    # only forwards the flag.
+    "update_company_profile": lambda company_id, fields, confirmed=False: update_company_profile(
+        company_id, fields, confirmed=confirmed
+    ),
     "search_conversation_history": lambda company_id, query=None: search_conversation_history(
         company_id, query
     ),

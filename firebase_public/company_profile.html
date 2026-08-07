@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAIROAI — Company Profile</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="static/style.css?v=20.0">
+    <link rel="stylesheet" href="static/ui-polish.css?v=1.3">
+    <style>
+        /* ==================================================================
+           COMPANY PROFILE QUESTIONNAIRE
+           ------------------------------------------------------------------
+           Styling deliberately stays in this page rather than in style.css or
+           ui-polish.css. Both of those are referenced with a ?v= cache-buster
+           from seven pages in two trees, so editing them means bumping the
+           version everywhere or shipping an unstyled site. This page needs no
+           global rule, so it takes none.
+
+           Everything below either reuses an existing class (.form-group,
+           .page-container, .section-rule, .stat-tile) or is scoped under
+           #questionnaire so it cannot collide with anything else.
+           ================================================================== */
+        .page-container { padding-top: 80px; max-width: 900px; margin: 0 auto; padding-bottom: 90px; }
+
+        #questionnaire .q-progress {
+            display: flex; gap: 6px; margin: 24px 0 8px; flex-wrap: wrap;
+        }
+        #questionnaire .q-pip {
+            flex: 1 1 80px; height: 3px; background: var(--border-faint);
+            transition: background-color .3s ease;
+        }
+        #questionnaire .q-pip.done { background: var(--accent-gold); }
+        #questionnaire .q-pip.current { background: var(--accent-gold); opacity: .55; }
+
+        #questionnaire .q-steplabel {
+            font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--text-muted); margin-bottom: 18px;
+        }
+
+        #questionnaire .q-step { display: none; }
+        #questionnaire .q-step.active { display: block; }
+
+        #questionnaire .q-title {
+            font-family: 'Cinzel', serif; font-size: 26px; margin: 0 0 6px;
+            color: var(--text-white);
+        }
+        #questionnaire .q-blurb {
+            font-size: 13px; color: var(--text-muted); margin: 0 0 26px; line-height: 1.6;
+        }
+
+        #questionnaire .q-fields { display: flex; flex-direction: column; gap: 22px; }
+
+        #questionnaire .form-group textarea {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-faint);
+            padding: 12px 16px; color: var(--text-white);
+            font-family: inherit; font-size: 14px; outline: none; resize: vertical;
+            min-height: 76px;
+            transition: border-color .3s ease, background-color .3s ease;
+        }
+        #questionnaire .form-group textarea:focus {
+            border-color: var(--accent-gold); background: rgba(255, 255, 255, 0.06);
+        }
+        html[data-theme="light"] #questionnaire .form-group textarea,
+        body.light-theme #questionnaire .form-group textarea {
+            background: #fff; color: #1a1a1a; border-color: rgba(0,0,0,.16);
+        }
+
+        #questionnaire .q-help {
+            font-size: 11px; color: var(--text-muted); line-height: 1.55;
+        }
+        #questionnaire .q-req { color: var(--accent-gold); margin-left: 4px; }
+
+        #questionnaire .q-error {
+            font-size: 11px; color: #e0685f; line-height: 1.5; display: none;
+        }
+        #questionnaire .q-error.show { display: block; }
+        #questionnaire .form-group.has-error input,
+        #questionnaire .form-group.has-error textarea,
+        #questionnaire .form-group.has-error select { border-color: #e0685f; }
+
+        /* Legal notes read as a boundary, not as a tooltip. */
+        #questionnaire .q-legal {
+            border-left: 2px solid var(--accent-gold);
+            padding: 10px 0 10px 14px; margin-top: 4px;
+            font-size: 11.5px; line-height: 1.65; color: var(--text-muted);
+        }
+
+        #questionnaire .q-director {
+            border: 1px solid var(--border-faint); padding: 18px; margin-bottom: 14px;
+        }
+        #questionnaire .q-director-head {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 14px;
+        }
+        #questionnaire .q-director-head span {
+            font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--accent-gold);
+        }
+        #questionnaire .q-dgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+        #questionnaire .q-statebox { margin-top: 16px; }
+        #questionnaire .q-radio-row { display: flex; gap: 22px; margin-top: 8px; }
+        #questionnaire .q-radio-row label {
+            display: flex; align-items: center; gap: 7px; font-size: 13px;
+            color: var(--text-white); text-transform: none; letter-spacing: 0;
+        }
+
+        #questionnaire .q-actions {
+            display: flex; justify-content: space-between; gap: 12px;
+            margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--border-faint);
+        }
+        #questionnaire button.q-btn {
+            background: transparent; border: 1px solid var(--border-faint);
+            color: var(--text-white); padding: 12px 26px; font-family: inherit;
+            font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+            cursor: pointer; transition: border-color .3s ease, color .3s ease;
+        }
+        #questionnaire button.q-btn:hover { border-color: var(--accent-gold); color: var(--accent-gold); }
+        #questionnaire button.q-btn.primary { border-color: var(--accent-gold); color: var(--accent-gold); }
+        #questionnaire button.q-btn.primary:hover { background: rgba(197,168,128,.1); }
+        #questionnaire button.q-btn[disabled] { opacity: .4; cursor: not-allowed; }
+        #questionnaire button.q-btn.ghost { border-color: transparent; color: var(--text-muted); }
+
+        /* Review / confirm step */
+        #questionnaire .q-diff { border: 1px solid var(--border-faint); }
+        #questionnaire .q-diff-row {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px;
+            padding: 12px 16px; border-bottom: 1px solid var(--border-faint);
+            font-size: 12px; align-items: start;
+        }
+        #questionnaire .q-diff-row:last-child { border-bottom: none; }
+        #questionnaire .q-diff-row.head {
+            font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+            color: var(--text-muted); background: rgba(255,255,255,.02);
+        }
+        #questionnaire .q-diff-field { color: var(--accent-gold); }
+        #questionnaire .q-diff-old { color: var(--text-muted); word-break: break-word; }
+        #questionnaire .q-diff-new { color: var(--text-white); word-break: break-word; }
+
+        #questionnaire .q-confirmbox {
+            display: flex; gap: 12px; align-items: flex-start;
+            border: 1px solid var(--accent-gold); padding: 18px; margin-top: 24px;
+        }
+        #questionnaire .q-confirmbox label { font-size: 12.5px; line-height: 1.65; color: var(--text-white); }
+        #questionnaire .q-confirmbox input { margin-top: 3px; }
+
+        #questionnaire .q-banner {
+            padding: 14px 18px; margin-bottom: 20px; font-size: 12.5px; line-height: 1.6;
+            border: 1px solid var(--border-faint); display: none;
+        }
+        #questionnaire .q-banner.show { display: block; }
+        #questionnaire .q-banner.ok { border-color: var(--accent-gold); color: var(--accent-gold); }
+        #questionnaire .q-banner.bad { border-color: #e0685f; color: #e0685f; }
+
+        @media (max-width: 880px) {
+            .page-container { padding-top: 64px; padding-left: 14px; padding-right: 14px; padding-bottom: 96px; }
+            #questionnaire .q-dgrid { grid-template-columns: 1fr; }
+            #questionnaire .q-diff-row { grid-template-columns: 1fr; gap: 6px; }
+            #questionnaire .q-actions { flex-direction: column-reverse; }
+            #questionnaire button.q-btn { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- NATIVE MOBILE APP HEADER -->
+    <header class="mobile-app-header">
+        <div class="mobile-app-brand">
+            <span>CAIROAI</span>
+            <span class="brand-badge">PRO</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <span class="pulse-dot"></span>
+            <button type="button" class="theme-toggle-btn" onclick="toggleLuxuryTheme()" style="padding: 4px 10px; font-size: 9px; min-height: 32px;">
+                <svg id="themeIconMobile" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <span id="themeLabelMobile">THEME</span>
+            </button>
+        </div>
+    </header>
+
+    <nav class="top-nav">
+        <div class="nav-left">
+            <a href="/" class="back-link">
+                <svg class="back-arrow" width="16" height="12" viewBox="0 0 16 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M6 1L1 6M1 6L6 11M1 6H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>BACK TO MAIN</span>
+            </a>
+        </div>
+        <div class="nav-center">
+            <span class="logo">CAIROAI</span>
+        </div>
+        <div class="nav-right" style="display:flex; justify-content:flex-end; align-items: center; gap: 12px;">
+            <button type="button" class="theme-toggle-btn" onclick="toggleLuxuryTheme()">
+                <svg id="themeIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <span id="themeLabel">LIGHT MODE</span>
+            </button>
+            <a href="/vault" class="back-link" style="flex-direction:row-reverse; margin-right: 16px;">
+                <span>COMPLIANCE</span>
+            </a>
+            <a href="/company-profile" class="back-link" style="flex-direction:row-reverse;">
+                <span style="color:var(--accent-gold)">COMPANY PROFILE</span>
+            </a>
+        </div>
+    </nav>
+
+    <main class="page-container">
+        <div class="vault-hero">
+            <span class="category-label">AGENT AUTOFILL</span>
+            <h1 class="hero-title" style="font-size: 36px; text-align: left;">COMPANY PROFILE.</h1>
+            <p style="max-width: 640px; font-size: 13.5px; line-height: 1.75; color: var(--text-muted); margin-top: 10px;">
+                Answer once. These values become the draft entries CairoAI writes into
+                SBD forms and tender packs on your behalf. Every draft is reviewed by you
+                before it goes anywhere, and CairoAI never signs a document.
+            </p>
+        </div>
+
+        <div class="section-rule"></div>
+
+        <div id="questionnaire">
+            <div class="q-banner" id="qBanner" role="status" aria-live="polite"></div>
+            <div class="q-progress" id="qProgress"></div>
+            <div class="q-steplabel" id="qStepLabel"></div>
+            <div id="qSteps"></div>
+        </div>
+    </main>
+
+    <script src="static/questionnaire_wizard.js?v=1.0"></script>
+    <script>
+        function initLuxuryTheme() {
+            const saved = localStorage.getItem('luxury-theme') || 'dark';
+            const html = document.documentElement;
+            const body = document.body;
+            if (saved === 'light') {
+                html.setAttribute('data-theme', 'light');
+                html.classList.add('light-theme');
+                body.classList.add('light-theme');
+                updateThemeUI('light');
+            } else {
+                html.removeAttribute('data-theme');
+                html.classList.remove('light-theme');
+                body.classList.remove('light-theme');
+                updateThemeUI('dark');
+            }
+        }
+        function toggleLuxuryTheme() {
+            const html = document.documentElement;
+            const body = document.body;
+            const current = html.getAttribute('data-theme');
+            if (current === 'light') {
+                html.removeAttribute('data-theme');
+                html.classList.remove('light-theme');
+                body.classList.remove('light-theme');
+                localStorage.setItem('luxury-theme', 'dark');
+                updateThemeUI('dark');
+            } else {
+                html.setAttribute('data-theme', 'light');
+                html.classList.add('light-theme');
+                body.classList.add('light-theme');
+                localStorage.setItem('luxury-theme', 'light');
+                updateThemeUI('light');
+            }
+        }
+        function updateThemeUI(mode) {
+            const label = document.getElementById('themeLabel');
+            const icon = document.getElementById('themeIcon');
+            const labelM = document.getElementById('themeLabelMobile');
+            const iconM = document.getElementById('themeIconMobile');
+            if (label && icon) {
+                label.textContent = mode === 'light' ? 'DARK MODE' : 'LIGHT MODE';
+                icon.innerHTML = mode === 'light' ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>' : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+            }
+            if (labelM && iconM) {
+                labelM.textContent = mode === 'light' ? 'DARK' : 'LIGHT';
+                iconM.innerHTML = mode === 'light' ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>' : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+            }
+        }
+        document.addEventListener('DOMContentLoaded', initLuxuryTheme);
+        document.addEventListener('DOMContentLoaded', function () {
+            if (window.CairoQuestionnaire) { window.CairoQuestionnaire.init(); }
+        });
+    </script>
+
+</body>
+</html>
