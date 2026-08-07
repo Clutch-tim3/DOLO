@@ -154,3 +154,25 @@ Measure, don't assume. Useful checks that have caught real bugs:
   actually landed.
 - Watch for non-UTF-8 bytes in CSS: `style.css` once had 1,084 NUL bytes from a
   block appended as UTF-16.
+
+## Agent Autofill
+
+An autonomous tender pre-fill system under `agent_autofill/`. **Read
+`agent_autofill/BUILD_STATE.md` before touching it** — it records what is
+built, what is not, and several spec corrections verified against live
+documentation.
+
+The one rule: **drafts only**. No signature is ever applied, no price is ever
+written, and a declaration is never answered from a stored value. If a change
+would relax that, raise it rather than loosening it.
+
+Two things that will mislead you otherwise:
+
+- **`tests/fixtures/alfred_duma.pdf` is a 1-page tender summary, not a form
+  pack.** It contains no MBD forms. Extraction against it correctly returns
+  zero blanks. Use it for eligibility/prediction proofs; use
+  `tests/fixtures/sa_forms/` and `data/archive/temp_tender_BID_DOCUMENT_06FY27_.pdf`
+  for extraction and fill.
+- **Seven fixtures named `.docx` are actually OLE2 `.doc`.** Detect format by
+  magic bytes, never by extension — `agent_autofill/extraction/legacy_doc_reader.py`
+  does this. Those files can be read (via `antiword`) but never written.
