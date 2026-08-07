@@ -102,6 +102,30 @@ def _is_exempt(text: str) -> bool:
     return bool(EXEMPT_PATTERNS.search(text))
 
 
+# --- counterparty sections -------------------------------------------------
+# MBD 1 carries "CONTACT PERSON", "TELEPHONE NUMBER" and "E-MAIL ADDRESS" TWICE:
+# once under "BIDDING PROCEDURE ENQUIRIES MAY BE DIRECTED TO" — the buying
+# institution's own staff, already printed on the form — and again under
+# "SUPPLIER INFORMATION", which is us. The labels are identical, so without the
+# section heading the engine cannot tell them apart and would write our contact
+# details into the municipality's block.
+COUNTERPARTY_SECTION_PATTERNS = _rx(
+    r"directed\s+to",
+    r"enquir(?:y|ies)",
+    r"technical\s+enquiries",
+    r"for\s+(?:the\s+)?attention\s+of",
+    r"procuring\s+institution",
+    r"department\b",
+    r"issued\s+by",
+    r"on\s+behalf\s+of\s+the\s+(?:municipality|department|entity)",
+)
+
+
+def is_counterparty_section(section: str | None) -> bool:
+    """True if a heading marks a block belonging to the buyer, not the bidder."""
+    return bool(section and COUNTERPARTY_SECTION_PATTERNS.search(section))
+
+
 # --- signature -------------------------------------------------------------
 # Covers the obvious ("SIGNATURE"), the imperative ("Sign here", "Please sign
 # below"), the witness/deponent variants that appear on affidavits and SBD
@@ -273,7 +297,8 @@ ALLOW = BlockDecision(blocked=False)
 
 
 def is_blocked(label_text: str | None, canonical_field: str | None = None,
-               context: set[str] | None = None) -> BlockDecision:
+               context: set[str] | None = None,
+               section: str | None = None) -> BlockDecision:
     """
     Decide whether a detected field may be auto-filled.
 
@@ -298,6 +323,16 @@ def is_blocked(label_text: str | None, canonical_field: str | None = None,
             BlockReason.NARRATIVE,
             "Could not read what this field is for, so it was left for you to complete.",
             "empty-label",
+        )
+
+    # A field inside the buying institution's own block is not ours to fill,
+    # however well its label matches.
+    if is_counterparty_section(section):
+        return BlockDecision(
+            True,
+            BlockReason.NARRATIVE,
+            f"Belongs to the buying institution ('{section.strip()[:48]}'), not to you.",
+            f"counterparty-section:{section.strip()[:32]}",
         )
 
     # A narrowly-exempt label (capacity, item counts) is a plain fact even

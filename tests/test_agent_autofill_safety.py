@@ -410,3 +410,42 @@ def test_existing_answers_are_never_overwritten(tmp_path):
     r = fill_docx(src, out, PROFILE, match_label)
     assert r.fillable_total == 0
     assert _docx.Document(str(out)).tables[0].rows[0].cells[1].text == "Someone Else (Pty) Ltd"
+
+
+# --- counterparty sections: found on the real 06FY27 MBD 1 page -----------
+# CONTACT PERSON / TELEPHONE NUMBER / E-MAIL ADDRESS appear twice on that page:
+# under "BIDDING PROCEDURE ENQUIRIES MAY BE DIRECTED TO" (the buyer's own staff)
+# and under SUPPLIER INFORMATION (us). Identical labels; only the section
+# heading tells them apart.
+from agent_autofill.fill_engine.never_fill_fields import is_counterparty_section
+
+
+@pytest.mark.parametrize("section", [
+    "BIDDING PROCEDURE ENQUIRIES MAY BE DIRECTED TO",
+    "DIRECTED TO",
+    "TECHNICAL ENQUIRIES MAY BE DIRECTED TO:",
+    "FOR ATTENTION OF",
+    "DEPARTMENT",
+])
+def test_counterparty_sections_are_recognised(section):
+    assert is_counterparty_section(section), section
+
+
+@pytest.mark.parametrize("section", ["SUPPLIER INFORMATION", "PART A", "", None])
+def test_bidder_sections_are_not_counterparty(section):
+    assert not is_counterparty_section(section)
+
+
+@pytest.mark.parametrize("label", ["CONTACT PERSON", "TELEPHONE NUMBER", "E-MAIL ADDRESS"])
+def test_our_details_never_go_in_the_buyers_block(label):
+    d = decide("contact_person", label, PROFILE, 100.0, section="DIRECTED TO")
+    assert d.fill is False, f"would have written our details into the buyer's block: {label}"
+
+
+@pytest.mark.parametrize("canonical,label", [
+    ("contact_person", "CONTACT PERSON"),
+    ("email_address", "E-MAIL ADDRESS"),
+])
+def test_same_labels_still_fill_under_supplier_information(canonical, label):
+    d = decide(canonical, label, PROFILE, 100.0, section="SUPPLIER INFORMATION")
+    assert d.fill is True, d.reason

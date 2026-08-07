@@ -126,7 +126,8 @@ def resolve_value(canonical_field: str, profile: dict) -> tuple[str | None, str 
 
 def decide(canonical_field: str | None, label_text: str | None,
            profile: dict, match_score: float = 100.0,
-           context: set[str] | None = None) -> FillDecision:
+           context: set[str] | None = None,
+           section: str | None = None) -> FillDecision:
     """
     The single decision point for whether a detected blank gets written.
 
@@ -140,7 +141,7 @@ def decide(canonical_field: str | None, label_text: str | None,
     without it, an SBD 4 declaration table looks like a set of ordinary name and
     ID fields.
     """
-    block = is_blocked(label_text, canonical_field, context)
+    block = is_blocked(label_text, canonical_field, context, section)
     if block.blocked:
         return FillDecision(False, reason=block.message, block=block)
 
