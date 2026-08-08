@@ -58,6 +58,7 @@ def call_claude_with_tracking(
     system: str = None,
     tools: list = None,
     max_tokens: int = None,
+    model: str = None,
 ) -> dict:
     """
     Core wrapper for the Anthropic Messages API.
@@ -71,6 +72,13 @@ def call_claude_with_tracking(
 
     `stop_reason` and `blocks` are what make the agentic tool loop in
     main_agent.process_agent_chat possible — do not drop them.
+
+    `model` pins one call to a specific model, overriding CLAUDE_MODEL. It
+    exists for cheap classification-shaped work (Agent Autofill's tender
+    classifier runs on Haiku) that should not follow the chat model when that
+    is set to Opus. Leave it None everywhere else so the env var stays the
+    single knob. Pricing is looked up per-model, so cost_tracking stays honest
+    when it is set.
     """
     if max_tokens is None:
         raise ValueError("max_tokens MUST be set for every single API call.")
@@ -93,7 +101,7 @@ def call_claude_with_tracking(
             "load_dotenv) or export it in the environment."
         )
 
-    model = get_model()
+    model = (model or "").strip() or get_model()
     profile = _profile(model)
 
     client = Anthropic(api_key=api_key)

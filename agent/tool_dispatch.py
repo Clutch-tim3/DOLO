@@ -227,6 +227,18 @@ TOOL_REGISTRY = {
     "generate_accreditation_report": _generate_accreditation_report,
 }
 
+# Agent Autofill. Registered by update rather than inline so a failure inside
+# agent_autofill (a half-built sibling module, a missing optional dependency)
+# degrades to "those tools are unavailable" instead of taking down every tool
+# the agent has, including the quotation flow. company_id is pinned by
+# _sanitize for these exactly as it is for the rest.
+try:
+    from agent_autofill.integration.autofill_tools import AUTOFILL_TOOL_HANDLERS
+
+    TOOL_REGISTRY.update(AUTOFILL_TOOL_HANDLERS)
+except Exception as _autofill_import_error:  # pragma: no cover - env-dependent
+    print(f"[tool_dispatch] Agent Autofill tools unavailable: {_autofill_import_error}")
+
 
 def execute_tool(name: str, tool_input: dict, company_id: str):
     """

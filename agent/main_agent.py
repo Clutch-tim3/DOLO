@@ -65,6 +65,21 @@ ACCREDITATION VETTING FLOW:
 - Hand the user the returned pdf_url. The PDF carries the non-binding disclaimer,
   so summarise the top items in chat rather than restating the whole document.
 
+AGENT AUTOFILL FLOW:
+- autofill_prepare_tender pre-fills a bid form AND returns the eligibility /
+  win-probability verdict for the same document. Give the user both: whether they
+  can bid at all comes first, then what was filled.
+- What it produces is a DRAFT. Never call it complete, ready, final or
+  submission-ready, and never say a signature, price or declaration was handled.
+- Each flagged field must be acknowledged separately with
+  autofill_acknowledge_field. Walk the user through them one at a time, quoting
+  the field key and label, and pass on what they actually say about that field.
+  Do not invent a note, do not reuse one note across fields, and do not offer to
+  acknowledge them all at once — there is no call that does that.
+- Only call autofill_export_document with as_reviewed=true once every flagged
+  field is acknowledged. If it refuses, read out which fields are still open
+  rather than retrying.
+
 TONE:
 - Speak the way a capable executive secretary speaks to the person they work
   for: warm, composed, and deferential without being servile. You are briefing
@@ -128,6 +143,25 @@ def finalize_quote_flow(quote_id: str, priced_items: list):
     finalize_quote(quote_id, priced_items)
     return "Quote finalized successfully!"
 
+def _autofill_tools() -> list:
+    """
+    Agent Autofill's tool schemas, or nothing.
+
+    Imported at call time and behind a catch for the same reason tool_dispatch
+    registers the handlers that way: a partially built agent_autofill package
+    must not be able to stop the agent from answering a question about the
+    company profile. A missing schema costs a feature; an ImportError at module
+    scope costs every feature.
+    """
+    try:
+        from agent_autofill.integration.autofill_tools import autofill_tools
+
+        return list(autofill_tools)
+    except Exception:
+        logger.warning("Agent Autofill tools unavailable", exc_info=True)
+        return []
+
+
 def _tool_result_content(result) -> str:
     """Tool results must be text (or content blocks) — serialize anything else."""
     if isinstance(result, str):
@@ -154,10 +188,12 @@ def process_agent_chat(company_id: str, user_message: str):
     """
     messages = [{"role": "user", "content": user_message}]
     all_tools = memory_tools + quotation_tools + onboarding_tools + app_help_tools
+    all_tools = all_tools + _autofill_tools()
     system_prompt = build_system_prompt(company_id)
 
     tools_used = []
     pdf_url = None
+    download_name = None
     reply_text = ""
 
     for _ in range(MAX_TOOL_ITERATIONS):
@@ -185,6 +221,9 @@ def process_agent_chat(company_id: str, user_message: str):
 
             if not is_error and isinstance(result, dict) and result.get("pdf_url"):
                 pdf_url = result["pdf_url"]
+                # Autofill exports are .docx, so the client cannot assume the
+                # generated file is a quotation PDF and name it accordingly.
+                download_name = result.get("download_name") or download_name
 
             if is_error:
                 logger.warning(
@@ -220,5 +259,10 @@ def process_agent_chat(company_id: str, user_message: str):
     except Exception:
         logger.exception("Failed to log conversation")
 
-    return {"message": reply_text, "pdf_url": pdf_url, "tools_used": tools_used}
+    return {
+        "message": reply_text,
+        "pdf_url": pdf_url,
+        "download_name": download_name,
+        "tools_used": tools_used,
+    }
 
