@@ -85,6 +85,29 @@ If a change would relax this, stop and raise it rather than loosening it.
 - Benchmarks: MBD 1 supplier block fills **14/18** with signature, date, price
   and method statement blocked. SBD 4 fills **0/43**, every cell marked.
 
+## The two export-gate bypasses — fixed 8 August 2026
+
+Both were demonstrated, recorded in `c5eb068`, and are now closed. The fix is
+`integration/stamp_signing.py`: HMAC-SHA256 with `AUTOFILL_STAMP_SECRET`.
+
+- **Forged database rows.** Signing the *stamp* alone would not have helped —
+  the export path would read the forged rows, believe them, and sign the result
+  itself. So each acknowledgement carries its own MAC over
+  `(review_id, item_key, acknowledged_at, note)`. `export_reviewed` re-verifies
+  every one before the status UPDATE. Before: 11 forged rows produced a genuine
+  REVIEWED file. After: refused, `tamper_detected: True`, review stays DRAFT.
+- **Fabricated `stamp_docx()` call.** A REVIEWED stamp now requires a signature
+  the caller cannot compute. Before: `flags_open=0` produced a REVIEWED file
+  while the DB said DRAFT with 11 open. After: `ReviewStateError`.
+
+**Residual, pinned in `tests/test_agent_autofill_stamp_binding.py`:**
+`stamp_docx()` checks a MAC is *present*, not valid — it has the file, not the
+record. `mac="x"` still yields a document whose banner reads REVIEWED. It fails
+`verify_export(path, company_id, review_id)`, which is the authority.
+
+Editing an acknowledgement after a genuine export invalidates that export too.
+That is intended: the file and the record must keep agreeing.
+
 ## Weaknesses the authors flagged about their own work
 
 - `confirmed=True` is a speed bump, not authorisation — nothing records *who*

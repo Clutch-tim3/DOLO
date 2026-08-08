@@ -1,3 +1,4 @@
+import os
 import pytest
 import sys
 from pathlib import Path
@@ -9,6 +10,13 @@ import joblib
 
 # Ensure the root directory is in the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Agent Autofill signs review acknowledgements and export stamps, and fails
+# closed when the secret is absent. Supply a fixed test value so the suite
+# exercises the signed paths rather than the missing-secret refusal — that
+# refusal has its own test, which clears the variable deliberately.
+# setdefault, so a real secret in the environment is never overwritten.
+os.environ.setdefault("AUTOFILL_STAMP_SECRET", "test-only-not-a-real-secret")
 
 from predict.predict import load_all_artifacts
 

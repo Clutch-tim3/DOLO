@@ -37,6 +37,14 @@ initialize_app()
 # binding, which is all this needs.
 ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 
+# Signs Agent Autofill's review acknowledgements and export stamps, so a forged
+# database row or a hand-built stamp cannot pass as a reviewed bid document.
+# Agent Autofill fails closed without it: acknowledging a field and exporting a
+# reviewed draft both raise rather than producing an unverifiable artefact.
+# Create it the same way, with any high-entropy value:
+#     firebase functions:secrets:set AUTOFILL_STAMP_SECRET --data-file <path>
+AUTOFILL_STAMP_SECRET = "AUTOFILL_STAMP_SECRET"
+
 # Import the FastAPI app
 from app import app as fastapi_app
 
@@ -82,7 +90,7 @@ def _get_bridge():
     memory=1024,
     max_instances=20,
     timeout_sec=300,
-    secrets=[ANTHROPIC_API_KEY],
+    secrets=[ANTHROPIC_API_KEY, AUTOFILL_STAMP_SECRET],
 )
 def api(req: https_fn.Request) -> https_fn.Response:
     # Answered without touching the bridge, so it stays reachable even if the

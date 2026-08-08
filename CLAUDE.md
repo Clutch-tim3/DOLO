@@ -166,6 +166,21 @@ The one rule: **drafts only**. No signature is ever applied, no price is ever
 written, and a declaration is never answered from a stored value. If a change
 would relax that, raise it rather than loosening it.
 
+**`AUTOFILL_STAMP_SECRET` must be set or Agent Autofill will not export.** It
+signs review acknowledgements and export stamps so a forged database row or a
+hand-built stamp cannot pass as a reviewed bid document. Acknowledging a field
+and exporting a reviewed draft both raise `StampSecretMissing` without it —
+deliberately, because an unsigned export is the exact artefact the signature
+exists to prevent. It lives in Secret Manager for the deployed function and in
+`.env.local` locally (trap 3: never `.env`). The test suite sets a fixed test
+value in `tests/conftest.py`.
+
+`verify_export(path, company_id, review_id)` is the authority on whether an
+export is genuine, not the banner. `stamp_docx()` requires a signature to be
+present but cannot check one — it has the file, not the record — so a forger
+can still produce a document whose banner reads REVIEWED. It will not verify.
+Anything user-facing must call `verify_export` with the record.
+
 Two things that will mislead you otherwise:
 
 - **`tests/fixtures/alfred_duma.pdf` is a 1-page tender summary, not a form

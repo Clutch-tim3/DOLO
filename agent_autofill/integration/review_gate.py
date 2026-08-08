@@ -59,6 +59,14 @@ from agent_autofill.integration.export_metadata import (
     read_review_state,
     stamp_docx,
 )
+from agent_autofill.integration.stamp_signing import (
+    ack_mac,
+    ack_payload,
+    file_sha256,
+    matches,
+    sign,
+    stamp_payload,
+)
 
 #: Words a caller would reach for to acknowledge everything at once.
 BLANKET_TOKENS = {
@@ -116,6 +124,22 @@ def init_review_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_autofill_review_item_open
             ON autofill_review_item (review_id, acknowledged_at)
         """)
+        # Additive migration. Existing rows get NULL, which reads as "not
+        # signed" and therefore blocks a reviewed export until each field is
+        # acknowledged again through the proper path. That is the intended
+        # outcome for acknowledgements made before they were tamper-evident.
+        existing = {r[1] for r in conn.execute(
+            "PRAGMA table_info(autofill_review_item)").fetchall()}
+        if "ack_mac" not in existing:
+            conn.execute("ALTER TABLE autofill_review_item ADD COLUMN ack_mac TEXT")
+
+        # The digest of the exported copy as it stood before stamping. The
+        # stamp rewrites the file, so this cannot be recovered from the export
+        # itself and has to be kept beside the record for verification.
+        review_cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(autofill_review)").fetchall()}
+        if "export_sha256" not in review_cols:
+            conn.execute("ALTER TABLE autofill_review ADD COLUMN export_sha256 TEXT")
 
 
 init_review_db()
@@ -326,11 +350,14 @@ def acknowledge_field(company_id: str, review_id: str, item_key: str,
                 "outstanding": _outstanding_rows(review_id),
             }
 
+        # Signed before the write, so a missing secret fails the
+        # acknowledgement rather than recording an unverifiable one.
+        mac = ack_mac(review_id, key, now, text)
         conn.execute(
             """UPDATE autofill_review_item
-                  SET acknowledged_at = ?, acknowledged_note = ?
+                  SET acknowledged_at = ?, acknowledged_note = ?, ack_mac = ?
                 WHERE review_id = ? AND item_key = ?""",
-            (now, text, review_id, key),
+            (now, text, mac, review_id, key),
         )
 
     outstanding = _outstanding_rows(review_id)
@@ -434,6 +461,27 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
     if not draft.exists():
         raise ReviewGateError(f"The draft file for {review_id} is gone: {draft}")
 
+    # THE FIRST OF THE TWO DEMONSTRATED BYPASSES. Setting acknowledged_at
+    # directly in agent_memory.db used to satisfy the UPDATE below, and the
+    # export path would then sign the forged state itself. So every
+    # acknowledgement is re-verified against its MAC before it counts. A row
+    # written by hand has no valid MAC and reads as still outstanding.
+    forged = _unverifiable_acknowledgements(review_id)
+    if forged:
+        listed = "; ".join(f"{f['item_key']} ({f['label']})" for f in forged)
+        return {
+            "status": "error",
+            "review_state": STATUS_UNREVIEWED,
+            "outstanding_count": len(forged),
+            "outstanding": forged,
+            "tamper_detected": True,
+            "message": (
+                f"Cannot export as reviewed: {len(forged)} acknowledgement(s) do not "
+                "carry a valid signature, so they were not made through the review "
+                f"flow — {listed}. Acknowledge each field again in the app."
+            ),
+        }
+
     now = datetime.now().isoformat(timespec="seconds")
     conn = _connect()
     try:
@@ -477,8 +525,17 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
             ).fetchall()
         ]
 
+        ack_times = [
+            r["acknowledged_at"]
+            for r in conn.execute(
+                "SELECT acknowledged_at FROM autofill_review_item WHERE review_id = ?",
+                (review_id,),
+            ).fetchall()
+        ]
+
         target = generated_dir() / _export_name(row["draft_path"], review_id, "REVIEWED")
         shutil.copy2(draft, target)
+        export_sha = file_sha256(target)
 
         stamp = ReviewStamp(
             review_id=review_id,
@@ -490,12 +547,25 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
             source_document=row["source_path"] or "",
             acknowledged=acknowledged,
             stamped_at=now,
+            # Signed over the draft as copied, before stamping rewrites it.
+            mac=sign(stamp_payload(
+                company_id=company_id,
+                review_id=review_id,
+                source_sha256=export_sha,
+                status=STATUS_REVIEWED,
+                flags_total=row["flagged_count"],
+                flags_open=0,
+                filled_count=row["filled_count"],
+                acknowledged_at_values=ack_times,
+                stamped_at=now,
+            )),
         )
         written = stamp_docx(target, stamp)
 
         conn.execute(
-            "UPDATE autofill_review SET export_path = ? WHERE review_id = ?",
-            (str(target), review_id),
+            "UPDATE autofill_review SET export_path = ?, export_sha256 = ?"
+            " WHERE review_id = ?",
+            (str(target), export_sha, review_id),
         )
         conn.commit()
     except Exception:
@@ -520,10 +590,110 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
     }
 
 
-def verify_export(path: str | Path) -> dict:
-    """Read a file's stamp back and say whether it claims to be reviewed."""
+def _unverifiable_acknowledgements(review_id: str) -> list[dict]:
+    """
+    Acknowledgements whose stored MAC does not match their contents.
+
+    Recomputing per row rather than trusting a flag: the MAC covers
+    `acknowledged_at` and the note, so editing either — or inventing a row
+    wholesale — lands here. A row acknowledged before signing existed has a
+    NULL mac, which also lands here, by design.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            """SELECT item_key, label, location, acknowledged_at,
+                      acknowledged_note, ack_mac
+                 FROM autofill_review_item
+                WHERE review_id = ? AND acknowledged_at IS NOT NULL
+                ORDER BY item_key""",
+            (review_id,),
+        ).fetchall()
+
+    bad = []
+    for r in rows:
+        payload_ok = matches(
+            r["ack_mac"],
+            ack_payload(review_id, r["item_key"], r["acknowledged_at"],
+                        r["acknowledged_note"] or ""),
+        )
+        if not payload_ok:
+            bad.append({
+                "item_key": r["item_key"],
+                "label": r["label"],
+                "location": r["location"],
+                "reason": "acknowledgement signature invalid or missing",
+            })
+    return bad
+
+
+def verify_export(path: str | Path, company_id: str = None,
+                  review_id: str = None) -> dict:
+    """
+    Read a file's stamp back and say whether it claims to be reviewed.
+
+    With `company_id` and `review_id` this also recomputes the stamp MAC from
+    the review record and reports whether the file's signature matches. That is
+    the check that catches a stamp built outside `export_reviewed()` — the
+    forger can write any counts they like into the document, but not a MAC that
+    verifies against the record they are claiming.
+
+    Without them the answer is limited to what the file says about itself, and
+    `mac_verified` is None rather than False, because "not checked" and "failed
+    the check" are different findings.
+    """
     state = read_review_state(path)
     state["path"] = str(path)
+    state["mac_verified"] = None
+
+    if company_id is None or review_id is None:
+        return state
+
+    with _connect() as conn:
+        rec = conn.execute(
+            """SELECT flagged_count, filled_count, export_sha256, export_path
+                 FROM autofill_review WHERE review_id = ? AND company_id = ?""",
+            (review_id, company_id),
+        ).fetchone()
+        ack_times = [
+            r["acknowledged_at"]
+            for r in conn.execute(
+                "SELECT acknowledged_at FROM autofill_review_item WHERE review_id = ?",
+                (review_id,),
+            ).fetchall()
+        ]
+
+    if rec is None:
+        state["mac_verified"] = False
+        state["mac_detail"] = "No such review for this company."
+        return state
+
+    # Any acknowledgement that fails its own MAC invalidates the export
+    # regardless of what the stamp says, because the stamp was signed over
+    # timestamps that have since been rewritten.
+    forged = _unverifiable_acknowledgements(review_id)
+
+    state["mac_verified"] = (not forged) and matches(
+        state.get("mac"),
+        stamp_payload(
+            company_id=company_id,
+            review_id=review_id,
+            source_sha256=rec["export_sha256"] or "",
+            status=state.get("content_status") or "",
+            flags_total=state.get("flags_total") or 0,
+            flags_open=state.get("flags_open") or 0,
+            filled_count=state.get("filled") or 0,
+            acknowledged_at_values=ack_times,
+            stamped_at=state.get("stamped_at") or "",
+        ),
+    )
+    if forged:
+        state["mac_detail"] = (
+            f"{len(forged)} acknowledgement(s) fail their own signature."
+        )
+    elif not state["mac_verified"]:
+        state["mac_detail"] = (
+            "The stamp's signature does not match this review record."
+        )
     return state
 
 

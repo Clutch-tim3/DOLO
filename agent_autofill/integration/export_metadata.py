@@ -88,6 +88,10 @@ class ReviewStamp:
     source_document: str = ""
     acknowledged: list[tuple[str, str, str]] = field(default_factory=list)
     stamped_at: str = ""
+    #: HMAC binding this stamp to the review record it came from. Only the
+    #: export path can produce one, because only it has the secret. A REVIEWED
+    #: stamp without it cannot be written — see stamp_docx.
+    mac: str = ""
 
     def __post_init__(self):
         if self.status not in _VALID_STATUSES:
@@ -113,12 +117,16 @@ class ReviewStamp:
 
     @property
     def keyword_line(self) -> str:
-        return (
+        line = (
             f"{KEYWORD_PREFIX} status={self.status.replace(' ', '_')} "
             f"flags_open={self.flags_open} flags_total={self.flags_total} "
             f"acknowledged={len(self.acknowledged)} filled={self.filled_count} "
             f"review_id={self.review_id} stamped_at={self.stamped_at}"
         )
+        # Appended last so the line stays readable, and so an older document
+        # without a MAC still parses — it just fails verification, which is the
+        # correct answer for a file this build did not produce.
+        return f"{line} mac={self.mac}" if self.mac else line
 
     @property
     def headline(self) -> str:
@@ -236,6 +244,20 @@ def stamp_docx(path: str | Path, stamp: ReviewStamp) -> dict:
             "Legacy .doc is read-only and PDF stamping is not built."
         )
 
+    if stamp.status == STATUS_REVIEWED and not stamp.mac:
+        # This is the second of the two demonstrated bypasses. `ReviewStamp`
+        # already refuses REVIEWED-with-open-flags, so a forger passed
+        # flags_open=0 and got a genuine REVIEWED file while the database still
+        # said DRAFT. Requiring a MAC closes it: the MAC is derived from the
+        # review record with a secret this caller does not have, so there is no
+        # argument combination that produces a valid REVIEWED stamp from
+        # outside export_reviewed().
+        raise ReviewStateError(
+            "Refusing to write a REVIEWED stamp with no review-record signature. "
+            "A reviewed export is produced by export_reviewed(), which binds the "
+            "stamp to the acknowledgements it is claiming."
+        )
+
     document = docx.Document(str(path))
     _strip_previous_banner(document)
     _insert_banner(document, stamp)
@@ -327,6 +349,10 @@ def read_review_state(path: str | Path) -> dict:
         "acknowledged": _int("acknowledged"),
         "filled": _int("filled"),
         "stamped_at": parsed.get("stamped_at"),
+        # The MAC is returned, not checked, because checking it needs the
+        # review record and this function only has the file. review_gate's
+        # verify_export() recomputes it from the database and compares.
+        "mac": parsed.get("mac"),
         # A document whose properties claim REVIEWED while the visible banner
         # says otherwise (or is missing) has been tampered with or partially
         # rewritten. Surfacing it beats silently trusting the friendlier half.

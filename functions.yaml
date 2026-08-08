@@ -16,6 +16,7 @@ endpoints:
     platform: gcfv2
     secretEnvironmentVariables:
     - key: ANTHROPIC_API_KEY
+    - key: AUTOFILL_STAMP_SECRET
     serviceAccountEmail: null
     timeoutSeconds: 300
 params: []
