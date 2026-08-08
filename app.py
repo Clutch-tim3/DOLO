@@ -681,7 +681,14 @@ async def api_serve_generated(filename: str):
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found or expired")
-    return FileResponse(str(file_path), media_type="application/pdf")
+
+    # This used to hardcode application/pdf. Agent Autofill exports .docx drafts
+    # through the same route, and a Word document served as a PDF makes the
+    # browser try to render it inline and fail.
+    import mimetypes
+
+    media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    return FileResponse(str(file_path), media_type=media_type)
 
 
 @app.delete("/api/companies/{company_name}")

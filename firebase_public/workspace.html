@@ -2947,10 +2947,15 @@ exportCsvBtn.addEventListener('click', () => {
                     const usedAccreditation =
                         Array.isArray(data.tools_used) &&
                         data.tools_used.indexOf('generate_accreditation_report') !== -1;
+                    // download_name is set by tools whose output is not a
+                    // quotation PDF - Agent Autofill exports a .docx, and
+                    // saving that as "Quotation.pdf" produces a file Word
+                    // refuses to open.
                     attachGeneratedFile(
                         parts.row,
                         data.pdf_url,
-                        usedAccreditation ? 'Accreditation_Roadmap.pdf' : 'Quotation.pdf'
+                        data.download_name ||
+                            (usedAccreditation ? 'Accreditation_Roadmap.pdf' : 'Quotation.pdf')
                     );
                 }
 
