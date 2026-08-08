@@ -292,10 +292,16 @@ def read_review_state(path: str | Path) -> dict:
     prop_status = props.content_status or ""
     banner_status = ""
     if banner:
-        if STATUS_REVIEWED in banner:
-            banner_status = STATUS_REVIEWED
-        elif STATUS_UNREVIEWED in banner:
-            banner_status = STATUS_UNREVIEWED
+        # "UNREVIEWED DRAFT" CONTAINS "REVIEWED DRAFT". Testing for the reviewed
+        # status first therefore reports every unreviewed draft as reviewed —
+        # which this function did, turning the one check meant to catch a forged
+        # file into a source of false assurance. Longest match first, and the
+        # word boundary is checked so no future status can be a substring of
+        # another and reintroduce it.
+        for candidate in sorted(_VALID_STATUSES, key=len, reverse=True):
+            if re.search(rf"(?<![A-Z]){re.escape(candidate)}", banner):
+                banner_status = candidate
+                break
 
     stamped = bool(parsed) or bool(banner)
 

@@ -25,3 +25,20 @@ fpdf2
 
 
 a2wsgi==1.10.10
+
+# --- Agent Autofill: cloud storage providers -------------------------------
+# cryptography is a hard requirement: agent_autofill/providers/token_store.py
+# encrypts every provider OAuth token at rest with Fernet and refuses to run
+# without it. Already present on this machine (49.0.0); pinned low here so a
+# fresh install and the deploy bundle both get it.
+cryptography>=42.0.0
+#
+# The two provider SDKs. Added so the deploy bundle has them, but EVERY import
+# of them in agent_autofill/providers/ is inside a function, so the package
+# imports and its whole test suite runs on a machine where these are absent --
+# which is the machine it was written on. A call that genuinely needs the
+# network raises ProviderSDKMissing with an install line instead of taking the
+# import down.
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.2.0
+dropbox>=11.36.2
