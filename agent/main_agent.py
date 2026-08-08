@@ -150,10 +150,17 @@ def finalize_quote_flow(quote_id: str, priced_items: list = None, company_id: st
         get_quote_record,
     )
 
+    # An omitted company_id used to skip the ownership check entirely, which
+    # finalised another company's quote outright. It is not model-reachable —
+    # execute_tool injects the session value — but a direct caller could hit
+    # it, so absence is refused rather than treated as "no check needed".
+    if not company_id:
+        return "Quote not found."
+
     record = get_quote_record(quote_id)
     # Same message for "no such quote" and "not yours" — a distinct
     # "not yours" would confirm the id exists.
-    if not record or (company_id is not None and record["company_id"] != company_id):
+    if not record or record["company_id"] != company_id:
         return "Quote not found."
     if record["status"] == "FINAL":
         return "This quote is already final."

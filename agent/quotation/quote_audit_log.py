@@ -1,5 +1,6 @@
-import uuid
 import json
+import math
+import uuid
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -105,6 +106,13 @@ def resolve_quote_item(quote_id: str, company_id: str, item_index: int,
         price = float(price)
     except (TypeError, ValueError):
         return {"status": "error", "message": "Price must be a number."}
+    # inf and nan both survive float() and both slip past `price < 0` — nan
+    # because every comparison with it is False, inf because it genuinely is
+    # not negative. Either one reaches json.dumps, which emits `Infinity` /
+    # `NaN`: Python reads those back, the JSON spec does not allow them, and
+    # anything else consuming the audit row chokes.
+    if not math.isfinite(price):
+        return {"status": "error", "message": "Price must be a finite number."}
     if price < 0:
         return {"status": "error", "message": "Price cannot be negative."}
 

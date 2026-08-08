@@ -127,3 +127,92 @@ def test_unknown_quote_id_is_refused():
 
     result = finalize_quote_flow(str(uuid.uuid4()), LAUNDERED_ITEMS, company_id="x")
     assert "successfully" not in str(result).lower()
+
+
+# --- found by the adversarial pass, after the gate was built ---------------
+
+
+def test_omitted_company_id_does_not_skip_the_ownership_check():
+    """
+    The guard read `company_id is not None`, so an omitted company_id skipped
+    ownership entirely and finalised another company's quote. Not
+    model-reachable — execute_tool injects the session value — but a direct
+    caller could hit it, so absence is refused rather than waved through.
+    """
+    from agent.main_agent import finalize_quote_flow
+
+    owner = f"victim-{uuid.uuid4().hex[:8]}"
+    quote_id = log_draft_quote(owner, "TENDER_TEST", LAUNDERED_ITEMS)
+    try:
+        result = finalize_quote_flow(quote_id, None, company_id=None)
+        assert _stored(quote_id)[0] == "DRAFT", "omitted company_id finalised it"
+        assert "successfully" not in str(result).lower()
+    finally:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("DELETE FROM quote_audit_log WHERE quote_id = ?", (quote_id,))
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf"), float("nan")])
+def test_non_finite_prices_are_refused(flagged_quote, bad):
+    """
+    inf and nan both survive float() and both slip past `price < 0` — nan
+    because every comparison with it is False. Either reaches json.dumps,
+    which emits `Infinity` / `NaN`: Python reads those back, the JSON spec
+    does not allow them, and any other consumer of the audit row chokes.
+    """
+    from agent.quotation.quote_audit_log import resolve_quote_item
+
+    company_id, quote_id = flagged_quote
+    out = resolve_quote_item(quote_id, company_id, 0, bad)
+    assert out["status"] == "error"
+    assert "finite" in out["message"].lower()
+    assert "MANUAL_REVIEW_REQUIRED" in [
+        i.get("price_status") for i in json.loads(_stored(quote_id)[1])
+    ]
+
+
+def test_the_gate_is_not_a_dead_end(flagged_quote):
+    """
+    The gate decides from stored state, so something must be able to WRITE a
+    confirmed price into stored state. Nothing could: resolve_quote_item was
+    in neither the tool registry nor any route, which made a flagged quote
+    impossible to finalise by any path. A refusal with no way forward is a
+    broken feature, not a safe one.
+    """
+    from agent.tool_dispatch import TOOL_REGISTRY, execute_tool
+    from agent.main_agent import quotation_tools
+
+    assert "resolve_quote_item" in TOOL_REGISTRY
+    assert "resolve_quote_item" in [t["name"] for t in quotation_tools]
+
+    company_id, quote_id = flagged_quote
+    refused, _ = execute_tool("finalize_quotation", {"quote_id": quote_id}, company_id)
+    assert "unresolved" in str(refused).lower()
+
+    resolved, is_err = execute_tool(
+        "resolve_quote_item",
+        {"quote_id": quote_id, "item_index": 0, "price": 87500.0},
+        company_id,
+    )
+    assert is_err is False and resolved["remaining_flags"] == 0
+
+    done, _ = execute_tool("finalize_quotation", {"quote_id": quote_id}, company_id)
+    assert "successfully" in str(done).lower()
+    assert _stored(quote_id)[0] == "FINAL"
+
+
+def test_resolve_is_tenant_pinned_through_the_registry(flagged_quote):
+    """The model supplies quote_id; company_id is injected, never taken."""
+    from agent.tool_dispatch import execute_tool
+
+    _, quote_id = flagged_quote
+    out, _ = execute_tool(
+        "resolve_quote_item",
+        {"quote_id": quote_id, "item_index": 0, "price": 1.0,
+         "company_id": "attacker-supplied"},
+        "attacker-session",
+    )
+    assert out["status"] == "error"
+    assert "MANUAL_REVIEW_REQUIRED" in [
+        i.get("price_status") for i in json.loads(_stored(quote_id)[1])
+    ]

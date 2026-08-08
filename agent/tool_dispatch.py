@@ -38,7 +38,7 @@ TENANT_FIELDS = {"company_id"}
 # Tools that act on a stored record by id, where company_id is the ownership
 # check rather than a lookup key. These get it injected even when the model
 # leaves it out, so the check cannot be skipped by omission.
-TENANT_PINNED_TOOLS = {"finalize_quotation"}
+TENANT_PINNED_TOOLS = {"finalize_quotation", "resolve_quote_item"}
 
 # Tool inputs that are treated as filesystem paths and confined.
 PATH_FIELDS = {"file_path", "tender_file_path"}
@@ -93,6 +93,17 @@ def _generate_draft_quote(company_id: str, tender_file_path: str):
     from agent.main_agent import generate_draft_quote_flow
 
     return generate_draft_quote_flow(company_id, tender_file_path)
+
+
+def _resolve_quote_item(quote_id: str, item_index: int, price: float,
+                        company_id: str = None):
+    from agent.quotation.quote_audit_log import resolve_quote_item
+
+    # company_id is injected by execute_tool (TENANT_PINNED_TOOLS), not taken
+    # from the model. resolved_by records that this came through the agent
+    # rather than a direct call — it is provenance, not authorisation.
+    return resolve_quote_item(quote_id, company_id, item_index, price,
+                              resolved_by="user via agent")
 
 
 def _finalize_quotation(quote_id: str, confirmed_items: list = None,
@@ -232,6 +243,7 @@ TOOL_REGISTRY = {
     ),
     "generate_draft_quote": _generate_draft_quote,
     "finalize_quotation": _finalize_quotation,
+    "resolve_quote_item": _resolve_quote_item,
     "get_vault_status": lambda company_id: _get_vault_status(company_id),
     "generate_accreditation_report": _generate_accreditation_report,
 }

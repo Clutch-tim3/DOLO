@@ -187,5 +187,33 @@ quotation_tools = [
             },
             "required": ["quote_id", "confirmed_items"]
         }
-    }
+    },
+    {
+        # Without this the finalisation gate is a dead end: it decides from
+        # stored state, and nothing else could write a confirmed price into
+        # stored state. A flagged quote could never be finalised by any route.
+        "name": "resolve_quote_item",
+        "description": (
+            "Record the price a person has confirmed for ONE flagged line item, "
+            "clearing its flag. This is the only way to move a flagged quote "
+            "forward — finalize_quotation reads stored state and ignores prices "
+            "passed to it. Use it once per flagged item, only with a figure the "
+            "user has actually given you. Never invent or estimate a price."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "quote_id": {"type": "string"},
+                "item_index": {
+                    "type": "integer",
+                    "description": "Zero-based index of the flagged line item.",
+                },
+                "price": {
+                    "type": "number",
+                    "description": "The unit price the user confirmed. Not an estimate.",
+                },
+            },
+            "required": ["quote_id", "item_index", "price"],
+        },
+    },
 ]
