@@ -93,3 +93,8 @@ If a change would relax this, stop and raise it rather than loosening it.
 - `bbbee_level` is declared `INTEGER` but holds `'Level 1 Contributor'`.
 - Directors get a Luhn check only; no CIPC cross-check, which is what actually
   invalidates an SBD 4.
+
+> Continuing this work after a context reset? See
+> `agent_autofill/NEXT_PROMPTS.md` for ready-to-paste prompts covering the two
+> open export-gate bypasses, the adversarial verification pass, deployment
+> blockers, and known gaps.
