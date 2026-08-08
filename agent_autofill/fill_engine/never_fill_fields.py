@@ -144,6 +144,43 @@ SIGNATURE_PATTERNS = _rx(
     r"\bcommissioner\s+of\s+oaths\b",
     r"\binitial(?:s|led)?\b",
     r"\bduly\s+authorised\s+signatory\b",
+    # --- added after an independent generalisation test -------------------
+    # 26 of 27 novel signature labels passed the list above. None of them
+    # filled, because no alias maps them and decide() refuses anything
+    # off-whitelist — but that made the whitelist the only thing standing
+    # between a plausible new alias and a pre-filled signature block. Same
+    # shape as the SBD 4 "Full Name" trap in BUILD_STATE.md. These close it.
+    #
+    # Afrikaans. SA forms are routinely bilingual and the existing list had
+    # only "handtekening".
+    r"\bparaaf\b",                      # initial
+    r"^\s*par\.?\s*$",                  # "Par." alone — an initialling box
+    r"\bgetuie\b",                      # witness
+    r"\bonderteken(?:ing|aar|d)?\b",    # sign / signing / signatory
+    r"\bmerk\s+hier\b",                 # mark here
+    # isiZulu.
+    r"\b(?:uku)?sayina\b",              # sign / signing
+    r"\b(?:u|lo)?fakazi\b",             # witness
+    # English conventions the list did not cover.
+    r"\bfor\s+and\s+on\s+behalf\s+of\b",
+    r"\bauthoris(?:ed|zed)\s+representative\b",
+    r"\battested\s+by\b",
+    r"\bsworn\s+before\b",
+    r"\bthus\s+done\s+and\s+(?:signed|subscribed)\b",
+    r"\bin\s+the\s+presence\s+of\b",
+    r"\bexecuted\s+at\b",
+    r"\bper\s+pro(?:curationem)?\b",
+    r"^\s*p\.?\s*p\.?\s*[:.]?\s*$",     # "p.p." standing alone
+    r"^\s*per\s*[:.]",                  # "Per:" as a signature line
+    # A stamp box is a signature by another name. Kept narrow — a bare
+    # "stamp" would catch "date stamp" and CSD wording.
+    r"\b(?:company|official|rubber|bidder.?s)\s+stamp\b",
+    r"\baffix\b[^.]{0,30}\bstamp\b",
+    r"\bthumb\s*-?\s*print\b",
+    r"\bmark\s+of\s+the\b",             # the mark of an illiterate signatory
+    # A ruled line with no words at all: "X______", "________". An empty
+    # label is already blocked; this is the drawn signature line itself.
+    r"^\s*x?\s*[_\-–—]{3,}\s*$",
 )
 
 # --- declaration of interest ----------------------------------------------
