@@ -104,8 +104,18 @@ def api(req: https_fn.Request) -> https_fn.Response:
         # useful while diagnosing the binding but is not something a public
         # endpoint should hand out.
         configured = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        # Agent Autofill fails closed without this, so a missing binding means
+        # exports stop working with no other outward symptom until a user tries
+        # one. Reported here for the same reason as the key: a deploy can
+        # succeed while a secret silently fails to bind, and the only way to
+        # know is to ask the running instance. Boolean only — same rule.
+        stamp_secret = bool((os.environ.get("AUTOFILL_STAMP_SECRET") or "").strip())
         return https_fn.Response(
-            f"ok api_key_configured={str(configured).lower()}",
+            f"ok api_key_configured={str(configured).lower()} "
+            f"stamp_secret_configured={str(stamp_secret).lower()}",
+            # The stamp secret does not gate the whole API — chat, prediction
+            # and the vault all work without it — so its absence is reported
+            # rather than turned into a 503 for every caller.
             status=200 if configured else 503,
             mimetype="text/plain",
         )
