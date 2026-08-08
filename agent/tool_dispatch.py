@@ -35,6 +35,11 @@ ALLOWED_FILE_ROOTS = [
 # Tool inputs whose value is always forced to the session's company_id.
 TENANT_FIELDS = {"company_id"}
 
+# Tools that act on a stored record by id, where company_id is the ownership
+# check rather than a lookup key. These get it injected even when the model
+# leaves it out, so the check cannot be skipped by omission.
+TENANT_PINNED_TOOLS = {"finalize_quotation"}
+
 # Tool inputs that are treated as filesystem paths and confined.
 PATH_FIELDS = {"file_path", "tender_file_path"}
 
@@ -90,10 +95,14 @@ def _generate_draft_quote(company_id: str, tender_file_path: str):
     return generate_draft_quote_flow(company_id, tender_file_path)
 
 
-def _finalize_quotation(quote_id: str, confirmed_items: list):
+def _finalize_quotation(quote_id: str, confirmed_items: list = None,
+                        company_id: str = None):
     from agent.main_agent import finalize_quote_flow
 
-    return finalize_quote_flow(quote_id, confirmed_items)
+    # confirmed_items is accepted for compatibility with the existing schema
+    # but carries no authority: the flag check and the document both come from
+    # stored state. company_id is injected by execute_tool, not the model.
+    return finalize_quote_flow(quote_id, confirmed_items, company_id=company_id)
 
 
 # The five types the Compliance Vault treats as required. Kept in step with the
@@ -256,6 +265,12 @@ def execute_tool(name: str, tool_input: dict, company_id: str):
         clean_input = _sanitize(tool_input, company_id)
     except ToolExecutionError as e:
         return str(e), True
+
+    # _sanitize only rewrites company_id when the model already supplied it, so
+    # a model that omits the field skips the pin. For tools that act on a
+    # stored record by id, that is the whole tenant check — inject it.
+    if name in TENANT_PINNED_TOOLS:
+        clean_input["company_id"] = company_id
 
     try:
         return handler(**clean_input), False

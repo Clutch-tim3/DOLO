@@ -132,15 +132,47 @@ def generate_draft_quote_flow(company_id: str, tender_file_path: str):
         "pdf_url": doc.get("pdf_url"),
     }
 
-def finalize_quote_flow(quote_id: str, priced_items: list):
+def finalize_quote_flow(quote_id: str, priced_items: list = None, company_id: str = None):
     """
     Attempts to finalize the quote.
+
+    The flag check runs against what was recorded at draft time, never against
+    `priced_items`. This function is reachable from TOOL_REGISTRY via
+    finalize_quotation, so its arguments are model-supplied and must be treated
+    as untrusted: passing a list with the flags scrubbed used to finalize a
+    flagged quote outright, and overwrite the stored flags on the way through.
+    `priced_items` is now advisory only — the document is built from stored
+    state. To clear a flag, write the price into stored state through
+    resolve_quote_item.
     """
-    doc = generate_quote_document({}, priced_items, is_final=True)
+    from agent.quotation.quote_audit_log import (
+        flagged_items,
+        get_quote_record,
+    )
+
+    record = get_quote_record(quote_id)
+    # Same message for "no such quote" and "not yours" — a distinct
+    # "not yours" would confirm the id exists.
+    if not record or (company_id is not None and record["company_id"] != company_id):
+        return "Quote not found."
+    if record["status"] == "FINAL":
+        return "This quote is already final."
+
+    stored_items = record["line_items"]
+    outstanding = flagged_items(stored_items)
+    if outstanding:
+        listed = "\n".join(f"- {f['description']}" for f in outstanding)
+        return ("Cannot finalize quote: unresolved flagged items.\n" + listed +
+                "\nEach needs a price confirmed before this quote can be final.")
+
+    doc = generate_quote_document({}, stored_items, is_final=True)
     if doc.get("status") == "error":
         return doc["message"]
-        
-    finalize_quote(quote_id, priced_items)
+
+    if not finalize_quote(quote_id, stored_items, company_id=record["company_id"]):
+        # Lost a race, or the row moved out of DRAFT between the read and the
+        # write. Refusing is the safe outcome.
+        return "Quote could not be finalized; please reload it and try again."
     return "Quote finalized successfully!"
 
 def _autofill_tools() -> list:
