@@ -152,6 +152,31 @@ def stamp_payload(company_id: str, review_id: str, source_sha256: str,
     }
 
 
+def export_payload(company_id: str, review_id: str, final_sha256: str) -> dict:
+    """
+    Binds an export to the bytes of the finished file.
+
+    The stamp MAC cannot do this on its own. It is written *into* the document,
+    so it can only ever cover the digest of the draft as it stood beforehand —
+    which is unrecoverable once stamping has rewritten the file. That left the
+    stamp portable: the body of a genuine export could be rewritten, or the
+    whole stamp lifted onto an unrelated document, and verification still
+    passed because it only ever compared the stamp against the record.
+
+    So the digest of the *finished* file is taken after stamping and signed
+    separately, alongside the record. Editing the document changes the digest;
+    editing the stored digest to match invalidates this MAC. Both are needed to
+    forge one, and the secret produces neither.
+    """
+    return {
+        "v": 1,
+        "kind": "export",
+        "company_id": company_id or "",
+        "review_id": review_id or "",
+        "final_sha256": final_sha256 or "",
+    }
+
+
 def file_sha256(path: str | Path) -> str:
     """
     Digest of the file as it stands before stamping.

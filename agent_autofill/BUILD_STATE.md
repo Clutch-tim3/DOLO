@@ -100,6 +100,17 @@ Both were demonstrated, recorded in `c5eb068`, and are now closed. The fix is
   the caller cannot compute. Before: `flags_open=0` produced a REVIEWED file
   while the DB said DRAFT with 11 open. After: `ReviewStateError`.
 
+**A THIRD bypass, found by attacking that fix — also closed.** The stamp MAC
+tied the stamp to the *record*, and nothing tied it to the document's
+*content*. It structurally could not: the MAC is written into the file, so it
+can only cover the digest of the draft as it stood beforehand, which is
+unrecoverable once stamping has rewritten the file. Consequences, both proven:
+the body of a genuine export could be rewritten and still verify, and the whole
+stamp could be lifted onto an unrelated document and still verify. Fixed by
+hashing the file *after* stamping and signing that digest separately
+(`export_payload`, `final_sha256`, `export_mac`). Editing the file breaks the
+digest; editing the stored digest to match breaks its MAC.
+
 **Residual, pinned in `tests/test_agent_autofill_stamp_binding.py`:**
 `stamp_docx()` checks a MAC is *present*, not valid — it has the file, not the
 record. `mac="x"` still yields a document whose banner reads REVIEWED. It fails

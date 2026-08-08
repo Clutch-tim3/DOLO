@@ -294,3 +294,107 @@ def test_key_order_does_not_change_the_mac():
 def test_empty_mac_never_matches():
     for empty in (None, "", "   "):
         assert ss.matches(empty, ss.ack_payload("r", "F01", "t", "n")) is False
+
+
+# --- the third bypass: the stamp was portable ------------------------------
+#
+# Found by attacking the fix above. The stamp MAC ties the stamp to the review
+# RECORD, but nothing tied it to the document's CONTENT — and it structurally
+# could not, because the MAC is written into the file and can only cover the
+# digest of the draft as it stood beforehand. So a genuine export's body could
+# be rewritten, or the whole stamp lifted onto an unrelated document, and
+# verification still passed.
+
+
+def _rewrite_company_name(path, replacement="SOMEONE ELSE ENTIRELY (Pty) Ltd"):
+    import docx
+
+    document = docx.Document(str(path))
+    changed = 0
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    for run in para.runs:
+                        if PROFILE["company_name"] in run.text:
+                            run.text = run.text.replace(
+                                PROFILE["company_name"], replacement)
+                            changed += 1
+    document.save(str(path))
+    return changed
+
+
+def test_altering_a_genuine_exports_content_breaks_verification(review, tmp_path):
+    review_id, _, _ = review
+    _ack_all(review_id)
+    out = rg.export_reviewed(COMPANY, review_id)
+    assert rg.verify_export(out["export_path"], COMPANY, review_id)["mac_verified"] is True
+
+    tampered = tmp_path / "tampered.docx"
+    shutil.copy2(out["export_path"], tampered)
+    assert _rewrite_company_name(tampered) > 0, "the tamper itself must land"
+
+    verdict = rg.verify_export(tampered, COMPANY, review_id)
+    assert verdict["content_verified"] is False
+    assert verdict["mac_verified"] is False
+
+
+def test_a_stamp_cannot_be_moved_onto_another_document(review, tmp_path):
+    """
+    The sharper form: take every core property from a genuine export and paste
+    it onto a document that was never reviewed at all.
+    """
+    import docx
+
+    review_id, _, _ = review
+    _ack_all(review_id)
+    out = rg.export_reviewed(COMPANY, review_id)
+
+    other = tmp_path / "never_reviewed.docx"
+    result = fill_docx(FORM, other, PROFILE, match_label)
+    assert result.skipped
+
+    src = docx.Document(out["export_path"]).core_properties
+    dst = docx.Document(str(other))
+    for field in ("content_status", "category", "subject", "comments",
+                  "keywords", "last_modified_by"):
+        setattr(dst.core_properties, field, getattr(src, field))
+    dst.save(str(other))
+
+    # It reads as REVIEWED — the stamp is genuine, just not this file's.
+    assert em.read_review_state(other)["content_status"] == em.STATUS_REVIEWED
+    assert rg.verify_export(other, COMPANY, review_id)["mac_verified"] is False
+
+
+def test_editing_the_stored_digest_to_match_a_tampered_file_also_fails(review, tmp_path):
+    """
+    The obvious follow-up for an attacker with database access: tamper with the
+    file, then update the recorded digest to match. The digest is itself signed,
+    so it fails too.
+    """
+    from agent_autofill.integration.stamp_signing import file_sha256
+
+    review_id, _, _ = review
+    _ack_all(review_id)
+    out = rg.export_reviewed(COMPANY, review_id)
+
+    tampered = tmp_path / "tampered2.docx"
+    shutil.copy2(out["export_path"], tampered)
+    _rewrite_company_name(tampered)
+
+    with sqlite3.connect(str(AGENT_MEMORY_DB)) as conn:
+        conn.execute(
+            "UPDATE autofill_review SET final_sha256 = ? WHERE review_id = ?",
+            (file_sha256(tampered), review_id),
+        )
+    assert rg.verify_export(tampered, COMPANY, review_id)["mac_verified"] is False
+
+
+def test_a_byte_identical_genuine_export_still_verifies(review, tmp_path):
+    """A plain copy is the same document and must keep verifying."""
+    review_id, _, _ = review
+    _ack_all(review_id)
+    out = rg.export_reviewed(COMPANY, review_id)
+    copied = tmp_path / "copy.docx"
+    shutil.copy2(out["export_path"], copied)
+    assert rg.verify_export(copied, COMPANY, review_id)["mac_verified"] is True

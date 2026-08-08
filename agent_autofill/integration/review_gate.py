@@ -62,6 +62,7 @@ from agent_autofill.integration.export_metadata import (
 from agent_autofill.integration.stamp_signing import (
     ack_mac,
     ack_payload,
+    export_payload,
     file_sha256,
     matches,
     sign,
@@ -140,6 +141,14 @@ def init_review_db() -> None:
             "PRAGMA table_info(autofill_review)").fetchall()}
         if "export_sha256" not in review_cols:
             conn.execute("ALTER TABLE autofill_review ADD COLUMN export_sha256 TEXT")
+        # Digest of the FINISHED file plus a MAC over it. Without these the
+        # stamp is portable — see export_payload. Existing exports have NULL
+        # and stop verifying, which is the correct answer for a file produced
+        # before its content was bound.
+        if "final_sha256" not in review_cols:
+            conn.execute("ALTER TABLE autofill_review ADD COLUMN final_sha256 TEXT")
+        if "export_mac" not in review_cols:
+            conn.execute("ALTER TABLE autofill_review ADD COLUMN export_mac TEXT")
 
 
 init_review_db()
@@ -562,10 +571,15 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
         )
         written = stamp_docx(target, stamp)
 
+        # Taken after stamping, so it covers the file a recipient actually
+        # holds. Signed separately because the stamp MAC lives inside the file
+        # and cannot cover the file's own finished bytes.
+        final_sha = file_sha256(target)
         conn.execute(
-            "UPDATE autofill_review SET export_path = ?, export_sha256 = ?"
-            " WHERE review_id = ?",
-            (str(target), export_sha, review_id),
+            "UPDATE autofill_review SET export_path = ?, export_sha256 = ?,"
+            " final_sha256 = ?, export_mac = ? WHERE review_id = ?",
+            (str(target), export_sha, final_sha,
+             sign(export_payload(company_id, review_id, final_sha)), review_id),
         )
         conn.commit()
     except Exception:
@@ -650,7 +664,8 @@ def verify_export(path: str | Path, company_id: str = None,
 
     with _connect() as conn:
         rec = conn.execute(
-            """SELECT flagged_count, filled_count, export_sha256, export_path
+            """SELECT flagged_count, filled_count, export_sha256, export_path,
+                      final_sha256, export_mac
                  FROM autofill_review WHERE review_id = ? AND company_id = ?""",
             (review_id, company_id),
         ).fetchone()
@@ -672,7 +687,19 @@ def verify_export(path: str | Path, company_id: str = None,
     # timestamps that have since been rewritten.
     forged = _unverifiable_acknowledgements(review_id)
 
-    state["mac_verified"] = (not forged) and matches(
+    # Does this file's content match what was exported? Without this the stamp
+    # is portable: the body of a genuine export can be rewritten, or the whole
+    # stamp lifted onto an unrelated document, and everything below still
+    # passes — the stamp MAC only ties the stamp to the record, not to these
+    # bytes. Checked against a MAC so that editing the stored digest to match a
+    # tampered file fails too.
+    content_bound = matches(
+        rec["export_mac"],
+        export_payload(company_id, review_id, file_sha256(path)),
+    )
+
+    state["content_verified"] = content_bound
+    state["mac_verified"] = content_bound and (not forged) and matches(
         state.get("mac"),
         stamp_payload(
             company_id=company_id,
@@ -686,7 +713,13 @@ def verify_export(path: str | Path, company_id: str = None,
             stamped_at=state.get("stamped_at") or "",
         ),
     )
-    if forged:
+    if not content_bound:
+        state["mac_detail"] = (
+            "This file's contents do not match the export that was recorded "
+            "for this review — it has been altered, or the stamp was copied "
+            "from a different document."
+        )
+    elif forged:
         state["mac_detail"] = (
             f"{len(forged)} acknowledgement(s) fail their own signature."
         )
