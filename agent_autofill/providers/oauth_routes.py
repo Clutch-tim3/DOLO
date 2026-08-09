@@ -20,6 +20,17 @@ record, never from the callback's own parameters — otherwise anyone who
 completed a legitimate consent for their own account could replay the callback
 with someone else's company_id and attach their Drive to that company.
 
+WHERE THE COMPANY COMES FROM ON THE WAY IN
+------------------------------------------
+The authenticated session. `company_id` remained a query parameter here after
+the header call sites in app.py were fixed, which is the same hole in different
+clothing: an anonymous GET to `/connect?company_id=<theirs>` started a real
+consent flow bound to a company the caller had not proved they were, and
+`/status` and `/disconnect` read and deleted another tenant's connections
+outright. The parameter is still accepted — clients send it and a test pins its
+presence — but it is now checked against the principal and a mismatch is a 403,
+not a silent substitution.
+
 The authorization code is never logged, never echoed in a redirect, and never
 put in an error message. It is a single-use credential for the few seconds
 before it is exchanged, and a code in a log line is a code in a log aggregator.
@@ -31,9 +42,10 @@ import logging
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
+from agent.auth import Principal, assert_company, require_principal
 from agent_autofill.providers import oauth_state
 
 logger = logging.getLogger("agent_autofill.providers.oauth")
@@ -114,11 +126,22 @@ def _back(ok: bool, message: str) -> RedirectResponse:
 
 
 @router.get("/{provider}/connect")
-async def start_connection(provider: str, request: Request,
-                           company_id: str = Query(...)) -> RedirectResponse:
-    """Begin consent. Records the state, then hands off to the provider."""
+async def start_connection(
+    provider: str, request: Request,
+    company_id: str = Query(default=None),
+    principal: Principal = Depends(require_principal),
+) -> RedirectResponse:
+    """
+    Begin consent. Records the state, then hands off to the provider.
+
+    The company is the authenticated one. Refusing a mismatch happens before
+    `oauth_state.issue`, so a request naming another tenant writes no row at
+    all — there is no half-started flow left behind to be completed later.
+    """
     if provider not in PROVIDERS:
         raise HTTPException(status_code=404, detail="Unknown provider")
+
+    company_id = assert_company(principal, company_id)
 
     impl = _provider(provider)
     redirect_uri = _callback_url(request, provider)
@@ -192,24 +215,38 @@ async def finish_connection(provider: str, request: Request,
 
 
 @router.get("/status")
-async def connection_status(company_id: str = Query(...)) -> dict[str, Any]:
-    """What this company has connected. Never includes a token."""
+async def connection_status(
+    company_id: str = Query(default=None),
+    principal: Principal = Depends(require_principal),
+) -> dict[str, Any]:
+    """What the authenticated company has connected. Never includes a token."""
     from agent_autofill.providers.token_store import list_connections
 
+    company_id = assert_company(principal, company_id)
     return {"company_id": company_id, "connections": list_connections(company_id)}
 
 
 @router.post("/{provider}/disconnect")
-async def disconnect(provider: str, company_id: str = Query(...)) -> dict[str, Any]:
+async def disconnect(
+    provider: str,
+    company_id: str = Query(default=None),
+    principal: Principal = Depends(require_principal),
+) -> dict[str, Any]:
     """
     Forget a connection.
 
     Deletes the stored tokens. It does NOT revoke consent at the provider —
     that is the user's to do in their Google or Dropbox account settings, and
     saying so is more honest than implying we removed access we cannot remove.
+
+    Scoped to the authenticated company: this deletes credentials, and an
+    unauthenticated caller naming a tenant could previously disconnect that
+    tenant's Drive at will.
     """
     if provider not in PROVIDERS:
         raise HTTPException(status_code=404, detail="Unknown provider")
+
+    company_id = assert_company(principal, company_id)
 
     from agent_autofill.providers.token_store import delete_token
 

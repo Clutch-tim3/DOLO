@@ -39,12 +39,25 @@
 
     // ---------------------------------------------------------------- utils
 
+    /* The company comes from the session cookie. This used to read a
+       localStorage key and send it as X-Company-ID, which the server trusted —
+       so the wizard could read and overwrite any company's profile, and that
+       profile is what Agent Autofill later writes into real SBD forms. */
     function headers() {
-        var h = { 'Content-Type': 'application/json' };
-        var cid = null;
-        try { cid = localStorage.getItem('cairo-company-id'); } catch (e) { cid = null; }
-        if (cid) { h['X-Company-ID'] = cid; }
-        return h;
+        return { 'Content-Type': 'application/json' };
+    }
+
+    /* Every request here goes through this so the cookie is always attached
+       and a lapsed session puts the sign-in gate back rather than surfacing as
+       an unexplained wizard error. */
+    async function request(url, options) {
+        var opts = options || {};
+        opts.credentials = 'same-origin';
+        var res = await fetch(url, opts);
+        if (res.status === 401 && window.CairoAuth) {
+            window.CairoAuth.handleUnauthorized();
+        }
+        return res;
     }
 
     function node(tag, cls, text) {
@@ -353,7 +366,7 @@
 
         ANSWERS.directors = DIRECTORS;
 
-        fetch('/api/questionnaire/preview', {
+        request('/api/questionnaire/preview', {
             method: 'POST',
             headers: headers(),
             body: JSON.stringify({ answers: ANSWERS })
@@ -473,7 +486,7 @@
             return;
         }
         ANSWERS.directors = DIRECTORS;
-        fetch('/api/questionnaire/save', {
+        request('/api/questionnaire/save', {
             method: 'POST',
             headers: headers(),
             body: JSON.stringify({ answers: ANSWERS, confirmed: true })
@@ -501,7 +514,7 @@
     // ------------------------------------------------------------------ boot
 
     function loadExisting() {
-        return fetch('/api/questionnaire', { headers: headers() })
+        return request('/api/questionnaire', { headers: headers() })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (data) {
                 if (!data) { return; }
@@ -518,7 +531,7 @@
         el.steps = document.getElementById('qSteps');
         if (!el.steps) { return; }
 
-        fetch('/api/questionnaire/definition', { headers: headers() })
+        request('/api/questionnaire/definition', { headers: headers() })
             .then(function (r) {
                 if (!r.ok) { throw new Error('HTTP ' + r.status); }
                 return r.json();

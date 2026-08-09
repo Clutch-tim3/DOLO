@@ -8,10 +8,15 @@ Two separate ID namespaces had drifted apart:
   * agent/subscription.py  MOCK_CLIENT_REGISTRY -> starter_corp / pro_corp / enterprise_corp
   * agent_memory.db        company_profile      -> c123 / test_co_123
 
-The frontend sends X-Company-ID: pro_corp, so every company-aware tool looked
-up a company_id that had no row. The agent then correctly answered "nothing on
-file" (its hard constraint working as designed) and the quote flow bailed at
-`if not profile`. This seeds the tier IDs so the two namespaces line up.
+Every company-aware tool looked up a company_id that had no row. The agent then
+correctly answered "nothing on file" (its hard constraint working as designed)
+and the quote flow bailed at `if not profile`. This seeds the tier IDs so the
+two namespaces line up.
+
+The company used to arrive as an X-Company-ID header the frontend chose for
+itself; it now comes from the authenticated session (`agent/auth.py`). So the
+ids seeded here are the ones you give `scripts/manage_users.py --company` when
+creating an account.
 
 Idempotent — safe to re-run. Existing rows are updated, not duplicated.
 

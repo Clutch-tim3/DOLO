@@ -147,17 +147,21 @@ async def test_batch_docx_pdf_mixed_no_crash(fixtures_dir, tmp_path, loaded_mode
 client = TestClient(app)
 
 @pytest.mark.asyncio
-async def test_batch_result_matches_single_prediction_result(fixtures_dir, tmp_path, loaded_models):
+async def test_batch_result_matches_single_prediction_result(fixtures_dir, tmp_path, loaded_models, auth_headers):
     file_path = fixtures_dir / "lv_cabling_tender.pdf"
-    
-    # Call single endpoint
+
+    # Call single endpoint. It requires a credential now — the tenant used to
+    # come from an X-Company-ID header that defaulted to "starter_corp", which
+    # meant an anonymous POST was served as that company. See conftest.py's
+    # auth_headers fixture. The prediction path is unchanged.
     with open(file_path, "rb") as f:
         response = client.post(
             "/api/tender/submit",
             files={"tender_file": ("lv_cabling_tender.pdf", f, "application/pdf")},
-            data={"supplier_name": "TEST SUPPLIER", "bbbee_level": 1}
+            data={"supplier_name": "TEST SUPPLIER", "bbbee_level": 1},
+            headers=auth_headers,
         )
-    
+
     single_res = response.json()
     
     # Run batch locally

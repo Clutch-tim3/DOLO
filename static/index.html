@@ -16,6 +16,9 @@
             min-height: auto !important;
         }
     </style>
+    <!-- The sign-in gate. This page calls company-aware endpoints, which
+         no longer resolve a tenant from a header. -->
+    <script src="static/auth.js?v=1"></script>
 </head>
 <body>
 
@@ -941,10 +944,14 @@
                 }
 
                 try {
+                    // credentials stated rather than relied on: the session
+                    // cookie is what tells the server which company this is.
                     const res = await fetch("/api/batch-sort", {
                         method: "POST",
+                        credentials: "same-origin",
                         body: formData
                     });
+                    if (res.status === 401 && window.CairoAuth) { CairoAuth.handleUnauthorized(); }
                     const data = await res.json();
 
                     if (!res.ok) {
@@ -1014,8 +1021,10 @@
             try {
                 const response = await fetch("/api/tender/submit", {
                     method: "POST",
+                    credentials: "same-origin",
                     body: formData
                 });
+                if (response.status === 401 && window.CairoAuth) { CairoAuth.handleUnauthorized(); }
                 
                 const data = await response.json();
                 

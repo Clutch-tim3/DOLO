@@ -176,8 +176,43 @@ def test_connect_route_requires_a_company_id():
 # --- the routes -------------------------------------------------------------
 
 
+@pytest.fixture(scope="module")
+def _session_for_company():
+    """
+    A real session for COMPANY.
+
+    These routes now require an authenticated principal: `company_id` used to
+    be an unauthenticated query parameter, which meant anyone could start a
+    consent flow bound to any company, and read or delete any company's
+    connections. The tests below are about the state machine, so they carry a
+    genuine credential rather than being relaxed to let an anonymous caller in.
+    """
+    import uuid
+
+    from agent import auth
+
+    user = auth.create_user(f"oauth-{uuid.uuid4().hex[:10]}@example.test",
+                            COMPANY, "correct-horse-battery-staple")
+    return auth.issue_session(user)
+
+
 @pytest.fixture
-def client():
+def client(_session_for_company):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from agent import auth
+    from agent_autofill.providers.oauth_routes import router
+
+    app = FastAPI()
+    app.include_router(router)
+    test_client = TestClient(app, follow_redirects=False)
+    test_client.cookies.set(auth.SESSION_COOKIE, _session_for_company)
+    return test_client
+
+
+@pytest.fixture
+def anonymous_client():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -186,6 +221,30 @@ def client():
     app = FastAPI()
     app.include_router(router)
     return TestClient(app, follow_redirects=False)
+
+
+def test_starting_a_connection_anonymously_is_refused(anonymous_client):
+    """
+    The hole this closed: an unauthenticated GET naming a company started a
+    real consent flow bound to it.
+    """
+    r = anonymous_client.get("/api/autofill/providers/google_drive/connect",
+                             params={"company_id": COMPANY})
+    assert r.status_code == 401
+
+
+def test_reading_or_deleting_connections_anonymously_is_refused(anonymous_client):
+    assert anonymous_client.get("/api/autofill/providers/status",
+                                params={"company_id": COMPANY}).status_code == 401
+    assert anonymous_client.post("/api/autofill/providers/google_drive/disconnect",
+                                 params={"company_id": COMPANY}).status_code == 401
+
+
+def test_starting_a_connection_for_another_company_is_refused(client):
+    """Authenticated as COMPANY, naming OTHER. 403, and no state is issued."""
+    r = client.get("/api/autofill/providers/google_drive/connect",
+                   params={"company_id": OTHER})
+    assert r.status_code == 403
 
 
 def test_unknown_provider_is_404(client):

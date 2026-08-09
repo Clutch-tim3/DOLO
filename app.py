@@ -51,6 +51,16 @@ from models.quotation_generator import generate_quotation_pdf
 from agent.subscription import get_config, check_quote_quota, get_subscription_status, log_quote_generation
 from agent.main_agent import generate_draft_quote_flow, finalize_quote_flow, process_agent_chat, memory_tools, app_help_tools, onboarding_tools, quotation_tools
 
+# Authentication. Until this existed, every company-aware route below read its
+# tenant from `request.headers.get("X-Company-ID", "starter_corp")` — a header
+# any caller can set, with a default for callers that do not bother. Anyone
+# could be any company, and every isolation control in this codebase pinned to
+# that asserted value. `require_company_id` resolves the tenant from a verified
+# session cookie or device token instead, and has no default: an unauthenticated
+# request is a 401, not somebody's data.
+from agent.auth import Principal, require_company_id, require_principal
+from fastapi import Depends
+
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -132,9 +142,31 @@ class TrackOutcomeRequest(BaseModel):
     outcome_date: Optional[str] = None
     notes: Optional[str] = ""
 
+# CORS. This was `allow_origins=["*"]` with `allow_credentials=True`, which was
+# harmless only because nothing was authenticated: there was no cookie worth
+# stealing. Now that a session cookie exists it is not harmless — Starlette
+# echoes the requesting origin back when a credentialed request arrives under a
+# wildcard, so any site could have called these routes with the victim's cookie
+# attached and read the response.
+#
+# The frontend is same-origin (Firebase Hosting rewrites /api/** to this
+# function), so no browser origin needs to be listed for the app to work. The
+# entries below exist for local development and for the deployed origins.
+# CORS_ALLOWED_ORIGINS overrides the list; it is public configuration, so it
+# belongs in .env, not Secret Manager.
+_cors_env = (os.environ.get("CORS_ALLOWED_ORIGINS") or "").strip()
+ALLOWED_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()] or [
+    "https://cairoai.web.app",
+    "https://cairoai.firebaseapp.com",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:8099",
+    "http://127.0.0.1:8099",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -311,6 +343,14 @@ async def serve_company_profile_page():
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
+# Sign in, sign out, and device pairing. Mounted without a try/except, unlike
+# the two optional routers below: if authentication fails to load, the correct
+# behaviour is for the app not to start. Serving every other route with the
+# gate missing is how this application got into the state this work is fixing.
+from agent.auth_routes import router as auth_router
+
+app.include_router(auth_router)
+
 # The wizard's backend. Mounted here rather than defined in app.py so the
 # questionnaire stays self-contained; without this every /api/questionnaire/*
 # call the page makes returns 404.
@@ -343,8 +383,16 @@ class QuotationRequest(BaseModel):
     lowest_price: Optional[float] = None
 
 @app.post("/api/generate-quotation")
-async def api_generate_quotation(request: Request):
-    """Generates an official South African PDF quotation for a tender, with support for direct PDF uploads or JSON."""
+async def api_generate_quotation(request: Request,
+                                 principal: Principal = Depends(require_principal)):
+    """
+    Generates an official South African PDF quotation for a tender, with support for direct PDF uploads or JSON.
+
+    Authenticated because it writes a file to disk and is reachable from the
+    public internet. It resolves no company — the supplier comes from the
+    request — so it was not one of the X-Company-ID call sites, but an
+    unauthenticated route that produces artefacts is its own problem.
+    """
     logger.info("Generate Quotation Request", extra={"endpoint": "/api/generate_quotation"})
     try:
         content_type = request.headers.get("content-type", "")
@@ -441,7 +489,8 @@ async def api_generate_quotation(request: Request):
 async def api_upload_archive_document(
     request: Request,
     file: UploadFile = File(...),
-    target_block: str = Form("CSD_CERT")
+    target_block: str = Form("CSD_CERT"),
+    company_id: str = Depends(require_company_id),
 ):
     """
     Accepts a Compliance Vault document: stores it, classifies it, auto-sorts a
@@ -451,10 +500,12 @@ async def api_upload_archive_document(
     NOTE: this used to save and classify the file and then stop. It never called
     add_company_document, so an upload returned "success" and the document then
     did not appear in the vault, did not count toward the five required
-    documents, and did not trigger the onboarding vet. It also ignored
-    X-Company-ID, so nothing was tenant-scoped.
+    documents, and did not trigger the onboarding vet.
+
+    The company is now the authenticated one. It used to be whatever the caller
+    put in a header, which meant a document could be filed into any company's
+    vault by anyone who could reach this route.
     """
-    company_id = request.headers.get("X-Company-ID", "starter_corp")
     try:
         filename = secure_filename(file.filename)
         if not filename:
@@ -527,14 +578,20 @@ async def api_upload_archive_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/companies")
-async def api_get_companies():
-    """Returns the list of companies in the archive"""
+async def api_get_companies(principal: Principal = Depends(require_principal)):
+    """
+    Returns the list of companies in the archive.
+
+    The archive is a single shared JSON file rather than per-tenant state, so
+    this is not tenant isolation — it is the difference between the supplier
+    list being public and being behind a login. Making the archive tenant-scoped
+    is separate work; see the note in the auth section of CLAUDE.md.
+    """
     return get_archived_companies()
 
 @app.get("/api/company-profile")
-async def api_company_profile(request: Request):
+async def api_company_profile(company_id: str = Depends(require_company_id)):
     """Returns the active company profile and track record stats for the agent sidebar"""
-    company_id = request.headers.get("X-Company-ID", "starter_corp")
     config = get_config(company_id)
     
     # In a real app this would query the DB. We'll return mock data matching the design.
@@ -555,7 +612,8 @@ async def api_company_profile(request: Request):
 async def api_upload_company_file(
     file: List[UploadFile] = File(...),
     target_company: Optional[str] = Form(""),
-    expiry_date: Optional[str] = Form(None)
+    expiry_date: Optional[str] = Form(None),
+    principal: Principal = Depends(require_principal),
 ):
     """Uploads CIPC/CSD documents (multiple supported), parses them, and adds/updates companies in the archive"""
     logger.info("Company File Upload", extra={"endpoint": "/api/companies/upload", "extra_data": {"files_count": len(file), "target_company": target_company}})
@@ -679,7 +737,7 @@ async def api_serve_quotation(filename: str):
     return FileResponse(str(file_path))
 
 @app.get("/api/vault-status")
-async def api_vault_status(request: Request):
+async def api_vault_status(company_id: str = Depends(require_company_id)):
     """
     Which of the required Compliance Vault documents this company has.
 
@@ -688,7 +746,6 @@ async def api_vault_status(request: Request):
     hardcoded "Auditing vault..." animation that ran on a timer and checked
     nothing.
     """
-    company_id = request.headers.get("X-Company-ID", "starter_corp")
     from agent.tool_dispatch import _get_vault_status
 
     try:
@@ -762,8 +819,15 @@ async def api_serve_generated(filename: str):
 
 
 @app.delete("/api/companies/{company_name}")
-async def api_delete_company(company_name: str):
-    """Deletes a company and its files from the archive"""
+async def api_delete_company(company_name: str,
+                             principal: Principal = Depends(require_principal)):
+    """
+    Deletes a company and its files from the archive.
+
+    This route unlinks files from disk and answered to anyone who could reach
+    it. It resolves no company_id, so it was not one of the header call sites —
+    which is exactly why it is easy to miss.
+    """
     companies = get_archived_companies()
     matched_idx = None
     
@@ -807,7 +871,8 @@ async def api_tender_submit(
     tender_file: Optional[UploadFile] = File(None),
     supplier_name: Optional[str] = Form(None),
     bbbee_level: Optional[int] = Form(None),
-    model_version: Optional[str] = Form("sailor")
+    model_version: Optional[str] = Form("sailor"),
+    company_id: str = Depends(require_company_id),
 ):
     """
     Submits a Tender PDF & Bid PDF:
@@ -815,8 +880,12 @@ async def api_tender_submit(
     - Parses Bid PDF and Tender PDF for pricing.
     - If found, retrieves B-BBEE Level.
     - Queries prediction pipeline and preferential scoring logic.
+
+    The model allow-list below is a tier gate. It is only a gate now that
+    `company_id` is the authenticated company: while it came from a header,
+    "conquest is not on your plan" was advice, not enforcement — a starter
+    account could ask for it by claiming to be someone else.
     """
-    company_id = request.headers.get("X-Company-ID", "starter_corp")
     config = get_config(company_id)
     allowed_models = config.get("model_access", ["sailor"])
     
@@ -1262,12 +1331,12 @@ async def api_batch_sort(
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...),
     supplier_name: Optional[str] = Form(None),
-    model_version: Optional[str] = Form("sailor")
+    model_version: Optional[str] = Form("sailor"),
+    company_id: str = Depends(require_company_id),
 ):
     if not files or all(f.filename == "" for f in files):
         raise HTTPException(status_code=400, detail="No files uploaded")
-        
-    company_id = request.headers.get("X-Company-ID", "starter_corp")
+
     logger.info("Batch Sort Request", extra={"company_id": company_id, "endpoint": "/api/batch-sort", "extra_data": {"files_count": len(files), "model": model_version}})
     config = get_config(company_id)
     allowed_models = config.get("model_access", ["sailor"])
@@ -1566,7 +1635,11 @@ class EstimateRequest(BaseModel):
     tender_id: str
 
 @app.post("/api/estimate")
-async def api_estimate(req: EstimateRequest):
+async def api_estimate(req: EstimateRequest,
+                       principal: Principal = Depends(require_principal)):
+    # Authenticated because this one calls out to paid external APIs. An
+    # unauthenticated endpoint that spends money on request is a bill, not a
+    # feature.
     tender_id = req.tender_id
     tender_file_path = UPLOAD_FOLDER / f"tender_{tender_id}.pdf"
     
@@ -1729,8 +1802,15 @@ async def api_estimate(req: EstimateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/subscription-status")
-async def api_subscription_status(request: Request):
-    company_id = request.headers.get("X-Company-ID", "starter_corp")
+async def api_subscription_status(company_id: str = Depends(require_company_id)):
+    """
+    The caller's own plan and usage.
+
+    This one is worth naming: it used to report whatever plan the header asked
+    for, so the page could read back "enterprise" simply by saying so, and every
+    quota shown to the user was a quota for a company they had not proved they
+    were.
+    """
     return get_subscription_status(company_id)
 
 class AgentChatRequest(BaseModel):
@@ -1742,10 +1822,18 @@ from agent.rate_limiter import check_global_rate_limit
 import html
 
 @app.post("/api/agent/chat")
-async def api_agent_chat(request: Request, payload: AgentChatRequest):
-    company_id = request.headers.get("X-Company-ID", "starter_corp")
+async def api_agent_chat(
+    request: Request,
+    payload: AgentChatRequest,
+    principal: Principal = Depends(require_principal),
+):
+    # LAYER 1: identity. The company is the authenticated one, so the tier
+    # checks below are enforcement rather than a suggestion. Previously a
+    # starter account reached Claude — and spent our Anthropic budget — by
+    # sending X-Company-ID: pro_corp.
+    company_id = principal.company_id
     logger.info("Agent Chat Request", extra={"company_id": company_id, "endpoint": "/api/agent-chat", "extra_data": {"action": payload.action}})
-    
+
     # LAYER 2: Tier limits (Starter account completely blocked)
     config = get_config(company_id)
     if not config["agent_enabled"] or not config["claude_api_enabled"]:

@@ -13,12 +13,12 @@
 
     var ACCEPTED = ['.pdf', '.docx', '.doc'];
 
-    function getCompanyId() {
-        if (typeof global.getCompanyId === 'function') {
-            try { return global.getCompanyId(); } catch (e) { /* fall through */ }
-        }
-        return localStorage.getItem('cairoai_company_id') || 'pro_corp';
-    }
+    /* The company this document is filed against comes from the session, not
+       from here. There used to be a getCompanyId() reading localStorage with a
+       'pro_corp' fallback, sent as X-Company-ID; the server believed it, so a
+       document could be filed into any company's Compliance Vault by anyone
+       who could reach the route. static/auth.js is what establishes identity
+       now, and the cookie travels with the request on its own. */
 
     function hasAcceptedExtension(name) {
         var lower = (name || '').toLowerCase();
@@ -90,13 +90,20 @@
             try {
                 var res = await fetch('/api/archive/upload-document', {
                     method: 'POST',
-                    headers: { 'X-Company-ID': getCompanyId() },
+                    credentials: 'same-origin',
                     body: form
                 });
                 if (!res.ok) {
+                    if (res.status === 401 && global.CairoAuth) {
+                        // The session went away mid-visit. Put the gate back
+                        // rather than reporting a generic upload failure.
+                        global.CairoAuth.handleUnauthorized();
+                    }
                     var detail = '';
                     try { detail = (await res.json()).detail || ''; } catch (e) { /* no body */ }
-                    if (entry) settle(entry, 'is-bad', res.status === 415 ? 'Wrong type' : 'Failed');
+                    if (entry) settle(entry, 'is-bad',
+                        res.status === 415 ? 'Wrong type'
+                                           : (res.status === 401 ? 'Signed out' : 'Failed'));
                     return { ok: false, file: file, reason: detail || ('HTTP ' + res.status) };
                 }
                 var data = await res.json();
