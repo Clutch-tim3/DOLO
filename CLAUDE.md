@@ -243,6 +243,40 @@ present but cannot check one — it has the file, not the record — so a forger
 can still produce a document whose banner reads REVIEWED. It will not verify.
 Anything user-facing must call `verify_export` with the record.
 
+### Connecting Drive / Dropbox
+
+The providers could always build a consent URL and exchange a code. Nothing
+called either, so the `state` value both of them generate was never stored or
+checked — the CSRF parameter existed and did nothing.
+`providers/oauth_routes.py` and `providers/oauth_state.py` are that missing
+half, mounted in `app.py`.
+
+- **The callback takes no `company_id`.** It comes from the stored state. If it
+  came from the URL, anyone who completed a genuine consent for their own
+  Google account could replay the callback with someone else's company_id and
+  attach their Drive to that company. A test asserts the parameter is absent
+  from the route signature, because that absence IS the defence.
+- **State is single-use, 10-minute TTL, stored as a SHA-256 digest**, and burned
+  even on a rejected attempt so it cannot be probed then retried.
+- **Consume commits the delete before validating.** Doing the checks inside the
+  transaction looked equivalent and was not: the connection rolls back on
+  exception, so raising for a wrong provider silently undid the delete and left
+  the state reusable. A test caught it; reading the code did not.
+- **The return redirect is a fixed internal path.** An open redirect on a domain
+  users are being asked to trust with Drive access is worth a lot to a phisher.
+
+**PKCE is NOT implemented.** The authorization code arrives as a query
+parameter and platform access logs record query strings — on Cloud Run the
+request line is logged before our code sees it. Our own handlers never log the
+code, and tests pin that, but we cannot stop the runtime from logging the URL.
+The exposure is bounded (single-use, short-lived, exchanged immediately) and
+PKCE is the real mitigation. Worth adding before this is used by anyone whose
+logs are widely readable.
+
+**No consent has ever been completed.** Every OAuth test fakes the exchange.
+Real credentials, a real consent screen, and a real token refresh are manual
+verification that has not happened — see `providers/VERIFICATION.md`.
+
 Two things that will mislead you otherwise:
 
 - **`tests/fixtures/alfred_duma.pdf` is a 1-page tender summary, not a form

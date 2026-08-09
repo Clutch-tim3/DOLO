@@ -323,6 +323,18 @@ except Exception:
     # agent_autofill package must not stop the rest of the app from serving.
     logger.exception("Agent Autofill questionnaire router unavailable")
 
+# Connecting a Drive or Dropbox account. The providers could already build a
+# consent URL and exchange a code, but nothing called either — so there was no
+# way to connect anything, and the CSRF `state` both providers generate was
+# never stored or checked.
+try:
+    from agent_autofill.providers.oauth_routes import router as provider_oauth_router
+
+    app.include_router(provider_oauth_router)
+except Exception:
+    logger.exception("Agent Autofill provider OAuth routes unavailable")
+
+
 class QuotationRequest(BaseModel):
     supplier_name: str
     tender_title: str
