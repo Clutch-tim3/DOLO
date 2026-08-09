@@ -211,8 +211,18 @@ Then, unrelated to Agent Autofill and outstanding from earlier work:
 
 **Credentials to revoke yourself — no agent can do this for you:**
 
-- `access_token.txt` in the repo root is a live GCP access token in plaintext.
-  Gitignored, so not committed, but revoke it.
+- `access_token.txt` in the repo root is **expired** — Google's tokeninfo
+  endpoint returns 400 for it, and a GCP access token lives about an hour
+  anyway. Verified never committed to any branch, untracked, gitignored. So
+  there is nothing to revoke. What remains is a tooling problem: the vendored
+  SDK is still pointed at it via the `auth/access_token_file` property, which
+  makes every `gcloud` command fail with UNAUTHENTICATED.
+
+      .\google-cloud-sdkin\gcloud.cmd config unset auth/access_token_file
+      Remove-Item access_token.txt
+
+  The habit is still worth breaking: a token written to a file in the repo root
+  is one `git add -f` from being public.
 - Two old Anthropic API keys, both burned: `e24ad2eccc8d` (was live in
   production) and `3071cd652487` (was in `.env.local`). Production runs on
   `09761c231e39` now, so revoking the old two breaks nothing.
