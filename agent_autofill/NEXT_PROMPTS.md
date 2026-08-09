@@ -218,7 +218,7 @@ Then, unrelated to Agent Autofill and outstanding from earlier work:
   SDK is still pointed at it via the `auth/access_token_file` property, which
   makes every `gcloud` command fail with UNAUTHENTICATED.
 
-      .\google-cloud-sdkin\gcloud.cmd config unset auth/access_token_file
+      google-cloud-sdk/bin/gcloud.cmd config unset auth/access_token_file
       Remove-Item access_token.txt
 
   The habit is still worth breaking: a token written to a file in the repo root
