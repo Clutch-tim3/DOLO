@@ -40,22 +40,53 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from agent_autofill.providers.dropbox_provider import DropboxProvider
 from agent_autofill.providers.google_drive_provider import GoogleDriveProvider
 from agent_autofill.webhooks import async_queue
 from agent_autofill.webhooks.async_queue import WebhookTask
 
-__all__ = ["router", "GOOGLE_WEBHOOK_PATH", "DROPBOX_WEBHOOK_PATH"]
+__all__ = ["router", "GOOGLE_WEBHOOK_PATH", "DROPBOX_WEBHOOK_PATH",
+           "TASK_WORKER_PATH", "RENEWAL_PATH", "set_task_handler",
+           "get_task_handler"]
 
 logger = logging.getLogger("agent_autofill.webhooks")
 
 GOOGLE_WEBHOOK_PATH = "/api/autofill/webhooks/google-drive"
 DROPBOX_WEBHOOK_PATH = "/api/autofill/webhooks/dropbox"
 RENEWAL_PATH = "/api/autofill/webhooks/renew"
+#: Where Cloud Tasks delivers work back to. Not a provider-facing URL.
+TASK_WORKER_PATH = "/api/autofill/webhooks/task"
 
 router = APIRouter(tags=["agent-autofill-webhooks"])
+
+#: What actually processes a task once it comes back through Cloud Tasks. Held
+#: here rather than imported so the routes module keeps its deliberate freedom
+#: from agent_autofill.extraction / fill_engine (see the module docstring), and
+#: so tests can install a recorder.
+_task_handler = None
+
+
+def set_task_handler(handler) -> None:
+    global _task_handler
+    _task_handler = handler
+
+
+def get_task_handler():
+    return _task_handler
+
+
+# Switch dispatch to Cloud Tasks when the configuration is present. A no-op
+# locally, which is intended: development keeps the in-process queue and
+# deployment_readiness() keeps saying ready=False rather than being satisfied
+# by a dispatcher with nowhere to send anything.
+try:
+    from agent_autofill.webhooks.cloud_tasks_dispatcher import install_if_configured
+
+    install_if_configured()
+except Exception:
+    logger.exception("Cloud Tasks dispatcher unavailable; keeping in-process queue")
 
 
 def _headers_of(request: Request) -> dict[str, str]:
@@ -132,17 +163,81 @@ async def dropbox_webhook(request: Request) -> Response:
     return Response(status_code=verdict.http_status)
 
 
+async def _require_signed_request(request: Request) -> bytes:
+    """
+    Reject anything that is not a request we signed ourselves.
+
+    Both endpoints below are public URLs that cause real work to happen, so
+    neither may act on an unauthenticated caller. Returns the body so the
+    caller does not read the stream twice — a second `await request.body()`
+    after this would be empty.
+    """
+    from agent_autofill.webhooks.cloud_tasks_dispatcher import (
+        TaskAuthError,
+        verify_request,
+    )
+
+    body = await request.body()
+    try:
+        verify_request(
+            body,
+            request.headers.get("X-CairoAI-Timestamp", ""),
+            request.headers.get("X-CairoAI-Signature", ""),
+        )
+    except TaskAuthError as exc:
+        # Logged with the reason, answered without it: a caller probing for
+        # which part of the signature it got wrong learns nothing.
+        logger.warning("rejected unsigned call to %s: %s", request.url.path, exc)
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return body
+
+
+@router.post(TASK_WORKER_PATH)
+async def run_webhook_task(request: Request) -> dict[str, Any]:
+    """
+    Execute one webhook task. Called by Cloud Tasks, not by a provider.
+
+    This is the other half of the fix for in-process background work: the
+    handler enqueues and returns, and the work happens here, inside a request
+    that has a real CPU allocation rather than a throttled one.
+    """
+    from agent_autofill.webhooks.cloud_tasks_dispatcher import body_to_task
+
+    body = await _require_signed_request(request)
+    try:
+        task = body_to_task(body)
+    except Exception:
+        # A malformed body from a correctly signed caller is our bug. 400 so
+        # Cloud Tasks stops retrying it rather than looping forever.
+        logger.exception("signed task body could not be decoded")
+        raise HTTPException(status_code=400, detail="Bad task payload")
+
+    handler = get_task_handler()
+    if handler is None:
+        logger.error("no webhook task handler registered; task dropped %s",
+                     task.as_log_fields())
+        raise HTTPException(status_code=503, detail="No handler registered")
+
+    handler(task)
+    logger.info("webhook task executed %s", task.as_log_fields())
+    return {"status": "ok"}
+
+
 @router.post(RENEWAL_PATH)
 async def run_renewal(request: Request) -> dict[str, Any]:
     """
     Trigger the channel renewal cycle.
 
-    MUST be protected before deployment -- Cloud Scheduler with OIDC, or a
-    shared secret checked here. An open renewal endpoint lets an anonymous
-    caller churn every registered channel and burn the project's Drive quota.
-    Imported inside the function so the module does not carry the cron's
+    An open renewal endpoint lets an anonymous caller churn every registered
+    channel and burn the project's Drive quota, so it now requires the same
+    signature the task worker does. Cloud Scheduler can sign it with the shared
+    secret; there is no unauthenticated path.
+
+    The cron is imported inside the function so the module does not carry its
     import-time cadence assertion into every request path.
     """
+    await _require_signed_request(request)
+
     from agent_autofill.webhooks.channel_renewal_cron import run_renewal_cycle
 
     return run_renewal_cycle()

@@ -296,6 +296,33 @@ async def api_model_status():
 async def serve_workspace_page():
     return FileResponse("static/workspace.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
+
+@app.get("/company-profile")
+async def serve_company_profile_page():
+    """
+    The Agent Autofill questionnaire wizard.
+
+    The page has existed since the wizard was built and had no route, so it
+    404'd — and because Hosting's catch-all rewrite serves index.html for an
+    unknown path (CLAUDE.md trap 1), it did so as an HTTP 200 showing the wrong
+    page rather than an obvious error.
+    """
+    return FileResponse("static/company_profile.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+# The wizard's backend. Mounted here rather than defined in app.py so the
+# questionnaire stays self-contained; without this every /api/questionnaire/*
+# call the page makes returns 404.
+try:
+    from agent_autofill.questionnaire_api import router as questionnaire_router
+
+    app.include_router(questionnaire_router)
+except Exception:
+    # Same reasoning as tool_dispatch's lazy imports: a partially built
+    # agent_autofill package must not stop the rest of the app from serving.
+    logger.exception("Agent Autofill questionnaire router unavailable")
+
 class QuotationRequest(BaseModel):
     supplier_name: str
     tender_title: str
