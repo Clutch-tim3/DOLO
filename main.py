@@ -45,14 +45,17 @@ ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 #     firebase functions:secrets:set AUTOFILL_STAMP_SECRET --data-file <path>
 AUTOFILL_STAMP_SECRET = "AUTOFILL_STAMP_SECRET"
 
-# Cloud SQL connection string. Application state lives here in production;
-# without it agent/db.py falls back to SQLite on /tmp, which is per-instance and
-# ephemeral — a cold start silently discards every profile, vault document,
-# review and quote. Contains the password, so Secret Manager, not .env.
+# The Cloud SQL database password. Application state lives on Cloud SQL in
+# production; without it agent/db.py falls back to SQLite on /tmp, which is
+# per-instance and ephemeral — a cold start silently discards every profile,
+# vault document, review and quote.
 #
-# For Cloud Functions gen2 with the instance attached, the socket form is:
-#   postgresql://USER:PASS@/DBNAME?host=/cloudsql/PROJECT:REGION:INSTANCE
-DATABASE_URL = "DATABASE_URL"
+# The instance name, database and user are plain configuration and are set as
+# ordinary env vars (CLOUD_SQL_INSTANCE / _DB / _USER); only the password is a
+# secret. With CLOUD_SQL_IAM_AUTH=true there is no password at all and this
+# binding is unused — the runtime service account authenticates itself, which
+# is the better arrangement where it is set up.
+CLOUD_SQL_PASSWORD = "CLOUD_SQL_PASSWORD"
 
 # Signs the Cloud Tasks callback that runs deferred webhook work, so the public
 # worker endpoint cannot be driven by anyone else.
@@ -103,7 +106,7 @@ def _get_bridge():
     memory=1024,
     max_instances=20,
     timeout_sec=300,
-    secrets=[ANTHROPIC_API_KEY, AUTOFILL_STAMP_SECRET, DATABASE_URL,
+    secrets=[ANTHROPIC_API_KEY, AUTOFILL_STAMP_SECRET, CLOUD_SQL_PASSWORD,
              WEBHOOK_TASK_SECRET],
 )
 def api(req: https_fn.Request) -> https_fn.Response:
@@ -128,7 +131,8 @@ def api(req: https_fn.Request) -> https_fn.Response:
         # quietly falls back to SQLite on /tmp, and users lose everything on the
         # next cold start while the site looks healthy. It has to be visible
         # from outside or nobody finds out until data is already gone.
-        durable = bool((os.environ.get("DATABASE_URL") or "").strip())
+        durable = bool((os.environ.get("CLOUD_SQL_INSTANCE") or "").strip()
+                       or (os.environ.get("DATABASE_URL") or "").strip())
         return https_fn.Response(
             f"ok api_key_configured={str(configured).lower()} "
             f"stamp_secret_configured={str(stamp_secret).lower()} "

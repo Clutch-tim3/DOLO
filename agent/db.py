@@ -39,18 +39,92 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import threading
 from typing import Any
 
-#: Postgres connection string. Absent means SQLite, which is the local default.
+#: Postgres connection string, for a directly reachable server — a local
+#: Postgres, or a host that is not Cloud SQL. Absent means SQLite.
 DATABASE_URL_ENV = "DATABASE_URL"
+
+#: Cloud SQL instance connection name, "project:region:instance". When set, the
+#: Cloud SQL Python Connector is used instead of a direct connection. That
+#: avoids attaching the instance to the Cloud Run service with
+#: `--add-cloudsql-instances`, which `firebase deploy` may not preserve when it
+#: rewrites the service config — a setting that silently disappears on a later
+#: deploy is worse than one that was never there.
+CLOUD_SQL_INSTANCE_ENV = "CLOUD_SQL_INSTANCE"
+CLOUD_SQL_DB_ENV = "CLOUD_SQL_DB"
+CLOUD_SQL_USER_ENV = "CLOUD_SQL_USER"
+CLOUD_SQL_PASSWORD_ENV = "CLOUD_SQL_PASSWORD"
+#: "true" to authenticate as the runtime service account instead of with a
+#: password. Preferred where it is set up: there is then no database password
+#: in Secret Manager, in an env var, or anywhere else to leak.
+CLOUD_SQL_IAM_AUTH_ENV = "CLOUD_SQL_IAM_AUTH"
 
 
 def database_url() -> str:
     return (os.environ.get(DATABASE_URL_ENV) or "").strip()
 
 
+def cloud_sql_instance() -> str:
+    return (os.environ.get(CLOUD_SQL_INSTANCE_ENV) or "").strip()
+
+
+def use_cloud_sql_connector() -> bool:
+    return bool(cloud_sql_instance())
+
+
+def iam_auth() -> bool:
+    return (os.environ.get(CLOUD_SQL_IAM_AUTH_ENV) or "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
 def is_postgres() -> bool:
-    return bool(database_url())
+    return bool(database_url()) or use_cloud_sql_connector()
+
+
+# --- the Cloud SQL connector ------------------------------------------------
+#
+# The Connector keeps background threads refreshing the instance's ephemeral
+# certificates. Building it at import time is the same mistake that hung this
+# function once already: the runtime imports the module in one process and
+# serves from forked workers, threads do not survive fork, and the inherited
+# object is dead. See the ASGI bridge comment in main.py. So it is built lazily
+# and keyed to the PID that will actually use it.
+_connector = None
+_connector_pid = None
+_connector_lock = threading.Lock()
+
+
+def _get_connector():
+    global _connector, _connector_pid
+    pid = os.getpid()
+    if _connector is None or _connector_pid != pid:
+        with _connector_lock:
+            if _connector is None or _connector_pid != pid:
+                from google.cloud.sql.connector import Connector
+
+                _connector = Connector()
+                _connector_pid = pid
+    return _connector
+
+
+def _connect_cloud_sql():
+    """
+    Open a connection through the Cloud SQL Python Connector.
+
+    Uses pg8000: it is pure Python, so the deploy needs no build toolchain, and
+    it is one of the drivers the connector actually supports — psycopg 3 is not.
+    """
+    kwargs = {
+        "db": (os.environ.get(CLOUD_SQL_DB_ENV) or "").strip(),
+        "user": (os.environ.get(CLOUD_SQL_USER_ENV) or "").strip(),
+    }
+    if iam_auth():
+        kwargs["enable_iam_auth"] = True
+    else:
+        kwargs["password"] = os.environ.get(CLOUD_SQL_PASSWORD_ENV) or ""
+    return _get_connector().connect(cloud_sql_instance(), "pg8000", **kwargs)
 
 
 # --- dialect translation ----------------------------------------------------
@@ -227,6 +301,28 @@ class Connection:
         return getattr(self._raw, name)
 
 
+def _connect_direct(url: str):
+    """
+    Connect to a Postgres reachable by host and port.
+
+    pg8000 takes keyword arguments rather than a URL, so the URL is parsed here
+    — keeping DATABASE_URL as the configuration format, which is what everything
+    else in this ecosystem expects.
+    """
+    from urllib.parse import unquote, urlparse
+
+    import pg8000.dbapi
+
+    parts = urlparse(url)
+    return pg8000.dbapi.connect(
+        user=unquote(parts.username or ""),
+        password=unquote(parts.password or ""),
+        host=parts.hostname or "localhost",
+        port=parts.port or 5432,
+        database=(parts.path or "/").lstrip("/"),
+    )
+
+
 def connect(sqlite_path=None) -> Connection:
     """
     Open a connection to application state.
@@ -235,10 +331,14 @@ def connect(sqlite_path=None) -> Connection:
     passing the path it already resolved through `agent/db_paths.py` and this
     quietly ignores it once `DATABASE_URL` is set.
     """
-    if is_postgres():
-        import psycopg
+    if use_cloud_sql_connector():
+        return Connection(_connect_cloud_sql(), postgres=True)
 
-        return Connection(psycopg.connect(database_url()), postgres=True)
+    if database_url():
+        # A directly reachable Postgres: local development against one, or a
+        # host that is not Cloud SQL. Same driver, so dialect behaviour is
+        # identical either way.
+        return Connection(_connect_direct(database_url()), postgres=True)
 
     raw = sqlite3.connect(str(sqlite_path))
     raw.row_factory = sqlite3.Row

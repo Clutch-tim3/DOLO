@@ -43,8 +43,13 @@ google-api-python-client>=2.100.0
 google-auth-oauthlib>=1.2.0
 dropbox>=11.36.2
 
-# Postgres driver for Cloud SQL. Application state (profiles, vault,
-# reviews, quotes, quotas) lives here in production; without DATABASE_URL
-# set, agent/db.py stays on SQLite and this is unused.
-# [binary] ships wheels, so the deploy needs no build toolchain.
-psycopg[binary]>=3.1
+# Cloud SQL access for application state (profiles, vault, reviews, quotes,
+# quotas). The connector authenticates and tunnels to the instance itself, so
+# the Cloud Run service needs no --add-cloudsql-instances attachment — a
+# setting `firebase deploy` may drop when it rewrites the service config.
+#
+# pg8000 rather than psycopg: it is pure Python (no build toolchain in the
+# deploy) and is one of the drivers the connector supports. psycopg 3 is not.
+# Neither is imported unless CLOUD_SQL_INSTANCE or DATABASE_URL is set.
+cloud-sql-python-connector>=1.9
+pg8000>=1.31

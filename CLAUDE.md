@@ -101,9 +101,26 @@ discarded every company profile, vault document, autofill review and quote. It
 demoed perfectly, which is what made it dangerous: the symptom is "the vault
 forgot my documents", not an outage.
 
-- **`/api/__health` reports `durable_state`.** A missing `DATABASE_URL` does
-  not fail anything — it falls back to SQLite and loses data later. Check it
-  after deploying.
+Connection is chosen in this order: `CLOUD_SQL_INSTANCE` set means the Cloud
+SQL Python Connector; otherwise `DATABASE_URL` means a directly reachable
+Postgres; otherwise SQLite. The connector is used rather than the
+`/cloudsql/...` unix socket because that needs `--add-cloudsql-instances` on
+the Cloud Run service, which `firebase deploy` may drop when it rewrites the
+config — a setting that silently disappears on a later deploy is worse than one
+that was never there.
+
+- **Only the password is a secret.** `CLOUD_SQL_INSTANCE`, `CLOUD_SQL_DB` and
+  `CLOUD_SQL_USER` are plain env vars. With `CLOUD_SQL_IAM_AUTH=true` there is
+  no password anywhere — the runtime service account authenticates itself.
+- **pg8000, not psycopg.** The connector supports pg8000 / psycopg2 / asyncpg;
+  psycopg 3 is not among them. pg8000 is also pure Python, so no build
+  toolchain in the deploy.
+- **The connector holds background refresh threads**, so it is built lazily and
+  keyed to the PID — the same guard as the ASGI bridge, for the same reason.
+  Inheriting one across a fork is what made every request 504 once already.
+- **`/api/__health` reports `durable_state`.** A missing configuration does not
+  fail anything — it falls back to SQLite and loses data later. Check it after
+  deploying.
 - Raw SQL is kept. `db.connect()` translates `?` placeholders, `AUTOINCREMENT`
   and `INSERT OR IGNORE`, and returns rows addressable by name or index. A
   module changes one line, not its queries — several of those WHERE clauses are

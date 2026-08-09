@@ -27,14 +27,16 @@ from agent import db
 
 @pytest.fixture
 def pg(monkeypatch):
-    """Pretend DATABASE_URL is set, without connecting to anything."""
-    monkeypatch.setenv(db.DATABASE_URL_ENV, "postgresql://u:p@h/dbname")
+    """Pretend a Postgres is configured, without connecting to anything."""
+    monkeypatch.delenv(db.CLOUD_SQL_INSTANCE_ENV, raising=False)
+    monkeypatch.setenv(db.DATABASE_URL_ENV, "postgresql://u:p@h:5432/dbname")
     assert db.is_postgres()
 
 
 @pytest.fixture
 def lite(monkeypatch):
     monkeypatch.delenv(db.DATABASE_URL_ENV, raising=False)
+    monkeypatch.delenv(db.CLOUD_SQL_INSTANCE_ENV, raising=False)
     assert not db.is_postgres()
 
 
@@ -209,13 +211,12 @@ def fake_pg(pg, monkeypatch):
     log = []
     connections = []
 
-    module = types.ModuleType("psycopg")
-    def _connect(url):
+    def _fake_direct(url):
         conn = _FakePgConnection(log)
         connections.append(conn)
         return conn
-    module.connect = _connect
-    monkeypatch.setitem(sys.modules, "psycopg", module)
+
+    monkeypatch.setattr(db, "_connect_direct", _fake_direct)
     return log, connections
 
 
@@ -259,3 +260,149 @@ def test_table_columns_uses_information_schema_on_postgres(fake_pg):
     assert "information_schema.columns" in sql
     assert params == ("autofill_review",)
     assert "PRAGMA" not in sql.upper()
+
+
+# --- the three connection modes --------------------------------------------
+
+
+def test_cloud_sql_instance_selects_the_connector(monkeypatch):
+    monkeypatch.setenv(db.CLOUD_SQL_INSTANCE_ENV, "cairoai:us-central1:cairoai-db")
+    assert db.use_cloud_sql_connector() and db.is_postgres()
+
+
+def test_cloud_sql_wins_over_database_url(monkeypatch):
+    """
+    Both set is a misconfiguration, not a fallback. The connector is chosen
+    rather than silently preferring whichever branch happened to come first.
+    """
+    monkeypatch.setenv(db.CLOUD_SQL_INSTANCE_ENV, "p:r:i")
+    monkeypatch.setenv(db.DATABASE_URL_ENV, "postgresql://u:p@h/db")
+    assert db.use_cloud_sql_connector()
+
+
+def test_neither_set_means_sqlite(lite):
+    assert not db.is_postgres() and not db.use_cloud_sql_connector()
+
+
+def test_connector_is_asked_for_pg8000_with_a_password(monkeypatch):
+    """psycopg 3 is not a driver the connector supports; pg8000 is."""
+    monkeypatch.setenv(db.CLOUD_SQL_INSTANCE_ENV, "cairoai:us-central1:cairoai-db")
+    monkeypatch.setenv(db.CLOUD_SQL_DB_ENV, "cairoai")
+    monkeypatch.setenv(db.CLOUD_SQL_USER_ENV, "cairoai_app")
+    monkeypatch.setenv(db.CLOUD_SQL_PASSWORD_ENV, "pw")
+    monkeypatch.delenv(db.CLOUD_SQL_IAM_AUTH_ENV, raising=False)
+
+    seen = {}
+
+    class _FakeConnector:
+        def connect(self, instance, driver, **kwargs):
+            seen["instance"] = instance
+            seen["driver"] = driver
+            seen["kwargs"] = kwargs
+            return _FakePgConnection([])
+
+    monkeypatch.setattr(db, "_get_connector", lambda: _FakeConnector())
+    db._connect_cloud_sql()
+
+    assert seen["instance"] == "cairoai:us-central1:cairoai-db"
+    assert seen["driver"] == "pg8000"
+    assert seen["kwargs"]["user"] == "cairoai_app"
+    assert seen["kwargs"]["password"] == "pw"
+    assert "enable_iam_auth" not in seen["kwargs"]
+
+
+def test_iam_auth_sends_no_password_at_all(monkeypatch):
+    """
+    The point of IAM auth is that no database password exists to leak. If a
+    password were still sent alongside it, that property would be lost.
+    """
+    monkeypatch.setenv(db.CLOUD_SQL_INSTANCE_ENV, "p:r:i")
+    monkeypatch.setenv(db.CLOUD_SQL_DB_ENV, "cairoai")
+    monkeypatch.setenv(db.CLOUD_SQL_USER_ENV, "sa@project.iam")
+    monkeypatch.setenv(db.CLOUD_SQL_PASSWORD_ENV, "should-be-ignored")
+    monkeypatch.setenv(db.CLOUD_SQL_IAM_AUTH_ENV, "true")
+
+    seen = {}
+
+    class _FakeConnector:
+        def connect(self, instance, driver, **kwargs):
+            seen.update(kwargs)
+            return _FakePgConnection([])
+
+    monkeypatch.setattr(db, "_get_connector", lambda: _FakeConnector())
+    db._connect_cloud_sql()
+
+    assert seen["enable_iam_auth"] is True
+    assert "password" not in seen
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("true", True), ("TRUE", True), ("1", True), ("yes", True), ("on", True),
+    ("false", False), ("0", False), ("", False), ("no", False),
+])
+def test_iam_auth_flag_parsing(monkeypatch, value, expected):
+    monkeypatch.setenv(db.CLOUD_SQL_IAM_AUTH_ENV, value)
+    assert db.iam_auth() is expected
+
+
+def test_connector_is_built_lazily_and_keyed_to_the_pid(monkeypatch):
+    """
+    The connector holds background threads refreshing the instance's ephemeral
+    certificates, and threads do not survive fork. An object built at import
+    time and inherited by a forked worker is dead — that is precisely what made
+    every deployed request 504 once already (see the ASGI bridge in main.py).
+    So it is built lazily, and rebuilt when the PID it was built for changes.
+    """
+    import types
+
+    built = []
+
+    class _FakeConnector:
+        def __init__(self):
+            built.append("built")
+
+    module = types.ModuleType("google.cloud.sql.connector")
+    module.Connector = _FakeConnector
+    for name in ("google", "google.cloud", "google.cloud.sql"):
+        monkeypatch.setitem(sys.modules, name,
+                            sys.modules.get(name) or types.ModuleType(name))
+    monkeypatch.setitem(sys.modules, "google.cloud.sql.connector", module)
+
+    monkeypatch.setattr(db, "_connector", None)
+    monkeypatch.setattr(db, "_connector_pid", None)
+
+    first = db._get_connector()
+    assert len(built) == 1, "not built on first use"
+
+    # Same process: reused, not rebuilt.
+    assert db._get_connector() is first
+    assert len(built) == 1, "rebuilt unnecessarily within one process"
+
+    # Simulate the fork: the recorded PID no longer matches this process.
+    monkeypatch.setattr(db, "_connector_pid", db._connector_pid + 1)
+    second = db._get_connector()
+    assert len(built) == 2, "stale connector inherited across a fork"
+    assert second is not first
+
+
+def test_direct_url_is_parsed_into_pg8000_arguments(monkeypatch):
+    seen = {}
+
+    class _FakeDbapi:
+        @staticmethod
+        def connect(**kwargs):
+            seen.update(kwargs)
+            return _FakePgConnection([])
+
+    import types
+    module = types.ModuleType("pg8000")
+    module.dbapi = _FakeDbapi
+    monkeypatch.setitem(sys.modules, "pg8000", module)
+    monkeypatch.setitem(sys.modules, "pg8000.dbapi", _FakeDbapi)
+
+    db._connect_direct("postgresql://someuser:s%40cret@dbhost:6543/cairoai")
+    assert seen["user"] == "someuser"
+    assert seen["password"] == "s@cret"   # percent-decoded
+    assert seen["host"] == "dbhost"
+    assert seen["port"] == 6543
+    assert seen["database"] == "cairoai"

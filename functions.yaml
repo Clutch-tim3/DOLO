@@ -17,7 +17,7 @@ endpoints:
     secretEnvironmentVariables:
     - key: ANTHROPIC_API_KEY
     - key: AUTOFILL_STAMP_SECRET
-    - key: DATABASE_URL
+    - key: CLOUD_SQL_PASSWORD
     - key: WEBHOOK_TASK_SECRET
     serviceAccountEmail: null
     timeoutSeconds: 300
