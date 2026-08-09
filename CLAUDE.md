@@ -64,6 +64,13 @@ which Firebase never deploys and `app.py` loads explicitly.
 Use `--data-file`; piping to `--data-file -` fails on Windows PowerShell with
 "Secret Payload cannot be empty".
 
+**Never name a secret in `main.py` before it exists.** The CLI validates every
+binding before uploading and fails the WHOLE deploy — including parts unrelated
+to that secret — with `Secret [...] not found or has no versions`. Create the
+secret first, then add the binding, then deploy. The code behind each secret
+already fails closed without it, so a missing binding costs one feature; a
+premature binding costs every deploy.
+
 ### 4. style.css has a parallel #tab-agent stylesheet
 
 `static/style.css` defines ~60 rules scoped `#tab-agent .foo`. A bare
