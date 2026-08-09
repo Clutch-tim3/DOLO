@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from agent import db
 from agent.db_paths import AGENT_MEMORY_DB as DB_PATH
 
 # Every column a write may target. The first block is the original set; the
@@ -180,8 +181,10 @@ def _migrate_company_profile(conn) -> list:
     the column and back-fills NULL. Existing rows are never rewritten, so
     nothing that was stored before can be lost here.
     """
-    cur = conn.cursor()
-    existing = {row[1] for row in cur.execute("PRAGMA table_info(company_profile)")}
+    # PRAGMA is SQLite-only; table_columns answers the same question on either
+    # backend. The additive migration below depends on getting an empty set for
+    # a table that does not exist yet, which both paths preserve.
+    existing = db.table_columns(conn, "company_profile")
     if not existing:
         # Table does not exist yet; schema.sql will create it complete.
         return []
@@ -189,14 +192,14 @@ def _migrate_company_profile(conn) -> list:
     added = []
     for column, coltype in _PROFILE_MIGRATIONS:
         if column not in existing:
-            cur.execute(f"ALTER TABLE company_profile ADD COLUMN {column} {coltype}")
+            conn.execute(f"ALTER TABLE company_profile ADD COLUMN {column} {coltype}")
             added.append(column)
     return added
 
 
 def init_db():
     schema_path = Path(__file__).parent / "schema.sql"
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         with open(schema_path, "r") as f:
             conn.executescript(f.read())
         # schema.sql's CREATE TABLE IF NOT EXISTS is a no-op against a database
@@ -227,7 +230,7 @@ def get_company_profile(company_id: str) -> dict:
 
     Never substitute values remembered from conversation for this call.
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("SELECT * FROM company_profile WHERE company_id = ?", (company_id,))
@@ -350,7 +353,7 @@ def update_company_profile(company_id: str, fields: dict, confirmed: bool = Fals
 
     changed_fields = [c["field"] for c in preview["changes"]]
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         cur = conn.cursor()
         cur.execute("SELECT company_id FROM company_profile WHERE company_id = ?", (company_id,))
         if not cur.fetchone():
@@ -385,7 +388,7 @@ def delete_company_profile(company_id: str) -> dict:
     Remove a profile row entirely. Exists for test-fixture teardown so tests do
     not leave rows behind in a database that holds real company data.
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM company_profile WHERE company_id = ?", (company_id,))
         deleted = cur.rowcount
@@ -394,7 +397,7 @@ def delete_company_profile(company_id: str) -> dict:
 
 
 def get_company_documents(company_id: str) -> list:
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute("SELECT * FROM company_documents WHERE company_id = ?", (company_id,))
@@ -411,7 +414,7 @@ def get_company_documents(company_id: str) -> list:
 
 def add_company_document(company_id: str, document_type: str, file_path: str, parsed_fields: dict = None, expiry_date: str = None) -> str:
     doc_id = str(uuid.uuid4())
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         cur = conn.cursor()
         parsed_json = json.dumps(parsed_fields) if parsed_fields else None
         cur.execute(
@@ -425,7 +428,7 @@ def add_company_document(company_id: str, document_type: str, file_path: str, pa
 
 def log_conversation(company_id: str, user_message: str, agent_response: str, tool_calls_made: list = None):
     log_id = str(uuid.uuid4())
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         cur = conn.cursor()
         tools_json = json.dumps(tool_calls_made) if tool_calls_made else None
         cur.execute(
@@ -437,7 +440,7 @@ def log_conversation(company_id: str, user_message: str, agent_response: str, to
 
 
 def search_conversation_history(company_id: str, query: str = None, limit: int = 5) -> list:
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         if query:

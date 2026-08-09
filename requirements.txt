@@ -42,3 +42,9 @@ cryptography>=42.0.0
 google-api-python-client>=2.100.0
 google-auth-oauthlib>=1.2.0
 dropbox>=11.36.2
+
+# Postgres driver for Cloud SQL. Application state (profiles, vault,
+# reviews, quotes, quotas) lives here in production; without DATABASE_URL
+# set, agent/db.py stays on SQLite and this is unused.
+# [binary] ships wheels, so the deploy needs no build toolchain.
+psycopg[binary]>=3.1

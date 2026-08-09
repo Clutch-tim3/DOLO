@@ -5,10 +5,11 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from agent import db
 from agent.db_paths import AGENT_MEMORY_DB as DB_PATH
 
 def init_audit_db():
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS quote_audit_log (
                 quote_id TEXT PRIMARY KEY,
@@ -26,7 +27,7 @@ init_audit_db()
 def log_draft_quote(company_id: str, tender_id: str, priced_items: list) -> str:
     quote_id = str(uuid.uuid4())
     items_json = json.dumps(priced_items)
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT INTO quote_audit_log (quote_id, company_id, tender_id, line_items, status) VALUES (?, ?, ?, ?, ?)",
             (quote_id, company_id, tender_id, items_json, "DRAFT")
@@ -45,7 +46,7 @@ def get_quote_record(quote_id: str) -> dict | None:
     attacker-influenceable (finalize_quotation is in TOOL_REGISTRY); what was
     written at draft time is not.
     """
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         row = conn.execute(
             "SELECT quote_id, company_id, tender_id, line_items, status, finalized_at"
             " FROM quote_audit_log WHERE quote_id = ?",
@@ -124,7 +125,7 @@ def resolve_quote_item(quote_id: str, company_id: str, item_index: int,
     item["resolved_by"] = resolved_by
     item["resolved_at"] = datetime.now().isoformat()
 
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.execute(
             "UPDATE quote_audit_log SET line_items = ?"
             " WHERE quote_id = ? AND company_id = ? AND status = 'DRAFT'",
@@ -141,7 +142,7 @@ def finalize_quote(quote_id: str, confirmed_items: list, company_id: str = None)
     to another company, matches no row and nothing is written.
     """
     items_json = json.dumps(confirmed_items)
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         if company_id is None:
             cur = conn.execute(
                 "UPDATE quote_audit_log SET line_items = ?, finalized_at = ?,"

@@ -50,6 +50,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from agent import db
 from agent.db_paths import AGENT_MEMORY_DB as DB_PATH
 from agent.file_paths import generated_dir, public_url
 from agent_autofill.integration.export_metadata import (
@@ -85,10 +86,15 @@ class ReviewGateError(Exception):
     """Raised for input the gate refuses outright rather than answering."""
 
 
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+def _connect():
+    """
+    Application state, on whichever backend is configured.
+
+    Was sqlite3 directly. agent/db.py keeps the raw SQL — including the
+    conditional UPDATE that carries the export gate — working unchanged against
+    Cloud SQL, where the data actually survives a cold start.
+    """
+    return db.connect(DB_PATH)
 
 
 def init_review_db() -> None:
@@ -130,16 +136,14 @@ def init_review_db() -> None:
         # signed" and therefore blocks a reviewed export until each field is
         # acknowledged again through the proper path. That is the intended
         # outcome for acknowledgements made before they were tamper-evident.
-        existing = {r[1] for r in conn.execute(
-            "PRAGMA table_info(autofill_review_item)").fetchall()}
+        existing = db.table_columns(conn, "autofill_review_item")
         if "ack_mac" not in existing:
             conn.execute("ALTER TABLE autofill_review_item ADD COLUMN ack_mac TEXT")
 
         # The digest of the exported copy as it stood before stamping. The
         # stamp rewrites the file, so this cannot be recovered from the export
         # itself and has to be kept beside the record for verification.
-        review_cols = {r[1] for r in conn.execute(
-            "PRAGMA table_info(autofill_review)").fetchall()}
+        review_cols = db.table_columns(conn, "autofill_review")
         if "export_sha256" not in review_cols:
             conn.execute("ALTER TABLE autofill_review ADD COLUMN export_sha256 TEXT")
         # Digest of the FINISHED file plus a MAC over it. Without these the

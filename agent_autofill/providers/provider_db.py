@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
+
+from agent import db
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -195,7 +197,7 @@ CREATE INDEX IF NOT EXISTS idx_replay_seen_at
 
 def connect() -> sqlite3.Connection:
     """Open the provider database with the schema guaranteed to exist."""
-    conn = sqlite3.connect(str(provider_db_path()))
+    conn = db.connect(provider_db_path())
     conn.row_factory = sqlite3.Row
     ensure_schema(conn)
     return conn

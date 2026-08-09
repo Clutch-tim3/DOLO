@@ -45,6 +45,19 @@ ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 #     firebase functions:secrets:set AUTOFILL_STAMP_SECRET --data-file <path>
 AUTOFILL_STAMP_SECRET = "AUTOFILL_STAMP_SECRET"
 
+# Cloud SQL connection string. Application state lives here in production;
+# without it agent/db.py falls back to SQLite on /tmp, which is per-instance and
+# ephemeral — a cold start silently discards every profile, vault document,
+# review and quote. Contains the password, so Secret Manager, not .env.
+#
+# For Cloud Functions gen2 with the instance attached, the socket form is:
+#   postgresql://USER:PASS@/DBNAME?host=/cloudsql/PROJECT:REGION:INSTANCE
+DATABASE_URL = "DATABASE_URL"
+
+# Signs the Cloud Tasks callback that runs deferred webhook work, so the public
+# worker endpoint cannot be driven by anyone else.
+WEBHOOK_TASK_SECRET = "WEBHOOK_TASK_SECRET"
+
 # Import the FastAPI app
 from app import app as fastapi_app
 
@@ -90,7 +103,8 @@ def _get_bridge():
     memory=1024,
     max_instances=20,
     timeout_sec=300,
-    secrets=[ANTHROPIC_API_KEY, AUTOFILL_STAMP_SECRET],
+    secrets=[ANTHROPIC_API_KEY, AUTOFILL_STAMP_SECRET, DATABASE_URL,
+             WEBHOOK_TASK_SECRET],
 )
 def api(req: https_fn.Request) -> https_fn.Response:
     # Answered without touching the bridge, so it stays reachable even if the
@@ -110,9 +124,15 @@ def api(req: https_fn.Request) -> https_fn.Response:
         # succeed while a secret silently fails to bind, and the only way to
         # know is to ask the running instance. Boolean only — same rule.
         stamp_secret = bool((os.environ.get("AUTOFILL_STAMP_SECRET") or "").strip())
+        # Absent DATABASE_URL is the dangerous one: nothing fails, the app
+        # quietly falls back to SQLite on /tmp, and users lose everything on the
+        # next cold start while the site looks healthy. It has to be visible
+        # from outside or nobody finds out until data is already gone.
+        durable = bool((os.environ.get("DATABASE_URL") or "").strip())
         return https_fn.Response(
             f"ok api_key_configured={str(configured).lower()} "
-            f"stamp_secret_configured={str(stamp_secret).lower()}",
+            f"stamp_secret_configured={str(stamp_secret).lower()} "
+            f"durable_state={str(durable).lower()}",
             # The stamp secret does not gate the whole API — chat, prediction
             # and the vault all work without it — so its absence is reported
             # rather than turned into a 503 for every caller.

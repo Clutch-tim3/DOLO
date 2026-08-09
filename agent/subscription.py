@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any
 
+from agent import db
 from agent.db_paths import AGENT_MEMORY_DB as DB_PATH
 
 TIER_CONFIG = {
@@ -61,7 +62,7 @@ MOCK_CLIENT_REGISTRY = {
 }
 
 def init_subscription_db():
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS usage_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,7 +90,7 @@ def get_utc_month_str() -> str:
 
 def get_quotes_used_today(company_id: str) -> int:
     today = get_utc_today_str()
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT COUNT(*) FROM usage_logs WHERE company_id = ? AND action_type = 'generate_quote' AND timestamp LIKE ?",
@@ -99,7 +100,7 @@ def get_quotes_used_today(company_id: str) -> int:
 
 def log_quote_generation(company_id: str):
     timestamp = datetime.now(timezone.utc).isoformat()
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT INTO usage_logs (company_id, action_type, timestamp) VALUES (?, ?, ?)",
             (company_id, "generate_quote", timestamp)
@@ -139,7 +140,7 @@ def check_quote_quota(company_id: str) -> dict:
 
 def get_autofills_used_today(company_id: str) -> int:
     today = get_utc_today_str()
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         cur = conn.cursor()
         cur.execute(
             "SELECT COUNT(*) FROM usage_logs WHERE company_id = ? AND action_type = ? AND timestamp LIKE ?",
@@ -156,7 +157,7 @@ def log_autofill_run(company_id: str):
     refused, skipped by the classifier, or failed must not appear here.
     """
     timestamp = datetime.now(timezone.utc).isoformat()
-    with sqlite3.connect(DB_PATH) as conn:
+    with db.connect(DB_PATH) as conn:
         conn.execute(
             "INSERT INTO usage_logs (company_id, action_type, timestamp) VALUES (?, ?, ?)",
             (company_id, AUTOFILL_ACTION, timestamp)

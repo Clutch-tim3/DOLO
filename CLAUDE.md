@@ -89,7 +89,41 @@ when `K_SERVICE` is set. Anything that writes a file must go through
 `/tmp` is per-instance and ephemeral — fine for "generate it and click the
 link", not storage.
 
-### 7. Local fpdf is not the deployed fpdf
+### 7. State is in Postgres in production, SQLite locally
+
+`agent/db.py` is the only place a connection to application state is opened.
+With `DATABASE_URL` set it talks to Cloud SQL Postgres; without it, SQLite —
+which is what local development uses, unchanged.
+
+This exists because `db_paths` resolves SQLite to `/tmp` on Cloud Functions,
+and `/tmp` is per-instance and ephemeral. Before this, a cold start silently
+discarded every company profile, vault document, autofill review and quote. It
+demoed perfectly, which is what made it dangerous: the symptom is "the vault
+forgot my documents", not an outage.
+
+- **`/api/__health` reports `durable_state`.** A missing `DATABASE_URL` does
+  not fail anything — it falls back to SQLite and loses data later. Check it
+  after deploying.
+- Raw SQL is kept. `db.connect()` translates `?` placeholders, `AUTOINCREMENT`
+  and `INSERT OR IGNORE`, and returns rows addressable by name or index. A
+  module changes one line, not its queries — several of those WHERE clauses are
+  security gates and rewriting them wholesale is how you break one subtly.
+- **`PRAGMA table_info` does not exist on Postgres.** The additive migrations
+  use `db.table_columns(conn, table)`.
+- `INSERT OR REPLACE` is deliberately NOT translated. Its conflict target
+  cannot be guessed, so it fails loudly on Postgres rather than running and
+  meaning something else.
+- Unlike `sqlite3`, this wrapper's `with` block **closes** the connection.
+  Leaking them is how a Cloud SQL instance's connection limit is exhausted.
+- `procurement.db` stays SQLite — bundled ML reference data. `cost_tracking`
+  and `rate_limiter` still write there, so those counters remain ephemeral;
+  they reset in the user's favour, which is why they were left.
+
+**The Postgres path has never run against a real server.** It is covered by
+translation tests and a fake driver. Treat it as unverified until it has served
+a request on Cloud SQL.
+
+### 8. Local fpdf is not the deployed fpdf
 
 `requirements.txt` installs **fpdf2**; this machine has the older **fpdf 1.7**.
 They differ in where `multi_cell` leaves the cursor, which produced a layout
