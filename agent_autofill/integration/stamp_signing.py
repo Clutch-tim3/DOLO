@@ -152,6 +152,25 @@ def stamp_payload(company_id: str, review_id: str, source_sha256: str,
     }
 
 
+def values_payload(company_id: str, review_id: str, pairs, confirmed_at: str) -> dict:
+    """
+    The bulk confirmation of auto-filled values.
+
+    `pairs` is every (item_key, label, value) the person was shown, so the MAC
+    covers *what they saw*, not merely that they clicked. Changing a value
+    afterwards — in the document or the record — leaves a confirmation that no
+    longer matches the thing it confirmed.
+    """
+    return {
+        "v": 1,
+        "kind": "values",
+        "company_id": company_id or "",
+        "review_id": review_id or "",
+        "pairs": sorted([str(k), str(l), str(v)] for k, l, v in (pairs or [])),
+        "confirmed_at": confirmed_at or "",
+    }
+
+
 def export_payload(company_id: str, review_id: str, final_sha256: str) -> dict:
     """
     Binds an export to the bytes of the finished file.

@@ -83,6 +83,20 @@ def _ack_all(review_id):
             COMPANY, review_id, item["item_key"],
             f"I will complete {item['label']} by hand before submitting.",
         )
+    _confirm_values(review_id)
+
+def _confirm_values(review_id, company=None):
+    """
+    The other half of a human review: confirming the values that WERE filled.
+    Acknowledging the flags alone no longer produces a reviewed export — a form
+    with nothing flagged used to export as REVIEWED with no human involvement
+    at all.
+    """
+    co = company or COMPANY
+    shown = rg.filled_values(co, review_id)
+    return rg.confirm_filled_values(
+        co, review_id, [v["item_key"] for v in shown["values"]])
+
 
 
 # --- the refusal -----------------------------------------------------------

@@ -81,6 +81,20 @@ def _ack_all(review_id):
             COMPANY, review_id, item["item_key"],
             f"I will complete {item['label']} by hand before submitting.",
         )
+    _confirm_values(review_id)
+
+def _confirm_values(review_id, company=None):
+    """
+    The other half of a human review: confirming the values that WERE filled.
+    Acknowledging the flags alone no longer produces a reviewed export — a form
+    with nothing flagged used to export as REVIEWED with no human involvement
+    at all.
+    """
+    co = company or COMPANY
+    shown = rg.filled_values(co, review_id)
+    return rg.confirm_filled_values(
+        co, review_id, [v["item_key"] for v in shown["values"]])
+
 
 
 # --- bypass 1: forging the acknowledgement rows ----------------------------
@@ -398,3 +412,126 @@ def test_a_byte_identical_genuine_export_still_verifies(review, tmp_path):
     copied = tmp_path / "copy.docx"
     shutil.copy2(out["export_path"], copied)
     assert rg.verify_export(copied, COMPANY, review_id)["mac_verified"] is True
+
+
+# --- check 8: the question the whole build turns on ------------------------
+#
+# "Could this system ever mark a document submission-ready without a human
+# confirming every auto-filled field?"
+#
+# It could, and it needed no attack at all. The gate required acknowledgement
+# only of the fields it could NOT fill, so the values it DID write were never
+# confirmed by anyone. On a form where everything filled cleanly, a REVIEWED
+# export took zero human involvement.
+
+
+def _all_safe_form(path):
+    """A form on which every field is safely fillable — no signature, no price,
+    no declaration, no narrative. A supplier detail sheet; entirely plausible."""
+    import docx
+
+    d = docx.Document()
+    table = d.add_table(rows=4, cols=2)
+    for i, label in enumerate(["NAME OF BIDDER", "COMPANY REGISTRATION NUMBER",
+                               "CSD NUMBER", "VAT REGISTRATION NUMBER"]):
+        table.rows[i].cells[0].text = label
+        table.rows[i].cells[1].text = ""
+    d.save(str(path))
+    return path
+
+
+@pytest.fixture
+def zero_flag_review(tmp_path):
+    src = _all_safe_form(tmp_path / "supplier_details.docx")
+    result = fill_docx(src, tmp_path / "zf_draft.docx", PROFILE, match_label)
+    assert result.filled and not result.skipped, (
+        "this fixture only proves anything if nothing is flagged")
+    opened = rg.open_review(COMPANY, result, company_name=PROFILE["company_name"])
+    yield opened["review_id"], result
+    rg.delete_review(COMPANY, opened["review_id"])
+
+
+def test_a_form_with_no_flags_cannot_export_reviewed_without_a_human(zero_flag_review):
+    """THE finding. Nothing flagged used to mean nothing to confirm."""
+    review_id, result = zero_flag_review
+    out = rg.export_reviewed(COMPANY, review_id)
+    assert out["status"] == "error", (
+        "BLOCKING: a REVIEWED export was produced with zero human involvement")
+    assert len(out["unconfirmed_values"]) == len(result.filled)
+    assert _stored_status(review_id) == "DRAFT"
+
+
+def test_the_same_form_exports_once_the_values_are_confirmed(zero_flag_review):
+    review_id, result = zero_flag_review
+    shown = rg.filled_values(COMPANY, review_id)
+    assert shown["count"] == len(result.filled)
+    # Every value is available to show the user, with its label.
+    assert all(v["label"] and v["value"] for v in shown["values"])
+
+    rg.confirm_filled_values(
+        COMPANY, review_id, [v["item_key"] for v in shown["values"]])
+    out = rg.export_reviewed(COMPANY, review_id)
+    assert out["status"] == "success"
+    assert rg.verify_export(out["export_path"], COMPANY, review_id)["mac_verified"]
+
+
+def test_a_partial_confirmation_is_refused_not_intersected(zero_flag_review):
+    """Confirming some of what you were shown is not confirming it."""
+    review_id, _ = zero_flag_review
+    keys = [v["item_key"] for v in rg.filled_values(COMPANY, review_id)["values"]]
+    out = rg.confirm_filled_values(COMPANY, review_id, keys[:-1])
+    assert out["status"] == "error"
+    assert out["missing"] == [keys[-1]]
+    assert rg.export_reviewed(COMPANY, review_id)["status"] == "error"
+
+
+def test_confirming_a_key_that_is_not_in_the_document_is_refused(zero_flag_review):
+    review_id, _ = zero_flag_review
+    keys = [v["item_key"] for v in rg.filled_values(COMPANY, review_id)["values"]]
+    out = rg.confirm_filled_values(COMPANY, review_id, keys + ["V99"])
+    assert out["status"] == "error"
+    assert out["unknown"] == ["V99"]
+
+
+def test_editing_a_value_after_confirmation_invalidates_it(zero_flag_review):
+    """The confirmation covers what the person saw, not merely that they clicked."""
+    review_id, _ = zero_flag_review
+    keys = [v["item_key"] for v in rg.filled_values(COMPANY, review_id)["values"]]
+    rg.confirm_filled_values(COMPANY, review_id, keys)
+    assert not rg._values_unconfirmed(COMPANY, review_id)
+
+    with sqlite3.connect(str(AGENT_MEMORY_DB)) as conn:
+        conn.execute(
+            "UPDATE autofill_review_fill SET value = ? WHERE review_id = ?"
+            " AND item_key = ?", ("TAMPERED (Pty) Ltd", review_id, keys[0]))
+    assert rg._values_unconfirmed(COMPANY, review_id)
+    assert rg.export_reviewed(COMPANY, review_id)["status"] == "error"
+
+
+def test_the_stamp_no_longer_claims_a_review_that_did_not_happen(zero_flag_review):
+    """
+    The old wording said "All 0 flagged field(s) were acknowledged by a person"
+    on a document nobody had looked at.
+    """
+    review_id, result = zero_flag_review
+    keys = [v["item_key"] for v in rg.filled_values(COMPANY, review_id)["values"]]
+    rg.confirm_filled_values(COMPANY, review_id, keys)
+    out = rg.export_reviewed(COMPANY, review_id)
+
+    state = em.read_review_state(out["export_path"])
+    assert "All 0 flagged" not in state["comments"]
+    assert f"{len(result.filled)} pre-filled value(s) confirmed" in state["comments"]
+
+
+def test_every_new_tool_is_reachable_by_the_model():
+    """
+    The quotation gate shipped as a dead end because nothing could reach the
+    resolve step. Not repeating that.
+    """
+    from agent.tool_dispatch import TOOL_REGISTRY
+    from agent_autofill.integration.autofill_tools import autofill_tools
+
+    names = {t["name"] for t in autofill_tools}
+    for tool in ("autofill_show_filled_values", "autofill_confirm_filled_values"):
+        assert tool in names, f"{tool} has no schema"
+        assert tool in TOOL_REGISTRY, f"{tool} is not dispatchable"

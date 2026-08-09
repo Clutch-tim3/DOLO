@@ -172,6 +172,19 @@ def _autofill_review_status(company_id: str, review_id: str):
     return _guard(get_review, company_id, review_id)
 
 
+def _autofill_show_filled_values(company_id: str, review_id: str):
+    from agent_autofill.integration.review_gate import filled_values
+
+    return filled_values(company_id, review_id)
+
+
+def _autofill_confirm_filled_values(company_id: str, review_id: str,
+                                    confirmed_keys: list = None):
+    from agent_autofill.integration.review_gate import confirm_filled_values
+
+    return confirm_filled_values(company_id, review_id, confirmed_keys)
+
+
 def _autofill_acknowledge_field(company_id: str, review_id: str, item_key: str,
                                 note: str = ""):
     return _guard(acknowledge_field, company_id, review_id, item_key, note)
@@ -195,6 +208,8 @@ def _autofill_export_document(company_id: str, review_id: str,
 AUTOFILL_TOOL_HANDLERS = {
     "autofill_prepare_tender": _autofill_prepare_tender,
     "autofill_review_status": _autofill_review_status,
+    "autofill_show_filled_values": _autofill_show_filled_values,
+    "autofill_confirm_filled_values": _autofill_confirm_filled_values,
     "autofill_acknowledge_field": _autofill_acknowledge_field,
     "autofill_export_document": _autofill_export_document,
 }
@@ -257,12 +272,52 @@ autofill_tools = [
         },
     },
     {
+        "name": "autofill_show_filled_values",
+        "description": (
+            "List every value CairoAI pre-filled into the document, with its "
+            "label. Show ALL of these to the user verbatim before confirming "
+            "them — the confirmation records what they were shown."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_id": {"type": "string"},
+                "review_id": {"type": "string"},
+            },
+            "required": ["company_id", "review_id"],
+        },
+    },
+    {
+        "name": "autofill_confirm_filled_values",
+        "description": (
+            "Record that the user has confirmed the pre-filled values, having "
+            "seen them. Pass every item_key from autofill_show_filled_values — "
+            "a partial set is refused, because a partial confirmation is not a "
+            "review. Only call this after the user has actually said the values "
+            "are correct. Never call it on their behalf to move things along."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_id": {"type": "string"},
+                "review_id": {"type": "string"},
+                "confirmed_keys": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Every item_key shown to the user.",
+                },
+            },
+            "required": ["company_id", "review_id", "confirmed_keys"],
+        },
+    },
+    {
         "name": "autofill_export_document",
         "description": (
             "Export the filled document. With as_reviewed=false it exports an "
             "UNREVIEWED draft, always allowed and clearly marked as incomplete "
-            "inside the file. With as_reviewed=true it WILL FAIL unless every "
-            "flagged field has been acknowledged individually first."
+            "inside the file. With as_reviewed=true it WILL FAIL unless the "
+            "pre-filled values have been confirmed AND every flagged field has "
+            "been acknowledged individually first."
         ),
         "input_schema": {
             "type": "object",

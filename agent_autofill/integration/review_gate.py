@@ -64,6 +64,7 @@ from agent_autofill.integration.stamp_signing import (
     ack_payload,
     export_payload,
     file_sha256,
+    values_payload,
     matches,
     sign,
     stamp_payload,
@@ -149,6 +150,29 @@ def init_review_db() -> None:
             conn.execute("ALTER TABLE autofill_review ADD COLUMN final_sha256 TEXT")
         if "export_mac" not in review_cols:
             conn.execute("ALTER TABLE autofill_review ADD COLUMN export_mac TEXT")
+        # The bulk confirmation of auto-filled values. Until this is set, an
+        # export claiming REVIEWED would be asserting a review of values nobody
+        # looked at — the gate used to require acknowledgement only of the
+        # fields it could NOT fill.
+        if "values_confirmed_at" not in review_cols:
+            conn.execute(
+                "ALTER TABLE autofill_review ADD COLUMN values_confirmed_at TIMESTAMP")
+        if "values_confirmed_mac" not in review_cols:
+            conn.execute(
+                "ALTER TABLE autofill_review ADD COLUMN values_confirmed_mac TEXT")
+
+        # What was actually written into the document. Only filled_count was
+        # recorded before, which is a number you cannot show anyone.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS autofill_review_fill (
+                review_id  TEXT NOT NULL,
+                item_key   TEXT NOT NULL,
+                label      TEXT,
+                value      TEXT,
+                location   TEXT,
+                PRIMARY KEY (review_id, item_key)
+            )
+        """)
 
 
 init_review_db()
@@ -203,6 +227,12 @@ def open_review(company_id: str, fill_result, company_name: str = "",
                (review_id, item_key, label, location, category, reason)
                VALUES (?, ?, ?, ?, ?, ?)""",
             items,
+        )
+        conn.executemany(
+            """INSERT INTO autofill_review_fill
+               (review_id, item_key, label, value, location) VALUES (?, ?, ?, ?, ?)""",
+            [(review_id, f"V{i:02d}", f.label, str(f.value), getattr(f, "location", ""))
+             for i, f in enumerate(fill_result.filled, start=1)],
         )
 
     stamped = None
@@ -475,6 +505,9 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
     # export path would then sign the forged state itself. So every
     # acknowledgement is re-verified against its MAC before it counts. A row
     # written by hand has no valid MAC and reads as still outstanding.
+    # Tamper detection runs first. "Someone forged an acknowledgement" and
+    # "the values are not confirmed yet" are both refusals, but only one is a
+    # security signal, and reporting the routine one would bury it.
     forged = _unverifiable_acknowledgements(review_id)
     if forged:
         listed = "; ".join(f"{f['item_key']} ({f['label']})" for f in forged)
@@ -488,6 +521,29 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
                 f"Cannot export as reviewed: {len(forged)} acknowledgement(s) do not "
                 "carry a valid signature, so they were not made through the review "
                 f"flow — {listed}. Acknowledge each field again in the app."
+            ),
+        }
+
+    # The values Agent Autofill WROTE must be confirmed, not just the fields it
+    # could not fill. Without this a form with nothing flagged exported as
+    # REVIEWED with no human involvement at all, and every ordinary export
+    # asserted a review of values nobody had been shown.
+    # Only once the flags are clear. While any flagged field is still open,
+    # that is the more useful thing to say, and the conditional UPDATE below
+    # remains the authority on it — checking flags here as well would just
+    # reintroduce a gap between deciding and acting.
+    unconfirmed = [] if _outstanding_rows(review_id) else _values_unconfirmed(
+        company_id, review_id)
+    if unconfirmed:
+        return {
+            "status": "error",
+            "review_state": STATUS_UNREVIEWED,
+            "unconfirmed_values": unconfirmed,
+            "outstanding_count": len(unconfirmed),
+            "message": (
+                f"Cannot export as reviewed: {len(unconfirmed)} pre-filled value(s) "
+                "have not been confirmed by a person. Show them the filled values "
+                "and confirm them together first."
             ),
         }
 
@@ -602,6 +658,119 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
             "completing by hand — this is not a submission."
         ),
     }
+
+
+def filled_values(company_id: str, review_id: str) -> dict:
+    """
+    Every value Agent Autofill wrote into the document, for the person to read
+    before they confirm them. This is the list the confirmation is made against.
+    """
+    _load_review(company_id, review_id)   # tenant check; raises if not theirs
+    with _connect() as conn:
+        rows = conn.execute(
+            """SELECT item_key, label, value, location FROM autofill_review_fill
+                WHERE review_id = ? ORDER BY item_key""",
+            (review_id,),
+        ).fetchall()
+    return {
+        "status": "success",
+        "review_id": review_id,
+        "values": [dict(r) for r in rows],
+        "count": len(rows),
+    }
+
+
+def confirm_filled_values(company_id: str, review_id: str,
+                          confirmed_keys: list = None) -> dict:
+    """
+    Confirm, in one step, every value Agent Autofill wrote into the document.
+
+    The gate used to require acknowledgement only of the fields it could NOT
+    fill. That left the values it DID write unconfirmed by anyone — and on a
+    form with no flagged fields at all, a REVIEWED export needed no human
+    involvement whatsoever. This closes that.
+
+    `confirmed_keys` is the set of item keys the person was shown. It must
+    match the stored set exactly: a partial list is a partial review, and a
+    list containing a key that is not there means the caller is confirming
+    something other than what this document contains. Both are refused rather
+    than intersected, because silently confirming the overlap is how a
+    confirmation stops meaning anything.
+    """
+    _load_review(company_id, review_id)
+
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT item_key, label, value FROM autofill_review_fill"
+            " WHERE review_id = ? ORDER BY item_key",
+            (review_id,),
+        ).fetchall()
+
+    stored = {r["item_key"] for r in rows}
+    if confirmed_keys is None:
+        return {"status": "error", "message":
+                "Pass the item keys of the values you displayed, so the "
+                "confirmation records what was actually seen."}
+    supplied = {str(k) for k in confirmed_keys}
+    if supplied != stored:
+        missing, extra = sorted(stored - supplied), sorted(supplied - stored)
+        return {
+            "status": "error",
+            "message": (
+                "The confirmed set does not match the values in this document. "
+                + (f"Not confirmed: {', '.join(missing)}. " if missing else "")
+                + (f"Not in this document: {', '.join(extra)}." if extra else "")
+            ),
+            "missing": missing,
+            "unknown": extra,
+        }
+
+    now = datetime.now().isoformat(timespec="seconds")
+    pairs = [(r["item_key"], r["label"], r["value"]) for r in rows]
+    mac = sign(values_payload(company_id, review_id, pairs, now))
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE autofill_review SET values_confirmed_at = ?,"
+            " values_confirmed_mac = ? WHERE review_id = ? AND company_id = ?"
+            " AND status = 'DRAFT'",
+            (now, mac, review_id, company_id),
+        )
+    return {"status": "success", "confirmed_count": len(pairs),
+            "confirmed_at": now,
+            "message": f"{len(pairs)} pre-filled value(s) confirmed."}
+
+
+def _values_unconfirmed(company_id: str, review_id: str) -> list[dict]:
+    """
+    Empty when the auto-filled values carry a valid bulk confirmation.
+
+    Re-derives the MAC from the values as they stand now, so editing one after
+    confirmation invalidates it — the confirmation covers what the person saw.
+    A review that filled nothing has nothing to confirm.
+    """
+    with _connect() as conn:
+        rec = conn.execute(
+            "SELECT values_confirmed_at, values_confirmed_mac FROM autofill_review"
+            " WHERE review_id = ? AND company_id = ?",
+            (review_id, company_id),
+        ).fetchone()
+        rows = conn.execute(
+            "SELECT item_key, label, value FROM autofill_review_fill"
+            " WHERE review_id = ? ORDER BY item_key",
+            (review_id,),
+        ).fetchall()
+
+    if not rows:
+        return []
+    if rec is None or not rec["values_confirmed_at"]:
+        return [dict(r) for r in rows]
+
+    pairs = [(r["item_key"], r["label"], r["value"]) for r in rows]
+    if not matches(rec["values_confirmed_mac"],
+                   values_payload(company_id, review_id, pairs,
+                                  rec["values_confirmed_at"])):
+        return [dict(r) for r in rows]
+    return []
 
 
 def _unverifiable_acknowledgements(review_id: str) -> list[dict]:

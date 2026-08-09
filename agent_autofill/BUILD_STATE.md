@@ -119,6 +119,35 @@ record. `mac="x"` still yields a document whose banner reads REVIEWED. It fails
 Editing an acknowledgement after a genuine export invalidates that export too.
 That is intended: the file and the record must keep agreeing.
 
+## Check 8 — the question, answered: it WAS possible. Now closed
+
+"Could this system ever mark a document submission-ready without a human
+confirming every auto-filled field?" Yes, and it took no attack at all.
+
+The gate required acknowledgement only of the fields it could **not** fill. The
+values it **did** write were never confirmed by anyone. On a form where
+everything filled cleanly — no signature, price, declaration or narrative — a
+REVIEWED export needed zero human involvement, and the stamp read "All 0
+flagged field(s) were acknowledged by a person". On MBD 1 a user acknowledged 4
+flags and received a document asserting review of all 18, including 14 values
+they had never seen. **The gate reviewed the gaps, not the fills.**
+
+Closed with a bulk confirmation: `filled_values()` lists every value written,
+`confirm_filled_values()` records the exact set the person was shown and MACs
+it. `export_reviewed` refuses while any filled value is unconfirmed. A partial
+set is refused rather than intersected. Editing a value after confirmation
+invalidates it. Both steps are exposed as tools — `autofill_show_filled_values`
+and `autofill_confirm_filled_values` — because a gate nothing can reach is a
+dead end, which is how the quotation gate first shipped.
+
+Refusal order is deliberate: forged acknowledgements (a security signal) before
+open flags before unconfirmed values.
+
+**`verify_export` still has no caller outside tests.** It is documented as the
+authority on whether an export is genuine, and nothing in the app, the tool
+registry or the UI calls it. Until something does, the residual below is live
+rather than theoretical.
+
 ## Weaknesses the authors flagged about their own work
 
 - `confirmed=True` is a speed bump, not authorisation — nothing records *who*

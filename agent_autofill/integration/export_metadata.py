@@ -137,13 +137,18 @@ class ReviewStamp:
     @property
     def detail(self) -> str:
         if self.status == STATUS_REVIEWED:
+            # Says what was actually done. The earlier wording claimed "all N
+            # flagged field(s) were acknowledged by a person" even when N was
+            # zero and no person had done anything at all.
             return (
-                f"All {self.flags_total} flagged field(s) were acknowledged by a person "
-                f"on {self.stamped_at}. {self.filled_count} field(s) were pre-filled by "
-                "CairoAI from the company profile and are shaded. Every field marked "
-                "[ ! ] must still be completed by hand. No signature has been applied "
-                "and no pricing has been entered. Review reference "
-                f"{self.review_id}."
+                f"A person confirmed the {self.filled_count} value(s) CairoAI "
+                f"pre-filled from the company profile"
+                + (f" and acknowledged all {self.flags_total} flagged field(s)"
+                   if self.flags_total else "")
+                + f", on {self.stamped_at}. Pre-filled values are shaded. Every "
+                "field marked [ ! ] must still be completed by hand. No signature "
+                "has been applied and no pricing has been entered. Review "
+                f"reference {self.review_id}."
             )
         return (
             f"{self.flags_open} of {self.flags_total} flagged field(s) have NOT been "
@@ -167,9 +172,11 @@ class ReviewStamp:
         """
         if self.status == STATUS_REVIEWED:
             body = (
-                f"REVIEWED DRAFT. All {self.flags_total} flagged field(s) acknowledged "
-                f"individually by a person on {self.stamped_at}. {self.filled_count} "
-                "field(s) pre-filled by CairoAI. Fields marked [ ! ] must still be "
+                f"REVIEWED DRAFT. {self.filled_count} pre-filled value(s) confirmed "
+                "by a person"
+                + (f"; all {self.flags_total} flagged field(s) acknowledged "
+                   "individually" if self.flags_total else "")
+                + f" on {self.stamped_at}. Fields marked [ ! ] must still be "
                 "completed by hand. No signature applied, no pricing entered. "
                 "NOT A SUBMISSION."
             )
