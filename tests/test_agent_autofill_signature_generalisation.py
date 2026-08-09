@@ -122,9 +122,25 @@ def test_capacity_of_signatory_stays_exempt_and_that_is_deliberate():
     """
     'Capacity of signatory' and 'CAPACITY UNDER WHICH THIS BID IS SIGNED' are
     the same field asked two ways. The capacity exemption clears both, which is
-    coherent — blocking one and not the other would not be. It is safe because
-    `capacity` is not on the fill whitelist, so it is never written either way;
-    this test pins that second fact, which is what actually protects it.
+    coherent — blocking one and not the other would not be.
+
+    An earlier version of this test justified that with "capacity is not on the
+    fill whitelist". That was wrong: `capacity` IS whitelisted, mapping to the
+    `authorized_signatory_capacity` profile column. It returned False only
+    because the profile above has no such key. The real justification is that a
+    capacity is a factual role — "Director" — not a signature, and the form asks
+    for it in plain text. Filling it is intended.
     """
     assert is_blocked("Capacity of signatory").blocked is False
+    assert is_blocked("CAPACITY UNDER WHICH THIS BID IS SIGNED").blocked is False
+
+    # Absent from this profile, so nothing is invented.
     assert decide("capacity", "Capacity of signatory", PROFILE, 100.0).fill is False
+
+    # Present, so it fills — both phrasings, identically.
+    with_capacity = dict(PROFILE, authorized_signatory_capacity="Director")
+    for label in ("Capacity of signatory",
+                  "CAPACITY UNDER WHICH THIS BID IS SIGNED"):
+        dec = decide("capacity", label, with_capacity, 100.0)
+        assert dec.fill is True, f"{label!r}: {dec.reason}"
+        assert dec.value == "Director"
