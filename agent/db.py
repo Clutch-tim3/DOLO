@@ -340,8 +340,22 @@ def connect(sqlite_path=None) -> Connection:
         # identical either way.
         return Connection(_connect_direct(database_url()), postgres=True)
 
-    raw = sqlite3.connect(str(sqlite_path))
+    # timeout is the busy handler: how long a writer waits for another writer's
+    # lock instead of raising "database is locked" immediately. The default is
+    # 5 seconds, which was enough while one or two modules wrote here and is not
+    # now that sessions, review state, quote audit and file ownership all do.
+    raw = sqlite3.connect(str(sqlite_path), timeout=30.0)
     raw.row_factory = sqlite3.Row
+    try:
+        # WAL lets readers proceed while a write is in flight, which is most of
+        # the contention. Set per-connection because it is a property of the
+        # database file, so the first connection to set it is enough — the rest
+        # are cheap no-ops. Wrapped because a read-only or unusual filesystem
+        # can refuse the journal change, and that must not stop the app.
+        raw.execute("PRAGMA journal_mode=WAL")
+        raw.execute("PRAGMA synchronous=NORMAL")
+    except sqlite3.DatabaseError:
+        pass
     return Connection(raw, postgres=False)
 
 

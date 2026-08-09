@@ -2,9 +2,11 @@ import os
 import uuid
 from fpdf import FPDF
 from agent.file_paths import generated_dir, public_url
+from agent.generated_files import register as register_generated
 from agent.quotation.quote_audit_log import finalize_quote
 
-def generate_quote_document(company_profile: dict, priced_items: list, is_final: bool = False) -> dict:
+def generate_quote_document(company_profile: dict, priced_items: list,
+                            is_final: bool = False, company_id: str = None) -> dict:
     has_flags = any(item.get("price_status") in ["MANUAL_REVIEW_REQUIRED", "LOW_CONFIDENCE"] for item in priced_items)
     if is_final and has_flags:
         return {"status": "error", "message": "Cannot finalize quote: unresolved flagged items."}
@@ -143,6 +145,9 @@ def generate_quote_document(company_profile: dict, priced_items: list, is_final:
     filename = f"quote_{uuid.uuid4().hex[:8]}.pdf"
     filepath = generated_dir() / filename
     pdf.output(str(filepath))
+    # Recorded here rather than at the caller so a new call path cannot produce
+    # an unowned — and therefore undownloadable — quote.
+    register_generated(filename, company_id, "quotation")
 
     return {
         "status": "success",

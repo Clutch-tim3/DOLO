@@ -756,9 +756,21 @@ async def api_vault_status(company_id: str = Depends(require_company_id)):
 
 
 @app.get("/api/generated/{filename}")
-async def api_serve_generated(filename: str):
+async def api_serve_generated(filename: str,
+                              principal: Principal = Depends(require_principal)):
     """
     Serves anything the agent generated (quotation PDFs, accreditation reports).
+
+    OWNERSHIP IS CHECKED HERE. This route verified that an Agent Autofill
+    export's stamp was genuine and never checked that the caller was entitled
+    to the document — a filename was sufficient authority. The stamp answers
+    "is this what it claims to be"; it cannot answer "is this yours", because
+    the file does not know who is asking.
+
+    The uuid4 in each filename makes guessing impractical, but a filename
+    travels: chat transcripts, browser history, screenshots, support tickets,
+    access logs. Unguessable is not private, and these documents carry
+    registration and tax numbers, director ID numbers, and the bid itself.
 
     These used to be written to static/downloads and linked as
     /static/downloads/<name>, which only worked locally: the deployed bundle is
@@ -776,6 +788,16 @@ async def api_serve_generated(filename: str):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found or expired")
+
+    # Same 404 for "not yours" as for "does not exist". A distinct 403 would
+    # confirm the file is real to someone holding only a filename.
+    from agent.generated_files import belongs_to
+
+    if not belongs_to(filename, principal.company_id):
+        logger.warning(
+            "refused generated file %s for company %s (not the owner, or "
+            "no owner recorded)", filename, principal.company_id)
         raise HTTPException(status_code=404, detail="File not found or expired")
 
     # An Agent Autofill export is checked against its review record before it

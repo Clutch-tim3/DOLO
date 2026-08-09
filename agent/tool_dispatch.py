@@ -222,7 +222,7 @@ def _generate_accreditation_report(company_id: str, items: list):
         if not profile.get(key) and facts.get(key):
             profile[key] = facts[key]
 
-    return generate_accreditation_report(profile, items)
+    return generate_accreditation_report(profile, items, company_id=company_id)
 
 
 TOOL_REGISTRY = {
