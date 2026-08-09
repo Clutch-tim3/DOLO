@@ -2039,6 +2039,21 @@ exportCsvBtn.addEventListener('click', () => {
             </div>
         </div>
 
+        <!-- Connecting a Drive or Dropbox folder. The OAuth flow existed with no
+             way to reach it: providers, routes and PKCE were all built and
+             nothing in the UI linked to them, so no user could connect
+             anything. Same gap as the vault having no upload control. -->
+        <div class="section-title">CONNECTED FOLDERS</div>
+        <p style="font-size:13px; line-height:1.6; opacity:0.75; max-width:640px; margin:0 0 18px;">
+            Connect a folder and CairoAI watches it for new tender documents. It asks for
+            access to <b>only the files you pick</b> — not your whole Drive. Nothing is ever
+            written back to your folder.
+        </p>
+        <div id="providerConnections" class="stat-grid" style="margin-bottom:12px;">
+            <div class="stat-cell"><div class="stat-label">Loading…</div></div>
+        </div>
+        <div id="providerConnectNote" style="font-size:12px; opacity:0.7; margin-bottom:32px;"></div>
+
         <div class="section-title">MODEL OVERVIEW</div>
         <div class="stat-grid">
             <div class="stat-cell"><div class="stat-label">Model Version</div><div class="stat-val" id="model_version">--</div></div>
@@ -2464,6 +2479,100 @@ exportCsvBtn.addEventListener('click', () => {
         function getCompanyId() {
             return localStorage.getItem('cairoai-company-id') || 'pro_corp';
         }
+
+        /* ------------------------------------------------------------------
+           Connected folders (Google Drive / Dropbox)
+
+           Starting a connection is a full-page navigation, not fetch(): the
+           browser has to land on Google's consent screen, and the callback
+           comes back as a redirect. An XHR would follow it invisibly and the
+           user would never see the consent prompt.
+           ------------------------------------------------------------------ */
+        const PROVIDER_LABELS = { google_drive: 'Google Drive', dropbox: 'Dropbox' };
+
+        async function loadProviderConnections() {
+            const wrap = document.getElementById('providerConnections');
+            if (!wrap) return;
+            let connected = {};
+            try {
+                const res = await fetch('/api/autofill/providers/status?company_id='
+                                        + encodeURIComponent(getCompanyId()));
+                if (res.ok) {
+                    const data = await res.json();
+                    (data.connections || []).forEach(c => { connected[c.provider] = c; });
+                }
+            } catch (e) {
+                // Offline or the router is not mounted. Show the controls anyway
+                // rather than an empty panel that looks like a broken page.
+            }
+
+            wrap.textContent = '';
+            Object.keys(PROVIDER_LABELS).forEach(key => {
+                const conn = connected[key];
+                const cell = document.createElement('div');
+                cell.className = 'stat-cell';
+
+                const label = document.createElement('div');
+                label.className = 'stat-label';
+                label.textContent = PROVIDER_LABELS[key];
+                cell.appendChild(label);
+
+                const val = document.createElement('div');
+                val.className = 'stat-val' + (conn ? ' gold' : '');
+                // textContent, never innerHTML: the account label comes from the
+                // provider and is not ours to trust as markup.
+                val.textContent = conn ? (conn.account_label || 'Connected') : 'Not connected';
+                cell.appendChild(val);
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = conn ? 'filter-btn' : 'btn-gold';
+                btn.style.marginTop = '10px';
+                btn.textContent = conn ? 'Disconnect' : 'Connect';
+                btn.addEventListener('click', () => conn ? disconnectProvider(key)
+                                                         : connectProvider(key));
+                cell.appendChild(btn);
+                wrap.appendChild(cell);
+            });
+        }
+
+        function connectProvider(provider) {
+            window.location.href = '/api/autofill/providers/' + provider
+                + '/connect?company_id=' + encodeURIComponent(getCompanyId());
+        }
+
+        async function disconnectProvider(provider) {
+            if (!window.confirm('Disconnect ' + PROVIDER_LABELS[provider]
+                + '? CairoAI will stop watching that folder. This does not revoke '
+                + 'access at ' + PROVIDER_LABELS[provider] + ' itself — do that in '
+                + 'your account settings there.')) return;
+            await fetch('/api/autofill/providers/' + provider + '/disconnect?company_id='
+                        + encodeURIComponent(getCompanyId()), { method: 'POST' });
+            loadProviderConnections();
+        }
+
+        // The callback redirects back here with a result flag. Surface it, then
+        // strip it from the URL so a refresh does not replay the message.
+        function showProviderResult() {
+            const note = document.getElementById('providerConnectNote');
+            if (!note) return;
+            const params = new URLSearchParams(window.location.search);
+            const ok = params.get('connected');
+            const err = params.get('connect_error');
+            if (!ok && !err) return;
+            note.textContent = ok ? ('Connected: ' + ok) : err;
+            note.style.color = ok ? '#4CAF50' : '#e57373';
+            params.delete('connected');
+            params.delete('connect_error');
+            const qs = params.toString();
+            window.history.replaceState({}, '',
+                window.location.pathname + (qs ? '?' + qs : ''));
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            showProviderResult();
+            loadProviderConnections();
+        });
 
         /* ------------------------------------------------------------------
            Agent thinking / processing indicator
