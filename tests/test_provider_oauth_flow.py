@@ -460,3 +460,104 @@ def test_both_providers_accept_the_pkce_arguments():
         assert "code_challenge" in auth, impl.__name__
         assert "code_challenge_method" in auth, impl.__name__
         assert "code_verifier" in inspect.signature(impl.connect).parameters, impl.__name__
+
+
+# --- the redirect_uri behind a proxy ---------------------------------------
+#
+# Found on the live site: the flow returned a 302 to Google carrying
+# redirect_uri=http://api-xxxx-uc.a.run.app/... — the wrong host AND the wrong
+# scheme. Firebase Hosting terminates TLS at the edge and rewrites to Cloud
+# Run, so request.base_url reports the backend's own origin. Google rejects
+# that for being http and for not matching the registered URI. A 302 alone
+# looked like success; only reading the Location header showed it.
+
+
+def _callback_for(monkeypatch, provider="google_drive", headers=None, base=None):
+    from starlette.datastructures import Headers
+
+    from agent_autofill.providers import oauth_routes
+
+    if base is None:
+        monkeypatch.delenv(oauth_routes.PUBLIC_BASE_URL_ENV, raising=False)
+    else:
+        monkeypatch.setenv(oauth_routes.PUBLIC_BASE_URL_ENV, base)
+
+    class _Req:
+        def __init__(self):
+            self.base_url = "http://api-tja32zbdja-uc.a.run.app/"
+            self.headers = Headers(headers or {})
+
+    return oauth_routes._callback_url(_Req(), provider)
+
+
+def test_configured_public_base_wins(monkeypatch):
+    url = _callback_for(monkeypatch, base="https://cairoai.web.app")
+    assert url == "https://cairoai.web.app/api/autofill/providers/google_drive/callback"
+
+
+def test_a_trailing_slash_on_the_configured_base_does_not_double(monkeypatch):
+    assert "//api/autofill" not in _callback_for(
+        monkeypatch, base="https://cairoai.web.app/")
+
+
+def test_forwarding_headers_are_honoured_when_unconfigured(monkeypatch):
+    url = _callback_for(monkeypatch, headers={
+        "x-forwarded-host": "cairoai.web.app", "x-forwarded-proto": "https"})
+    assert url.startswith("https://cairoai.web.app/")
+
+
+def test_scheme_is_forced_to_https_for_non_localhost(monkeypatch):
+    """
+    A proxied request arrives as http. An http redirect_uri is refused by
+    Google outright, so the scheme is never taken from the wire for a real host.
+    """
+    url = _callback_for(monkeypatch, headers={"x-forwarded-host": "cairoai.web.app"})
+    assert url.startswith("https://")
+
+
+def test_localhost_keeps_http_for_development(monkeypatch):
+    from starlette.datastructures import Headers
+
+    from agent_autofill.providers import oauth_routes
+
+    monkeypatch.delenv(oauth_routes.PUBLIC_BASE_URL_ENV, raising=False)
+
+    class _Req:
+        base_url = "http://localhost:8000/"
+        headers = Headers({})
+
+    url = oauth_routes._callback_url(_Req(), "google_drive")
+    assert url.startswith("http://localhost:8000/"), url
+
+
+def test_the_stored_redirect_matches_the_one_sent_to_the_provider(monkeypatch, client):
+    """
+    The exchange must present the same redirect_uri the authorization used, or
+    the provider rejects it. Both come from _callback_url, and this pins that
+    they stay in step.
+    """
+    from agent_autofill.providers import oauth_routes
+
+    monkeypatch.setenv(oauth_routes.PUBLIC_BASE_URL_ENV, "https://cairoai.web.app")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "id.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "shh")
+
+    r = client.get("/api/autofill/providers/google_drive/connect",
+                   params={"company_id": COMPANY})
+    from urllib.parse import parse_qs, urlparse
+
+    sent = parse_qs(urlparse(r.headers["location"]).query)
+    assert sent["redirect_uri"][0] == (
+        "https://cairoai.web.app/api/autofill/providers/google_drive/callback")
+
+    seen = {}
+
+    class _Impl:
+        def connect(self, company_id, code, redirect_uri, code_verifier=None):
+            seen["redirect_uri"] = redirect_uri
+            return {"account_label": "x"}
+
+    monkeypatch.setattr(oauth_routes, "_provider", lambda name: _Impl())
+    client.get("/api/autofill/providers/google_drive/callback",
+               params={"code": "c", "state": sent["state"][0]})
+    assert seen["redirect_uri"] == sent["redirect_uri"][0]

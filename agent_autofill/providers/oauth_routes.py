@@ -61,16 +61,41 @@ def _provider(name: str):
     raise HTTPException(status_code=404, detail="Unknown provider")
 
 
+#: The public origin users reach the app on, e.g. "https://cairoai.web.app".
+#: Set this in production. Deriving the origin from the request does NOT work
+#: behind Firebase Hosting: TLS terminates at the edge and the rewrite forwards
+#: to Cloud Run, so `request.base_url` reports the backend's own scheme and
+#: host — "http://api-xxxx-uc.a.run.app". Google rejects that twice over, for
+#: being http and for not matching the registered URI.
+PUBLIC_BASE_URL_ENV = "PUBLIC_BASE_URL"
+
+
 def _callback_url(request: Request, provider: str) -> str:
     """
-    The redirect_uri, built from the live request.
+    The redirect_uri. Must match the provider's console registration exactly.
 
-    Must match what is registered in the provider's console exactly, including
-    scheme and host. Derived rather than configured so it cannot drift out of
-    step with wherever the app is actually running — but see the note in
-    CLAUDE.md: whatever this produces has to be registered by hand.
+    Configured origin first; the live request only as a local-development
+    fallback. The scheme is forced to https for anything that is not localhost,
+    because a proxied request arrives as http and an http redirect_uri is
+    refused outright.
     """
-    base = str(request.base_url).rstrip("/")
+    import os
+    from urllib.parse import urlparse
+
+    base = (os.environ.get(PUBLIC_BASE_URL_ENV) or "").strip().rstrip("/")
+
+    if not base:
+        # Honour the forwarding headers before falling back to what the socket
+        # says, so a correctly-configured proxy still produces the right origin.
+        forwarded_host = request.headers.get("x-forwarded-host")
+        forwarded_proto = request.headers.get("x-forwarded-proto")
+        parsed = urlparse(str(request.base_url))
+        host = forwarded_host or parsed.netloc
+        scheme = forwarded_proto or parsed.scheme
+        if host.split(":")[0] not in ("localhost", "127.0.0.1"):
+            scheme = "https"
+        base = f"{scheme}://{host}"
+
     return f"{base}/api/autofill/providers/{provider}/callback"
 
 
