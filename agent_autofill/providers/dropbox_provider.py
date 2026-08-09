@@ -202,7 +202,9 @@ class DropboxProvider(BaseCloudProvider):
     # -----------------------------------------------------------------
 
     def build_authorization_url(
-        self, company_id: str, redirect_uri: str, state: str | None = None, **kw: Any
+        self, company_id: str, redirect_uri: str, state: str | None = None,
+        code_challenge: str | None = None,
+        code_challenge_method: str = "S256", **kw: Any
     ) -> dict[str, Any]:
         """
         The consent URL. Pure string construction -- no network, no SDK.
@@ -223,6 +225,11 @@ class DropboxProvider(BaseCloudProvider):
             "scope": " ".join(self.SCOPES),
             "state": state,
         }
+        # PKCE — same reasoning as the Drive provider: it makes an intercepted
+        # or logged authorization code useless on its own.
+        if code_challenge:
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = code_challenge_method
         return {
             "url": f"{AUTH_ENDPOINT}?{urlencode(params)}",
             "state": state,
@@ -234,7 +241,8 @@ class DropboxProvider(BaseCloudProvider):
         }
 
     def connect(
-        self, company_id: str, authorization_code: str, redirect_uri: str, **kw: Any
+        self, company_id: str, authorization_code: str, redirect_uri: str,
+        code_verifier: str | None = None, **kw: Any
     ) -> dict[str, Any]:
         """
         Exchange the code for tokens and store them encrypted.
@@ -253,6 +261,9 @@ class DropboxProvider(BaseCloudProvider):
                 "code": authorization_code,
                 "grant_type": "authorization_code",
                 "redirect_uri": redirect_uri,
+                # Omitted entirely when absent rather than sent empty: Dropbox
+                # rejects a blank code_verifier outright.
+                **({"code_verifier": code_verifier} if code_verifier else {}),
             },
             auth=(app_key, app_secret),
             timeout=30,

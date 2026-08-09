@@ -265,13 +265,16 @@ half, mounted in `app.py`.
 - **The return redirect is a fixed internal path.** An open redirect on a domain
   users are being asked to trust with Drive access is worth a lot to a phisher.
 
-**PKCE is NOT implemented.** The authorization code arrives as a query
-parameter and platform access logs record query strings — on Cloud Run the
-request line is logged before our code sees it. Our own handlers never log the
-code, and tests pin that, but we cannot stop the runtime from logging the URL.
-The exposure is bounded (single-use, short-lived, exchanged immediately) and
-PKCE is the real mitigation. Worth adding before this is used by anyone whose
-logs are widely readable.
+- **PKCE is on, S256 only** (`providers/pkce.py`). This is what makes the
+  authorization code safe to have in a log line: the code travels as a query
+  parameter and the runtime logs request lines before our handlers run, so a
+  code will end up in access logs no matter what we do. Bound to a verifier
+  this server keeps and never transmits, it cannot be redeemed by whoever
+  reads it. The verifier lives beside the state record for the ten minutes the
+  flow is open; the browser only ever carries the challenge, and a test asserts
+  the verifier does not appear in the authorization URL.
+- `plain` is never produced or accepted — it would put the verifier in the URL,
+  which is the one place it must not be.
 
 **No consent has ever been completed.** Every OAuth test fakes the exchange.
 Real credentials, a real consent screen, and a real token refresh are manual

@@ -224,7 +224,9 @@ class GoogleDriveProvider(BaseCloudProvider):
     # -----------------------------------------------------------------
 
     def build_authorization_url(
-        self, company_id: str, redirect_uri: str, state: str | None = None, **kw: Any
+        self, company_id: str, redirect_uri: str, state: str | None = None,
+        code_challenge: str | None = None,
+        code_challenge_method: str = "S256", **kw: Any
     ) -> dict[str, Any]:
         """
         The consent URL. Pure string construction -- no network, no SDK.
@@ -252,6 +254,13 @@ class GoogleDriveProvider(BaseCloudProvider):
             "include_granted_scopes": "true",
             "state": state,
         }
+        # PKCE. The challenge is a hash of a verifier this server keeps, so an
+        # authorization code lifted from an access log — query strings are
+        # logged by the runtime before our code sees them — cannot be redeemed
+        # by whoever lifted it.
+        if code_challenge:
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = code_challenge_method
         return {
             "url": f"{AUTH_ENDPOINT}?{urlencode(params)}",
             "state": state,
@@ -263,7 +272,8 @@ class GoogleDriveProvider(BaseCloudProvider):
         }
 
     def connect(
-        self, company_id: str, authorization_code: str, redirect_uri: str, **kw: Any
+        self, company_id: str, authorization_code: str, redirect_uri: str,
+        code_verifier: str | None = None, **kw: Any
     ) -> dict[str, Any]:
         """
         Exchange the code for tokens and store them encrypted.
@@ -288,6 +298,12 @@ class GoogleDriveProvider(BaseCloudProvider):
             scopes=list(self.SCOPES),
             redirect_uri=redirect_uri,
         )
+        if code_verifier:
+            # google-auth-oauthlib carries the verifier on the flow object and
+            # sends it with the exchange. Set before fetch_token, or the
+            # request goes out without it and Google rejects the code as
+            # missing its PKCE half.
+            flow.code_verifier = code_verifier
         flow.fetch_token(code=authorization_code)
         creds = flow.credentials
 

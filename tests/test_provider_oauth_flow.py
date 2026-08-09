@@ -34,11 +34,18 @@ OTHER = "someone-elses-co"
 REDIRECT = "https://cairoai.web.app/api/autofill/providers/google_drive/callback"
 
 
+def _state(company_id, provider, redirect_uri):
+    """issue() returns the state plus the PKCE challenge; tests mostly want the
+    state. The challenge half has its own tests below."""
+    return oauth_state.issue(company_id, provider, redirect_uri)["state"]
+
+
+
 # --- the state machine ------------------------------------------------------
 
 
 def test_a_state_can_be_issued_and_consumed_once():
-    state = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    state = _state(COMPANY, "google_drive", REDIRECT)
     flow = oauth_state.consume(state, "google_drive")
     assert flow["company_id"] == COMPANY
     assert flow["redirect_uri"] == REDIRECT
@@ -49,7 +56,7 @@ def test_a_state_cannot_be_consumed_twice():
     Replay protection. Without it, a captured callback URL could be replayed to
     attach an account again — and the second time, the code is the attacker's.
     """
-    state = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    state = _state(COMPANY, "google_drive", REDIRECT)
     oauth_state.consume(state, "google_drive")
     with pytest.raises(oauth_state.OAuthStateError):
         oauth_state.consume(state, "google_drive")
@@ -68,7 +75,7 @@ def test_a_missing_state_is_refused(empty):
 
 def test_a_state_issued_for_one_provider_does_not_work_for_another():
     """Otherwise a Dropbox consent could complete a Drive connection."""
-    state = oauth_state.issue(COMPANY, "dropbox", REDIRECT)
+    state = _state(COMPANY, "dropbox", REDIRECT)
     with pytest.raises(oauth_state.OAuthStateError):
         oauth_state.consume(state, "google_drive")
 
@@ -79,7 +86,7 @@ def test_a_rejected_state_is_still_burned():
     provider attempt cannot be used to probe which states exist and then be
     retried against the right one.
     """
-    state = oauth_state.issue(COMPANY, "dropbox", REDIRECT)
+    state = _state(COMPANY, "dropbox", REDIRECT)
     with pytest.raises(oauth_state.OAuthStateError):
         oauth_state.consume(state, "google_drive")
     with pytest.raises(oauth_state.OAuthStateError):
@@ -87,7 +94,7 @@ def test_a_rejected_state_is_still_burned():
 
 
 def test_an_expired_state_is_refused(monkeypatch):
-    state = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    state = _state(COMPANY, "google_drive", REDIRECT)
     from datetime import timedelta
 
     real_now = oauth_state._now()
@@ -104,7 +111,7 @@ def test_the_raw_state_is_not_stored():
 
     from agent_autofill.providers.provider_db import provider_db_path
 
-    state = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    state = _state(COMPANY, "google_drive", REDIRECT)
     with sqlite3.connect(str(provider_db_path())) as conn:
         stored = [r[0] for r in conn.execute(
             "SELECT state_digest FROM provider_oauth_state").fetchall()]
@@ -122,11 +129,11 @@ def test_issue_requires_a_company_and_a_redirect():
 def test_purge_removes_only_expired_rows(monkeypatch):
     from datetime import timedelta
 
-    live = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    live = _state(COMPANY, "google_drive", REDIRECT)
     real_now = oauth_state._now()
     monkeypatch.setattr(oauth_state, "_now",
                         lambda: real_now + timedelta(seconds=oauth_state.STATE_TTL_SECONDS + 5))
-    stale = oauth_state.issue(OTHER, "google_drive", REDIRECT)
+    stale = _state(OTHER, "google_drive", REDIRECT)
     monkeypatch.undo()
 
     oauth_state.purge_expired()
@@ -234,12 +241,13 @@ def test_callback_uses_the_stored_company(client, monkeypatch):
     seen = {}
 
     class _Impl:
-        def connect(self, company_id, code, redirect_uri):
-            seen.update(company_id=company_id, code=code, redirect_uri=redirect_uri)
+        def connect(self, company_id, code, redirect_uri, code_verifier=None):
+            seen.update(company_id=company_id, code=code, redirect_uri=redirect_uri,
+                        code_verifier=code_verifier)
             return {"account_label": "someone@example.com"}
 
     monkeypatch.setattr(oauth_routes, "_provider", lambda name: _Impl())
-    state = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    state = _state(COMPANY, "google_drive", REDIRECT)
 
     r = client.get("/api/autofill/providers/google_drive/callback",
                    params={"code": "a-real-code", "state": state})
@@ -288,7 +296,7 @@ def test_a_failed_exchange_does_not_leak_the_code_through_our_logging(
             raise RuntimeError("scope check failed")
 
     monkeypatch.setattr(oauth_routes, "_provider", lambda name: _Impl())
-    state = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    state = _state(COMPANY, "google_drive", REDIRECT)
 
     with caplog.at_level("DEBUG", logger="agent_autofill.providers.oauth"):
         r = client.get("/api/autofill/providers/google_drive/callback",
@@ -309,7 +317,7 @@ def test_a_successful_connection_does_not_log_the_code_either(client, monkeypatc
             return {"account_label": "someone@example.com"}
 
     monkeypatch.setattr(oauth_routes, "_provider", lambda name: _Impl())
-    state = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    state = _state(COMPANY, "google_drive", REDIRECT)
 
     with caplog.at_level("DEBUG", logger="agent_autofill.providers.oauth"):
         r = client.get("/api/autofill/providers/google_drive/callback",
@@ -332,9 +340,123 @@ def test_the_return_redirect_cannot_be_pointed_offsite(client, monkeypatch):
             return {"account_label": "x"}
 
     monkeypatch.setattr(oauth_routes, "_provider", lambda name: _Impl())
-    state = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    state = _state(COMPANY, "google_drive", REDIRECT)
     r = client.get("/api/autofill/providers/google_drive/callback",
                    params={"code": "c", "state": state,
                            "next": "https://evil.example.com"})
     assert r.headers["location"].startswith(oauth_routes.RETURN_PATH + "?")
     assert "evil.example.com" not in r.headers["location"]
+
+
+# --- PKCE -------------------------------------------------------------------
+
+
+def test_issue_returns_a_challenge_that_matches_a_verifier_it_kept():
+    from agent_autofill.providers import pkce
+
+    flow = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    assert flow["code_challenge_method"] == "S256"
+    consumed = oauth_state.consume(flow["state"], "google_drive")
+    assert pkce.verify(consumed["code_verifier"], flow["code_challenge"])
+
+
+def test_the_verifier_never_appears_in_the_authorization_url(client, monkeypatch):
+    """
+    The entire point. The browser carries the challenge; the verifier stays
+    here. If it leaked into the URL, PKCE would defend nothing — the URL is the
+    thing that ends up in access logs.
+    """
+    import sqlite3
+
+    from agent_autofill.providers.provider_db import provider_db_path
+
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_ID", "test-client-id.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_OAUTH_CLIENT_SECRET", "test-client-secret")
+
+    r = client.get("/api/autofill/providers/google_drive/connect",
+                   params={"company_id": COMPANY})
+    location = r.headers["location"]
+    assert "code_challenge=" in location
+    assert "code_challenge_method=S256" in location
+
+    with sqlite3.connect(str(provider_db_path())) as conn:
+        verifiers = [row[0] for row in conn.execute(
+            "SELECT code_verifier FROM provider_oauth_state").fetchall() if row[0]]
+    assert verifiers, "no verifier was stored"
+    for v in verifiers:
+        assert v not in location, "the verifier leaked into the authorization URL"
+
+
+def test_the_verifier_reaches_the_token_exchange(client, monkeypatch):
+    from agent_autofill.providers import oauth_routes, pkce
+
+    seen = {}
+
+    class _Impl:
+        def connect(self, company_id, code, redirect_uri, code_verifier=None):
+            seen["verifier"] = code_verifier
+            return {"account_label": "x"}
+
+    monkeypatch.setattr(oauth_routes, "_provider", lambda name: _Impl())
+    flow = oauth_state.issue(COMPANY, "google_drive", REDIRECT)
+    client.get("/api/autofill/providers/google_drive/callback",
+               params={"code": "c", "state": flow["state"]})
+
+    assert seen["verifier"], "the exchange went out without a verifier"
+    assert pkce.verify(seen["verifier"], flow["code_challenge"])
+
+
+def test_challenge_is_unpadded_base64url():
+    """Padding characters are not allowed in the parameter; providers reject
+    a challenge carrying them."""
+    from agent_autofill.providers import pkce
+
+    for _ in range(20):
+        challenge = pkce.challenge_for(pkce.new_verifier())
+        assert "=" not in challenge
+        assert "+" not in challenge and "/" not in challenge
+        assert len(challenge) == 43
+
+
+def test_each_flow_gets_a_fresh_verifier():
+    from agent_autofill.providers import pkce
+
+    seen = set()
+    for _ in range(10):
+        seen.add(pkce.new_verifier())
+    assert len(seen) == 10
+
+
+def test_verify_rejects_a_mismatched_pair():
+    from agent_autofill.providers import pkce
+
+    a, b = pkce.new_verifier(), pkce.new_verifier()
+    assert pkce.verify(a, pkce.challenge_for(a))
+    assert not pkce.verify(b, pkce.challenge_for(a))
+    assert not pkce.verify("", pkce.challenge_for(a))
+    assert not pkce.verify(a, "")
+
+
+def test_only_s256_is_produced():
+    """`plain` puts the verifier in the URL — the exact place it must not be."""
+    from agent_autofill.providers import pkce
+
+    assert pkce.METHOD == "S256"
+
+
+def test_both_providers_accept_the_pkce_arguments():
+    """
+    A signature check, because a provider that silently ignored code_challenge
+    would produce a working flow with no PKCE at all — and nothing else here
+    would notice.
+    """
+    import inspect
+
+    from agent_autofill.providers.dropbox_provider import DropboxProvider
+    from agent_autofill.providers.google_drive_provider import GoogleDriveProvider
+
+    for impl in (GoogleDriveProvider, DropboxProvider):
+        auth = inspect.signature(impl.build_authorization_url).parameters
+        assert "code_challenge" in auth, impl.__name__
+        assert "code_challenge_method" in auth, impl.__name__
+        assert "code_verifier" in inspect.signature(impl.connect).parameters, impl.__name__

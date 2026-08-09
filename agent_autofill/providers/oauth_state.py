@@ -40,6 +40,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from agent import db
+from agent_autofill.providers import pkce
 from agent_autofill.providers.provider_db import provider_db_path
 
 #: How long a user has to complete consent. Long enough to read a Google
@@ -72,17 +73,24 @@ def init_state_db() -> None:
                 expires_at   TIMESTAMP NOT NULL
             )
         """)
+        # The PKCE verifier. Kept server-side for the life of the flow: the
+        # browser carries only the challenge, which is a hash of this.
+        if "code_verifier" not in db.table_columns(conn, "provider_oauth_state"):
+            conn.execute(
+                "ALTER TABLE provider_oauth_state ADD COLUMN code_verifier TEXT")
 
 
 init_state_db()
 
 
-def issue(company_id: str, provider: str, redirect_uri: str) -> str:
+def issue(company_id: str, provider: str, redirect_uri: str) -> dict:
     """
-    Start a flow. Returns the state value to put in the authorization URL.
+    Start a flow. Returns the state and the PKCE challenge for the URL.
 
     The caller keeps nothing: everything needed to finish the flow is recorded
-    here, keyed by a value only the legitimate round trip can present.
+    here, keyed by a value only the legitimate round trip can present. The
+    verifier stays here too — that is what makes an intercepted authorization
+    code useless.
     """
     if not company_id:
         raise OAuthStateError("A company_id is required to start a connection.")
@@ -90,16 +98,23 @@ def issue(company_id: str, provider: str, redirect_uri: str) -> str:
         raise OAuthStateError("A redirect_uri is required to start a connection.")
 
     value = secrets.token_urlsafe(32)
+    verifier = pkce.new_verifier()
     now = _now()
     with db.connect(provider_db_path()) as conn:
         conn.execute(
             """INSERT INTO provider_oauth_state
-               (state_digest, company_id, provider, redirect_uri, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               (state_digest, company_id, provider, redirect_uri, created_at,
+                expires_at, code_verifier)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (_digest(value), company_id, provider, redirect_uri,
-             now.isoformat(), (now + timedelta(seconds=STATE_TTL_SECONDS)).isoformat()),
+             now.isoformat(), (now + timedelta(seconds=STATE_TTL_SECONDS)).isoformat(),
+             verifier),
         )
-    return value
+    return {
+        "state": value,
+        "code_challenge": pkce.challenge_for(verifier),
+        "code_challenge_method": pkce.METHOD,
+    }
 
 
 def consume(state: str, provider: str) -> dict:
@@ -123,7 +138,7 @@ def consume(state: str, provider: str) -> dict:
     # the state usable again. A test caught it; inspection did not.
     with db.connect(provider_db_path()) as conn:
         row = conn.execute(
-            """SELECT company_id, provider, redirect_uri, expires_at
+            """SELECT company_id, provider, redirect_uri, expires_at, code_verifier
                  FROM provider_oauth_state WHERE state_digest = ?""",
             (digest,),
         ).fetchone()
@@ -135,6 +150,7 @@ def consume(state: str, provider: str) -> dict:
                 "provider": row["provider"],
                 "redirect_uri": row["redirect_uri"],
                 "expires_at": row["expires_at"],
+                "code_verifier": row["code_verifier"],
             }
         else:
             captured = None
@@ -152,6 +168,7 @@ def consume(state: str, provider: str) -> dict:
         "company_id": captured["company_id"],
         "provider": captured["provider"],
         "redirect_uri": captured["redirect_uri"],
+        "code_verifier": captured["code_verifier"],
     }
 
 

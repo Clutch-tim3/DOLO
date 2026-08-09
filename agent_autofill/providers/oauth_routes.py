@@ -97,10 +97,15 @@ async def start_connection(provider: str, request: Request,
 
     impl = _provider(provider)
     redirect_uri = _callback_url(request, provider)
-    state = oauth_state.issue(company_id, provider, redirect_uri)
+    flow = oauth_state.issue(company_id, provider, redirect_uri)
 
     try:
-        built = impl.build_authorization_url(company_id, redirect_uri, state=state)
+        built = impl.build_authorization_url(
+            company_id, redirect_uri,
+            state=flow["state"],
+            code_challenge=flow["code_challenge"],
+            code_challenge_method=flow["code_challenge_method"],
+        )
     except Exception as exc:
         # Almost always a missing client id/secret. Surfaced as 503 with the
         # provider's own wording, which names the environment variable.
@@ -148,7 +153,8 @@ async def finish_connection(provider: str, request: Request,
     try:
         # company_id comes from the STORED flow. Never from the URL — see the
         # module docstring for what that would allow.
-        result = impl.connect(flow["company_id"], code, flow["redirect_uri"])
+        result = impl.connect(flow["company_id"], code, flow["redirect_uri"],
+                              code_verifier=flow["code_verifier"])
     except Exception as exc:
         # The code must not reach the log, and neither must anything derived
         # from it. exc is provider wording about scopes or client config.
