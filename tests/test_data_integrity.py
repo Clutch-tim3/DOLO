@@ -4,6 +4,15 @@ from pathlib import Path
 import sqlite3
 import pandas as pd
 
+#: Directories that are not this project's code. The original check excluded
+#: ".venv" only, and the repo root also carries "venv" and a vendored
+#: "google-cloud-sdk" — so these tests were scanning tens of thousands of
+#: Google's files and failing on Google's TODOs, not ours.
+VENDORED = {
+    "tests", ".venv", "venv", "env", "google-cloud-sdk", "node_modules",
+    "site-packages", "__pycache__", "build", "dist",
+}
+
 def test_no_known_test_constants_in_production_code():
     # Grep codebase for known leftover test values.
     # Exclude /tests/ dir and .venv or anything like that.
@@ -15,7 +24,7 @@ def test_no_known_test_constants_in_production_code():
     found_issues = []
     
     for py_file in project_root.rglob("*.py"):
-        if "tests" in py_file.parts or ".venv" in py_file.parts or "patch_" in py_file.name:
+        if VENDORED.intersection(py_file.parts) or "patch_" in py_file.name:
             continue
             
         text = py_file.read_text(errors='ignore')
@@ -31,7 +40,7 @@ def test_no_hardcoded_fallback_probability():
     found_issues = []
     
     for py_file in project_root.rglob("*.py"):
-        if "tests" in py_file.parts or ".venv" in py_file.parts or "patch_" in py_file.name:
+        if VENDORED.intersection(py_file.parts) or "patch_" in py_file.name:
             continue
             
         text = py_file.read_text(errors='ignore')
@@ -62,7 +71,7 @@ def test_no_orphaned_debug_prints_in_production():
     found_issues = []
     
     for py_file in project_root.rglob("*.py"):
-        if "tests" in py_file.parts or ".venv" in py_file.parts or "patch_" in py_file.name:
+        if VENDORED.intersection(py_file.parts) or "patch_" in py_file.name:
             continue
             
         if py_file.name in ["app.py", "predict.py"]:

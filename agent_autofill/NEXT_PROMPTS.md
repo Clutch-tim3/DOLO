@@ -187,9 +187,22 @@ Each is real, documented, and currently unaddressed.
 - **`bbbee_level` is declared INTEGER and holds 'Level 1 Contributor'.**
 - **Directors get a Luhn check only** — no CIPC cross-check, which is what
   actually invalidates an SBD 4.
-- **`tests/test_data_integrity.py` scans vendored trees.** It excludes `.venv`
-  but not `venv` or `google-cloud-sdk`, both of which sit in the repo root.
-  Two-line fix; causes 2 of the 5 pre-existing failures.
+- ~~`tests/test_data_integrity.py` scans vendored trees.~~ **Fixed.** It
+  excluded `.venv` but not `venv` or `google-cloud-sdk`; it was scanning 24,794
+  vendored files and failing on Google's TODOs. Now 153 files, 75 of them
+  production modules.
+- **Three ML failures remain, and they are NOT vendored-tree artifacts** — the
+  claim that all five were is wrong. Verified pre-existing: no commit in this
+  session touches ML, feature, calibration, encoder or data paths.
+    - `test_categorical_encoding_not_stale` — the encoder returns -1 (unknown)
+      for both inputs, i.e. the fitted categories no longer match the data.
+      This is the one worth looking at: a stale encoder silently degrades every
+      prediction rather than erroring.
+    - `test_calibrated_probabilities_improve_or_maintain_auc` — AUC is nan
+      because the fixture has only one class in `y_true`. A test-data problem,
+      not a model problem.
+    - `test_feature_vector_differs_across_different_tenders` — 6 features
+      differ where the test expects 8.
 
 ---
 
