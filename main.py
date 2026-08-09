@@ -61,6 +61,13 @@ CLOUD_SQL_PASSWORD = "CLOUD_SQL_PASSWORD"
 # worker endpoint cannot be driven by anyone else.
 WEBHOOK_TASK_SECRET = "WEBHOOK_TASK_SECRET"
 
+# OAuth client secrets for the Drive and Dropbox connections. The matching
+# CLIENT_ID / APP_KEY are NOT secrets — they travel in the authorization URL
+# the browser follows — so they are set as ordinary env vars, and only these
+# two go in Secret Manager.
+GOOGLE_OAUTH_CLIENT_SECRET = "GOOGLE_OAUTH_CLIENT_SECRET"
+DROPBOX_APP_SECRET = "DROPBOX_APP_SECRET"
+
 # Import the FastAPI app
 from app import app as fastapi_app
 
@@ -107,7 +114,8 @@ def _get_bridge():
     max_instances=20,
     timeout_sec=300,
     secrets=[ANTHROPIC_API_KEY, AUTOFILL_STAMP_SECRET, CLOUD_SQL_PASSWORD,
-             WEBHOOK_TASK_SECRET],
+             WEBHOOK_TASK_SECRET, GOOGLE_OAUTH_CLIENT_SECRET,
+             DROPBOX_APP_SECRET],
 )
 def api(req: https_fn.Request) -> https_fn.Response:
     # Answered without touching the bridge, so it stays reachable even if the

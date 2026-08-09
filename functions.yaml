@@ -19,6 +19,8 @@ endpoints:
     - key: AUTOFILL_STAMP_SECRET
     - key: CLOUD_SQL_PASSWORD
     - key: WEBHOOK_TASK_SECRET
+    - key: GOOGLE_OAUTH_CLIENT_SECRET
+    - key: DROPBOX_APP_SECRET
     serviceAccountEmail: null
     timeoutSeconds: 300
 params: []
