@@ -64,6 +64,16 @@ which Firebase never deploys and `app.py` loads explicitly.
 Use `--data-file`; piping to `--data-file -` fails on Windows PowerShell with
 "Secret Payload cannot be empty".
 
+**`.env` is for non-secret deploy config, and is the only mechanism a deploy
+preserves.** Env vars set with `gcloud run services update --update-env-vars`
+are wiped by the next `firebase deploy` — that is how `GOOGLE_OAUTH_CLIENT_ID`
+vanished once, leaving the connect route returning 503 on a deploy that
+otherwise looked clean. Values that are public by construction (client IDs, app
+keys, instance names, queue paths) go in `.env`; values that are not go to
+Secret Manager and are bound in `main.py`. `.env` is gitignored, so a fresh
+clone needs it rebuilt — the required keys are listed in the file's own
+comments.
+
 **Never name a secret in `main.py` before it exists.** The CLI validates every
 binding before uploading and fails the WHOLE deploy — including parts unrelated
 to that secret — with `Secret [...] not found or has no versions`. Create the
