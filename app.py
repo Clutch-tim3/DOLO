@@ -682,6 +682,37 @@ async def api_serve_generated(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found or expired")
 
+    # An Agent Autofill export is checked against its review record before it
+    # leaves the building. A file whose stamp claims REVIEWED but does not
+    # verify has either been altered or carries a stamp copied from another
+    # document, and handing it to someone about to submit it to an organ of
+    # state is the worst outcome this system has. Files that are not autofill
+    # exports — quotation PDFs, accreditation reports — return None here and
+    # pass through untouched.
+    try:
+        from agent_autofill.integration.review_gate import verify_export_by_path
+
+        verdict = verify_export_by_path(file_path)
+    except Exception:
+        # A verification that cannot run must not silently become a pass, but
+        # it also must not take down the route for unrelated downloads.
+        logger.exception("Export verification failed to run for %s", filename)
+        verdict = None
+
+    if verdict is not None and not verdict.get("mac_verified"):
+        logger.error(
+            "Refusing to serve unverifiable export %s: %s",
+            filename, verdict.get("mac_detail", "no detail"),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This document does not match the review it claims. It may have "
+                "been edited after export, or it predates document verification. "
+                "Re-export it from the review before using it."
+            ),
+        )
+
     # This used to hardcode application/pdf. Agent Autofill exports .docx drafts
     # through the same route, and a Word document served as a PDF makes the
     # browser try to render it inline and fail.

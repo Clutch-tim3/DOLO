@@ -773,6 +773,33 @@ def _values_unconfirmed(company_id: str, review_id: str) -> list[dict]:
     return []
 
 
+def verify_export_by_path(path: str | Path) -> dict | None:
+    """
+    Verify a file without being told which review it belongs to.
+
+    The download route serves files by name and has no review context, so it
+    could not call `verify_export` — which is why that function sat with no
+    caller outside tests while the residual it exists to catch stayed live.
+    This closes the gap by looking the review up from the file itself.
+
+    Returns None when the file is not a known Agent Autofill export, so
+    quotation PDFs and accreditation reports going through the same route are
+    passed through untouched rather than being judged by a gate that does not
+    apply to them.
+    """
+    name = Path(path).name
+    with _connect() as conn:
+        row = conn.execute(
+            """SELECT company_id, review_id FROM autofill_review
+                WHERE export_path IS NOT NULL AND export_path LIKE ?
+                ORDER BY reviewed_at DESC LIMIT 1""",
+            (f"%{name}",),
+        ).fetchone()
+    if row is None:
+        return None
+    return verify_export(path, row["company_id"], row["review_id"])
+
+
 def _unverifiable_acknowledgements(review_id: str) -> list[dict]:
     """
     Acknowledgements whose stored MAC does not match their contents.

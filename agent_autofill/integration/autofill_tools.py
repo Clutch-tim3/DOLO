@@ -199,6 +199,30 @@ def _autofill_export_document(company_id: str, review_id: str,
     # main_agent surfaces `pdf_url` from any tool result, which is what puts a
     # download button in the chat. The generated file is a .docx, so the name is
     # sent alongside rather than letting the client guess.
+    # Verify what we just produced, before handing anyone a link to it. This
+    # is cheap and it is the only moment where a failure is unambiguously a bug
+    # in us rather than tampering: nothing else has touched the file yet. It
+    # also means verify_export is actually exercised in production, which it
+    # was not — it had no caller outside the test suite.
+    if isinstance(result, dict) and result.get("status") == "success" \
+            and result.get("export_path") and as_reviewed:
+        from agent_autofill.integration.review_gate import verify_export
+
+        verdict = _guard(verify_export, result["export_path"], company_id, review_id)
+        if not (isinstance(verdict, dict) and verdict.get("mac_verified")):
+            detail = (verdict or {}).get("mac_detail", "") if isinstance(verdict, dict) else ""
+            return {
+                "status": "error",
+                "message": (
+                    "The export was written but does not verify against its own "
+                    "review record, so it is not being offered for download. "
+                    "This is a fault in CairoAI, not something you did. "
+                    + str(detail)
+                ).strip(),
+                "export_path": result["export_path"],
+            }
+        result["verified"] = True
+
     if isinstance(result, dict) and result.get("download_url"):
         result["pdf_url"] = result["download_url"]
         result["download_name"] = Path(result["export_path"]).name

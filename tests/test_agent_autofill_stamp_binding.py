@@ -535,3 +535,86 @@ def test_every_new_tool_is_reachable_by_the_model():
     for tool in ("autofill_show_filled_values", "autofill_confirm_filled_values"):
         assert tool in names, f"{tool} has no schema"
         assert tool in TOOL_REGISTRY, f"{tool} is not dispatchable"
+
+
+# --- verify_export wired into the paths that hand files to people ----------
+#
+# It previously had no caller outside this file: the download route serves by
+# filename and had no review context to pass. verify_export_by_path closes that
+# by looking the review up from the file.
+#
+# These tests deliberately do NOT import app. app.py calls
+# load_dotenv(".env.local", override=True), which REPLACES an already-set
+# AUTOFILL_STAMP_SECRET — importing it mid-suite would re-key every signature
+# made before that point and fail every other test in this file. The HTTP round
+# trip is exercised separately.
+
+
+def test_verify_by_path_returns_none_for_files_that_are_not_exports(tmp_path):
+    """Quotation PDFs and accreditation reports share the download route."""
+    other = tmp_path / "quotation_unrelated.pdf"
+    other.write_bytes(b"%PDF-1.4 not an autofill export")
+    assert rg.verify_export_by_path(other) is None
+
+
+def test_verify_by_path_confirms_a_genuine_export(review):
+    review_id, _, _ = review
+    _ack_all(review_id)
+    out = rg.export_reviewed(COMPANY, review_id)
+    verdict = rg.verify_export_by_path(out["export_path"])
+    assert verdict is not None and verdict["mac_verified"] is True
+
+
+def test_verify_by_path_catches_a_tampered_export(review):
+    import docx
+
+    review_id, _, _ = review
+    _ack_all(review_id)
+    out = rg.export_reviewed(COMPANY, review_id)
+
+    document = docx.Document(out["export_path"])
+    changed = 0
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    for run in para.runs:
+                        if PROFILE["company_name"] in run.text:
+                            run.text = "TAMPERED (Pty) Ltd"
+                            changed += 1
+    document.save(out["export_path"])
+    assert changed, "the tamper must land or the test proves nothing"
+
+    verdict = rg.verify_export_by_path(out["export_path"])
+    assert verdict is not None and verdict["mac_verified"] is False
+
+
+def test_the_export_tool_verifies_before_offering_a_download(review):
+    """
+    The tool checks what it just produced. A failure here is unambiguously our
+    bug — nothing else has touched the file yet — so no link is handed back.
+    """
+    from agent_autofill.integration.autofill_tools import AUTOFILL_TOOL_HANDLERS
+
+    review_id, _, _ = review
+    _ack_all(review_id)
+    out = AUTOFILL_TOOL_HANDLERS["autofill_export_document"](
+        COMPANY, review_id, as_reviewed=True)
+    assert out["status"] == "success"
+    assert out["verified"] is True
+    assert out.get("pdf_url")
+
+
+def test_the_export_tool_withholds_the_link_when_verification_fails(review, monkeypatch):
+    from agent_autofill.integration import autofill_tools as at
+
+    review_id, _, _ = review
+    _ack_all(review_id)
+    monkeypatch.setattr(rg, "verify_export",
+                        lambda *a, **k: {"mac_verified": False,
+                                         "mac_detail": "forced failure"})
+    out = at.AUTOFILL_TOOL_HANDLERS["autofill_export_document"](
+        COMPANY, review_id, as_reviewed=True)
+    assert out["status"] == "error"
+    assert "pdf_url" not in out
+    assert "does not verify" in out["message"]

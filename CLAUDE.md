@@ -176,7 +176,18 @@ exists to prevent. It lives in Secret Manager for the deployed function and in
 value in `tests/conftest.py`.
 
 `verify_export(path, company_id, review_id)` is the authority on whether an
-export is genuine, not the banner. `stamp_docx()` requires a signature to be
+export is genuine, not the banner. It is wired into both paths that hand a file
+to a person: `autofill_export_document` verifies what it just produced before
+returning a link, and `/api/generated/<name>` calls `verify_export_by_path()`
+and returns **409** rather than serving an export that does not match its
+review. Files that are not autofill exports return `None` there and pass
+through untouched.
+
+**Tests must not import `app` alongside the stamp tests.** `app.py` calls
+`load_dotenv(".env.local", override=True)`, which REPLACES an already-set
+`AUTOFILL_STAMP_SECRET`. Importing it part-way through a run re-keys every
+signature made before that point, and the failures look like broken
+verification rather than a changed secret. This cost an hour once already. `stamp_docx()` requires a signature to be
 present but cannot check one — it has the file, not the record — so a forger
 can still produce a document whose banner reads REVIEWED. It will not verify.
 Anything user-facing must call `verify_export` with the record.
