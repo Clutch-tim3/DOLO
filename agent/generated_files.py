@@ -52,7 +52,7 @@ def init_generated_files_db() -> None:
 init_generated_files_db()
 
 
-def register(filename: str, company_id: str, kind: str = "") -> None:
+def register(filename: str, company_id: str, kind: str = "", conn=None) -> None:
     """
     Record who a generated file belongs to.
 
@@ -60,6 +60,14 @@ def register(filename: str, company_id: str, kind: str = "") -> None:
     `company_id` is missing: a generator that cannot name an owner should still
     fail visibly at download time rather than crash mid-generation and lose the
     user's work. The absent row is what refuses the download.
+
+    `conn` MUST be passed when the caller already holds an open connection to
+    this database. Opening a second one inside an outer write transaction
+    deadlocks against it — SQLite blocks the inner writer until the busy
+    timeout expires and then raises "database is locked". That is not
+    theoretical: it broke every reviewed export in `export_reviewed`, which
+    holds its transaction open across the stamp so the status change and the
+    file cannot disagree.
     """
     name = (filename or "").strip()
     if not name:
@@ -68,12 +76,17 @@ def register(filename: str, company_id: str, kind: str = "") -> None:
         logger.warning(
             "generated file %s has no owner; it will not be servable", name)
         return
-    with db.connect(DB_PATH) as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO generated_file_owner"
-            " (filename, company_id, kind, created_at) VALUES (?, ?, ?, ?)",
-            (name, company_id, kind or "", datetime.now().isoformat(timespec="seconds")),
-        )
+
+    sql = ("INSERT OR IGNORE INTO generated_file_owner"
+           " (filename, company_id, kind, created_at) VALUES (?, ?, ?, ?)")
+    params = (name, company_id, kind or "",
+              datetime.now().isoformat(timespec="seconds"))
+
+    if conn is not None:
+        conn.execute(sql, params)
+        return
+    with db.connect(DB_PATH) as own:
+        own.execute(sql, params)
 
 
 def owner_of(filename: str) -> str | None:

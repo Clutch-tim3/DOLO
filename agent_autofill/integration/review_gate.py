@@ -606,7 +606,8 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
 
         target = generated_dir() / _export_name(row["draft_path"], review_id, "REVIEWED")
         shutil.copy2(draft, target)
-        register_generated(target.name, company_id, "autofill_reviewed")
+        # Inside the open transaction, so it must share the connection.
+        register_generated(target.name, company_id, "autofill_reviewed", conn=conn)
         export_sha = file_sha256(target)
 
         stamp = ReviewStamp(

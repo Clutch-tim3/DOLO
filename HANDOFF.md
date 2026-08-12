@@ -29,12 +29,19 @@ See §3.
   `agent/main_agent.py` — `company_id` threaded to the four generation points
 - `tests/test_generated_file_ownership.py` (new) — 9 tests, all passing
 
-**The full suite has failures on this branch and they are NOT diagnosed.**
-`tests/test_generated_file_ownership.py` passes 9/9 alone; the whole run showed
-failures from ~10% onward. That is the first thing to do on resuming — do not
-assume it is only the three known ML failures. Run:
+**Diagnosed and fixed.** The suite is **3 failed, 676 passed, 1 xfailed** —
+only the three pre-existing ML failures.
 
-    python -m pytest tests/ -q --no-header --tb=line
+The 18 extra failures were mine. `export_reviewed` holds an open write
+transaction across the stamp, and the ownership registration opened a SECOND
+connection to the same SQLite file inside it, deadlocking against its own lock.
+Not a test artefact: every reviewed export was broken. `generated_files.
+register()` now takes `conn=` and shares the caller's transaction. The 30s busy
+timeout added at the same time turned an instant failure into a 30s wait per
+test, which is why that run took 16 minutes rather than 3.5.
+
+Worth remembering: the fix's own tests passed in isolation. It only surfaced in
+a full run.
 
 ---
 
