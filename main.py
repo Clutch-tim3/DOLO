@@ -120,11 +120,10 @@ def _get_bridge():
     # without it, so an absent binding degrades one feature rather than
     # blocking the deploy.
     #
-    #   CLOUD_SQL_PASSWORD    -> add when the Cloud SQL instance is created
     #   WEBHOOK_TASK_SECRET   -> add when the Cloud Tasks queue is created
     #   DROPBOX_APP_SECRET    -> add when a Dropbox app exists
     secrets=[ANTHROPIC_API_KEY, AUTOFILL_STAMP_SECRET,
-             GOOGLE_OAUTH_CLIENT_SECRET],
+             GOOGLE_OAUTH_CLIENT_SECRET, CLOUD_SQL_PASSWORD],
 )
 def api(req: https_fn.Request) -> https_fn.Response:
     # Answered without touching the bridge, so it stays reachable even if the

@@ -122,7 +122,8 @@ def generate_draft_quote_flow(company_id: str, tender_file_path: str):
     
     quote_id = log_draft_quote(company_id, "TENDER_1", priced_items)
     
-    doc = generate_quote_document(profile, priced_items, is_final=False)
+    doc = generate_quote_document(profile, priced_items, is_final=False,
+                                  company_id=company_id)
     return {
         "quote_id": quote_id,
         "draft_document": doc["document"],
@@ -172,7 +173,8 @@ def finalize_quote_flow(quote_id: str, priced_items: list = None, company_id: st
         return ("Cannot finalize quote: unresolved flagged items.\n" + listed +
                 "\nEach needs a price confirmed before this quote can be final.")
 
-    doc = generate_quote_document({}, stored_items, is_final=True)
+    doc = generate_quote_document({}, stored_items, is_final=True,
+                                  company_id=record["company_id"])
     if doc.get("status") == "error":
         return doc["message"]
 

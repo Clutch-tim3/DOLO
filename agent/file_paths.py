@@ -48,6 +48,46 @@ def generated_dir() -> Path:
     return root
 
 
+def pack_upload_dir(company_id: str, pack_id: str) -> Path:
+    """
+    Where an Autofill Vault pack's uploaded source documents live.
+
+    Uploads, not generated artefacts, so they get their own root rather than
+    being mixed into generated_dir() — everything in there is servable through
+    /api/generated/<name> once registered, and a raw uploaded tender pack is not
+    something the download route should ever be asked about.
+
+    Same read-only-filesystem constraint as everything else here: on Cloud
+    Functions this must be under /tmp or the very first upload raises OSError.
+    And the same limitation applies — /tmp is per-instance, so a pack whose
+    files were uploaded to one instance and submitted against another will find
+    them gone. The pack row records that as an error rather than silently
+    producing an empty draft.
+
+    company_id and pack_id are both segment-sanitised: company_id comes from the
+    authenticated principal and pack_id is a uuid4 we minted, but a path built
+    from identifiers is worth making structurally incapable of traversal rather
+    than relying on where they came from.
+    """
+    override = os.environ.get("AGENT_UPLOAD_DIR")
+    if override:
+        root = Path(override)
+    elif _on_serverless():
+        root = Path("/tmp") / "dolo-uploads"
+    else:
+        root = PROJECT_ROOT / "data" / "autofill_packs"
+
+    target = root / _path_segment(company_id) / _path_segment(pack_id)
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _path_segment(value: str) -> str:
+    """One directory name, with anything that could leave the directory removed."""
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or "")).strip("._-")
+    return cleaned or "unknown"
+
+
 def safe_generated_path(filename: str) -> Path:
     """
     Resolve a caller-supplied filename inside generated_dir().

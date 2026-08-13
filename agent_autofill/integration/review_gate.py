@@ -53,6 +53,7 @@ from pathlib import Path
 from agent import db
 from agent.db_paths import AGENT_MEMORY_DB as DB_PATH
 from agent.file_paths import generated_dir, public_url
+from agent.generated_files import register as register_generated
 from agent_autofill.integration.export_metadata import (
     STATUS_REVIEWED,
     STATUS_UNREVIEWED,
@@ -449,6 +450,7 @@ def export_draft(company_id: str, review_id: str) -> dict:
 
     target = generated_dir() / _export_name(row["draft_path"], review_id, "DRAFT")
     shutil.copy2(draft, target)
+    register_generated(target.name, company_id, "autofill_draft")
 
     stamp = ReviewStamp(
         review_id=review_id,
@@ -604,6 +606,8 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
 
         target = generated_dir() / _export_name(row["draft_path"], review_id, "REVIEWED")
         shutil.copy2(draft, target)
+        # Inside the open transaction, so it must share the connection.
+        register_generated(target.name, company_id, "autofill_reviewed", conn=conn)
         export_sha = file_sha256(target)
 
         stamp = ReviewStamp(

@@ -17,6 +17,7 @@ from datetime import datetime
 from fpdf import FPDF
 
 from agent.file_paths import generated_dir, public_url
+from agent.generated_files import register as register_generated
 
 BRAND = (200, 51, 31)
 INK = (40, 40, 40)
@@ -70,7 +71,8 @@ class _Report(FPDF):
         self.cell(0, 4, f"Page {self.page_no()}", align="C")
 
 
-def generate_accreditation_report(company_profile: dict, items: list) -> dict:
+def generate_accreditation_report(company_profile: dict, items: list,
+                                  company_id: str = None) -> dict:
     """
     Build the PDF.
 
@@ -224,6 +226,7 @@ def generate_accreditation_report(company_profile: dict, items: list) -> dict:
     filename = f"accreditation_roadmap_{uuid.uuid4().hex[:10]}.pdf"
     filepath = generated_dir() / filename
     pdf.output(str(filepath))
+    register_generated(filename, company_id, "accreditation_roadmap")
 
     return {
         "status": "success",

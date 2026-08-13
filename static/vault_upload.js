@@ -13,12 +13,12 @@
 
     var ACCEPTED = ['.pdf', '.docx', '.doc'];
 
-    function getCompanyId() {
-        if (typeof global.getCompanyId === 'function') {
-            try { return global.getCompanyId(); } catch (e) { /* fall through */ }
-        }
-        return localStorage.getItem('cairoai_company_id') || 'pro_corp';
-    }
+    /* The company this document is filed against comes from the session, not
+       from here. There used to be a getCompanyId() reading localStorage with a
+       'pro_corp' fallback, sent as X-Company-ID; the server believed it, so a
+       document could be filed into any company's Compliance Vault by anyone
+       who could reach the route. static/auth.js is what establishes identity
+       now, and the cookie travels with the request on its own. */
 
     function hasAcceptedExtension(name) {
         var lower = (name || '').toLowerCase();
@@ -64,6 +64,60 @@
      *   onDone    - called once after a batch, with a summary
      *   notify    - optional (title, message) toast
      */
+    /**
+     * Wire a zone + file input so files arrive by click, keyboard, or drop.
+     *
+     * Split out of initVaultUploader so a second uploader does not have to
+     * re-implement it. Agent Autofill packs post to a different endpoint with
+     * different batch semantics (one request carrying many files, and a list
+     * the user can remove from afterwards), so they cannot share the upload
+     * loop below — but there is no reason for the app to grow a third
+     * drag-and-drop implementation, which is how the two vault renderings
+     * drifted apart in the first place.
+     *
+     * @param {Element} zone   the drop zone
+     * @param {Element} input  the <input type=file>
+     * @param {Function} onFiles  called with a FileList
+     */
+    function bindDropZone(zone, input, onFiles) {
+        if (!zone || !input) return;
+        armWindowGuard();
+
+        zone.addEventListener('click', function (e) {
+            // Let a real control inside the zone do its own thing.
+            if (e.target.closest('a')) return;
+            input.click();
+        });
+        zone.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+        });
+        input.addEventListener('change', function () { onFiles(input.files); });
+
+        // dragenter/dragleave fire for every child element, so a plain
+        // add/remove flickers as the pointer crosses the icon or the text. The
+        // counter keeps the highlight stable until the pointer truly leaves.
+        var depth = 0;
+        zone.addEventListener('dragenter', function (e) {
+            e.preventDefault();
+            depth += 1;
+            zone.classList.add('is-dragging');
+        });
+        zone.addEventListener('dragover', function (e) {
+            e.preventDefault();                       // required, or drop never fires
+            e.dataTransfer.dropEffect = 'copy';
+        });
+        zone.addEventListener('dragleave', function () {
+            depth = Math.max(0, depth - 1);
+            if (depth === 0) zone.classList.remove('is-dragging');
+        });
+        zone.addEventListener('drop', function (e) {
+            e.preventDefault();
+            depth = 0;
+            zone.classList.remove('is-dragging');
+            onFiles(e.dataTransfer && e.dataTransfer.files);
+        });
+    }
+
     function initVaultUploader(opts) {
         var zone = opts.zone, input = opts.input, queue = opts.queue;
         if (!zone || !input) return;
@@ -90,13 +144,20 @@
             try {
                 var res = await fetch('/api/archive/upload-document', {
                     method: 'POST',
-                    headers: { 'X-Company-ID': getCompanyId() },
+                    credentials: 'same-origin',
                     body: form
                 });
                 if (!res.ok) {
+                    if (res.status === 401 && global.CairoAuth) {
+                        // The session went away mid-visit. Put the gate back
+                        // rather than reporting a generic upload failure.
+                        global.CairoAuth.handleUnauthorized();
+                    }
                     var detail = '';
                     try { detail = (await res.json()).detail || ''; } catch (e) { /* no body */ }
-                    if (entry) settle(entry, 'is-bad', res.status === 415 ? 'Wrong type' : 'Failed');
+                    if (entry) settle(entry, 'is-bad',
+                        res.status === 415 ? 'Wrong type'
+                                           : (res.status === 401 ? 'Signed out' : 'Failed'));
                     return { ok: false, file: file, reason: detail || ('HTTP ' + res.status) };
                 }
                 var data = await res.json();
@@ -149,40 +210,9 @@
             }
         }
 
-        zone.addEventListener('click', function (e) {
-            // Let a real control inside the zone do its own thing.
-            if (e.target.closest('a')) return;
-            input.click();
-        });
-        zone.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
-        });
-        input.addEventListener('change', function () { handleFiles(input.files); });
-
-        // dragenter/dragleave fire for every child element, so a plain
-        // add/remove flickers as the pointer crosses the icon or the text. The
-        // counter keeps the highlight stable until the pointer truly leaves.
-        var depth = 0;
-        zone.addEventListener('dragenter', function (e) {
-            e.preventDefault();
-            depth += 1;
-            zone.classList.add('is-dragging');
-        });
-        zone.addEventListener('dragover', function (e) {
-            e.preventDefault();                       // required, or drop never fires
-            e.dataTransfer.dropEffect = 'copy';
-        });
-        zone.addEventListener('dragleave', function () {
-            depth = Math.max(0, depth - 1);
-            if (depth === 0) zone.classList.remove('is-dragging');
-        });
-        zone.addEventListener('drop', function (e) {
-            e.preventDefault();
-            depth = 0;
-            zone.classList.remove('is-dragging');
-            handleFiles(e.dataTransfer && e.dataTransfer.files);
-        });
+        bindDropZone(zone, input, handleFiles);
     }
 
     global.initVaultUploader = initVaultUploader;
+    global.bindDropZone = bindDropZone;
 })(window);

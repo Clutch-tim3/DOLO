@@ -6,14 +6,19 @@ route registration belongs to the integration owner. Mounting is one line:
     from agent_autofill.questionnaire_api import router as questionnaire_router
     app.include_router(questionnaire_router)
 
-Tenant identity comes from the X-Company-ID header, matching what app.py's other
-company-aware endpoints already do. It is never taken from the request body,
-because the body is the part an untrusted page can set freely.
+Tenant identity comes from the authenticated principal (`agent/auth.py`), never
+from the request body -- the body is the part an untrusted page can set freely.
+
+This used to read `X-Company-ID` with a `starter_corp` default, matching what
+app.py's other company-aware endpoints did at the time. That default is exactly
+the bug: it made every unauthenticated caller a tenant, and this router writes
+to the company profile that Agent Autofill later fills real SBD forms from.
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
+from agent.auth import require_company_id
 from agent_autofill.templates.company_template_store import (
     get_questionnaire_definition,
     load_questionnaire,
@@ -24,27 +29,32 @@ from agent_autofill.templates.company_template_store import (
 
 router = APIRouter(prefix="/api/questionnaire", tags=["agent-autofill"])
 
-DEFAULT_COMPANY_ID = "starter_corp"
-
-
-def _company_id(request: Request) -> str:
-    return request.headers.get("X-Company-ID", DEFAULT_COMPANY_ID)
-
 
 @router.get("/definition")
-async def api_questionnaire_definition():
-    """Steps, fields, validation hints. No company data."""
+async def api_questionnaire_definition(
+    company_id: str = Depends(require_company_id),
+):
+    """
+    Steps, fields, validation hints. No company data.
+
+    Authenticated anyway. It carries nothing sensitive, but the wizard is behind
+    the login gate and an endpoint that answers anonymously is one more thing to
+    re-check the next time someone adds a field to the schema.
+    """
     return get_questionnaire_definition()
 
 
 @router.get("")
-async def api_questionnaire_load(request: Request):
+async def api_questionnaire_load(company_id: str = Depends(require_company_id)):
     """Current stored answers, read from the canonical profile row."""
-    return load_questionnaire(_company_id(request))
+    return load_questionnaire(company_id)
 
 
 @router.post("/preview")
-async def api_questionnaire_preview(request: Request):
+async def api_questionnaire_preview(
+    request: Request,
+    company_id: str = Depends(require_company_id),
+):
     """
     Validate and diff. Writes nothing.
 
@@ -53,7 +63,7 @@ async def api_questionnaire_preview(request: Request):
     """
     body = await request.json()
     result = preview_questionnaire_save(
-        _company_id(request),
+        company_id,
         body.get("answers") or {},
         partial=bool(body.get("partial")),
     )
@@ -62,7 +72,10 @@ async def api_questionnaire_preview(request: Request):
 
 
 @router.post("/save")
-async def api_questionnaire_save(request: Request):
+async def api_questionnaire_save(
+    request: Request,
+    company_id: str = Depends(require_company_id),
+):
     """
     Commit answers. Requires `confirmed: true` in the body.
 
@@ -72,7 +85,7 @@ async def api_questionnaire_save(request: Request):
     """
     body = await request.json()
     result = save_questionnaire(
-        _company_id(request),
+        company_id,
         body.get("answers") or {},
         confirmed=bool(body.get("confirmed")),
         partial=bool(body.get("partial")),
@@ -86,6 +99,6 @@ async def api_questionnaire_save(request: Request):
 
 
 @router.get("/autofill-values")
-async def api_autofill_values(request: Request):
+async def api_autofill_values(company_id: str = Depends(require_company_id)):
     """Canonical-field -> value map for the fill engine. Signature excluded."""
-    return get_autofill_values(_company_id(request))
+    return get_autofill_values(company_id)

@@ -919,13 +919,18 @@ body.light-theme .quote-select { background: rgba(20,16,10,.03); color: #17130d;
     .quote-dl:hover { transform: none; box-shadow: none; }
 }
     </style>
+    <!-- The sign-in gate. First, because every fetch below it needs a session:
+         the company each of those calls acts as comes from the server now, not
+         from a header this page used to choose for itself. -->
+    <script src="static/auth.js?v=1"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <script src="static/bid_generator.js"></script>
     <script src="static/onboarding_engine.js"></script>
     <script src="static/chatbot_engine.js"></script>
     <!-- Shared with static/vault.html so the two vault renderings cannot drift. -->
-    <script src="static/vault_upload.js?v=1.0"></script>
+    <script src="static/vault_upload.js?v=1.1"></script>
+    <script src="static/autofill_packs.js?v=1.1"></script>
 </head>
 <body>
 
@@ -974,6 +979,15 @@ body.light-theme .quote-select { background: rgba(20,16,10,.03); color: #17130d;
                     <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 15h6M12 12v3"/></svg></span>
                     <span>Smart Compliance Vault</span>
                 </li>
+                <!-- Deliberately NOT called a vault. The item above holds the
+                     company's own compliance certificates; this one holds the
+                     documents of a tender you are bidding on, so that the agent
+                     can pre-fill them. Two things called "Vault" in one sidebar
+                     would be a coin toss for the user. -->
+                <li class="nav-item" data-tab="autofill" onclick="switchTab('autofill', this);">
+                    <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V6.5z"/><path d="M3 7v12a2 2 0 0 0 2 2h9"/><line x1="10" y1="9" x2="15" y2="9"/><line x1="10" y1="13" x2="15" y2="13"/></svg></span>
+                    <span>Tender Autofill Packs</span>
+                </li>
                 <li class="nav-item" data-tab="sort" onclick="switchTab('sort', this);">
                     <span class="nav-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#c5a880" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v18M7 21l-4-4M7 21l4-4M17 21V3M17 3l4 4M17 3l-4 4"/></svg></span>
                     <span>Batch Tender Analysis</span>
@@ -1012,6 +1026,10 @@ body.light-theme .quote-select { background: rgba(20,16,10,.03); color: #17130d;
                     <option value="conquest">Conquest (CatBoost Engine - 0.8578 AUC)</option>
                     <option value="sailor">Sailor (Default - 0.8187 AUC)</option>
                 </select>
+                <!-- Who is signed in, and the way out. Filled by auth.js's
+                     identity, never from localStorage. -->
+                <span id="authIdentity" style="font-size: 11px; color: var(--text-muted); letter-spacing: 0.04em;"></span>
+                <button type="button" id="authSignOut" onclick="CairoAuth.logout()" style="display:none; background: transparent; color: var(--text-muted); border: 1px solid rgba(197,168,128,0.4); padding: 6px 12px; border-radius: 4px; font-size: 11px; cursor: pointer;">SIGN OUT</button>
             </div>
         </header>
 
@@ -1796,6 +1814,118 @@ exportCsvBtn.addEventListener('click', () => {
 
 </section>
 
+        <!-- TAB: TENDER AUTOFILL PACKS ------------------------------------
+             The manual-upload path into Agent Autofill. Only the shell lives
+             here; every list, row and flag is built as DOM nodes by
+             static/autofill_packs.js, because pack names, filenames and field
+             labels are user- or third-party-supplied and this app does not
+             parse those as markup anywhere.
+
+             Drafts only. Nothing in this tab's copy calls a pack complete,
+             ready, final or submission-ready, because none of that is ever
+             true of what Agent Autofill produces. -->
+        <section id="tab-autofill" class="content-section">
+<main class="page-container">
+    <div class="vault-hero">
+        <span class="category-label">AGENT AUTOFILL</span>
+        <h1 class="hero-title" style="font-size: 36px; text-align: left;">TENDER AUTOFILL PACKS.</h1>
+        <p class="section-lede">
+            Group the documents for one tender into a pack and submit it. The agent pre-fills
+            what it can source from your company profile and flags everything else for you.
+            <strong>Everything it produces is a draft</strong> &mdash; no signature is applied,
+            no price is written, and no declaration is answered on your behalf.
+        </p>
+    </div>
+
+    <div class="ap-toolbar">
+        <button type="button" class="corner-btn" id="apNewPackBtn">
+            <span>+ NEW PACK</span>
+            <span class="bracket bracket-tr"></span>
+            <span class="bracket bracket-bl"></span>
+        </button>
+        <span class="ap-toolbar-note">
+            This is the tender you are bidding on &mdash; your own compliance certificates
+            live in the Smart Compliance Vault.
+        </span>
+    </div>
+
+    <!-- Composer: one pack being assembled. Hidden until NEW PACK is pressed. -->
+    <div class="ap-composer" id="apComposer" hidden>
+        <div class="ap-composer-head">
+            <label class="ap-label" for="apPackName">Pack name</label>
+            <input type="text" id="apPackName" class="ap-input" maxlength="120"
+                   autocomplete="off" spellcheck="false">
+            <span class="ap-hint">Optional. Defaults to today&rsquo;s date; rename it any time.</span>
+        </div>
+
+        <!-- Same uploader shell as the Compliance Vault, and the same drag
+             wiring (static/vault_upload.js). The endpoint differs: a pack
+             posts every file in one request. -->
+        <div class="vault-upload" id="apDropZone" role="button" tabindex="0"
+             aria-label="Add tender documents — click to browse or drop files here">
+            <div class="vault-upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+                     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+            </div>
+            <div class="vault-upload-copy">
+                <span class="vault-upload-title">Add tender documents</span>
+                <span class="vault-upload-sub">
+                    Drop files here, or use ADD FILE. PDF and Word only. Several at once is
+                    the point &mdash; a tender pack is usually a folder, not a file.
+                </span>
+            </div>
+            <div class="vault-upload-cta">
+                <button type="button" class="btn-gold" id="apAddFileBtn">ADD FILE</button>
+            </div>
+            <input type="file" id="apFileInput" multiple accept=".pdf,.docx,.doc,application/pdf">
+        </div>
+
+        <div class="ap-filelist" id="apFileList"></div>
+        <p class="ap-msg" id="apComposerMsg" hidden></p>
+
+        <div class="ap-submit-row">
+            <button type="button" class="btn-gold ap-submit" id="apSubmitBtn" disabled>SUBMIT PACK</button>
+            <button type="button" class="ap-link-btn" id="apDiscardBtn">DISCARD</button>
+            <p class="ap-microcopy">Submitting will begin automatic form-filling for this tender pack.</p>
+        </div>
+        <p class="ap-blocked" id="apSubmitBlocked">Add at least one document before submitting.</p>
+    </div>
+
+    <!-- Live status of whichever pack is being watched. -->
+    <div class="ap-status" id="apStatus" hidden></div>
+
+    <div class="section-rule"></div>
+
+    <span class="category-label">PACK HISTORY</span>
+    <div class="ap-history" id="apHistory"></div>
+
+    <div class="ap-empty" id="apEmpty" hidden>
+        <p class="ap-empty-line">NO PACKS YET &mdash; ADD YOUR FIRST TENDER DOCUMENTS TO BEGIN</p>
+        <p class="ap-empty-sub">
+            Press NEW PACK above, drop in the bid documents for one tender, and submit.
+        </p>
+    </div>
+</main>
+
+<!-- Review drawer. Reuses the .prediction-panel pattern already used by Batch
+     Tender Analysis rather than introducing a second drawer treatment. -->
+<aside class="prediction-panel ap-review" id="apReview" aria-label="Review flagged fields">
+    <div class="panel-header">
+        <div>
+            <span class="category-label">REVIEW &mdash; DRAFT</span>
+            <h2 class="section-title" id="apReviewTitle" style="font-size:18px;">Pack</h2>
+        </div>
+        <button type="button" class="close-btn" id="apReviewClose">[ CLOSE ]</button>
+    </div>
+    <div id="apReviewBody"></div>
+</aside>
+
+</section>
+
         <!-- TAB 4: CALENDAR (FULL FEATURE PARITY WITH MAIN SITE) -->
         <section id="tab-calendar" class="content-section">
     <main class="page-container" style="display:block;">
@@ -2278,7 +2408,7 @@ exportCsvBtn.addEventListener('click', () => {
             document.querySelectorAll('.content-section').forEach(sec => sec.classList.remove('active'));
             const target = document.getElementById('tab-' + tabId);
             if (target) target.classList.add('active');
-            const titles = {'sort': 'Batch Tender Analysis', 'archive': 'Smart Compliance Archive & Vault', 'calendar': 'Calendar & Submission Deadlines', 'quotation': 'Automated Quotation Generator', 'system': 'System Status & Configuration', 'agent': 'Company-Aware Assistant'};
+            const titles = {'sort': 'Batch Tender Analysis', 'archive': 'Smart Compliance Archive & Vault', 'autofill': 'Tender Autofill Packs — Draft Pre-Fill', 'calendar': 'Calendar & Submission Deadlines', 'quotation': 'Automated Quotation Generator', 'system': 'System Status & Configuration', 'agent': 'Company-Aware Assistant'};
             const c = document.getElementById('tabTitleHeader');
             if (c && titles[tabId]) c.textContent = titles[tabId];
         }
@@ -2286,7 +2416,10 @@ exportCsvBtn.addEventListener('click', () => {
         // Agent Wiring
         async function loadAgentData() {
             try {
-                const subRes = await fetch('/api/subscription-status', { headers: { 'X-Company-ID': 'pro_corp' } });
+                // No headers: the session cookie carries the identity, and the
+                // hardcoded 'pro_corp' this used to send was the client
+                // choosing its own tier.
+                const subRes = await fetch('/api/subscription-status', { credentials: 'same-origin' });
                 if (subRes.ok) {
                     const sub = await subRes.json();
                     const quotaCount = document.getElementById('agentQuotaCount');
@@ -2296,7 +2429,7 @@ exportCsvBtn.addEventListener('click', () => {
                     setCompactQuota(sub);
                 }
 
-                const compRes = await fetch('/api/company-profile', { headers: { 'X-Company-ID': 'pro_corp' } });
+                const compRes = await fetch('/api/company-profile', { credentials: 'same-origin' });
                 if (compRes.ok) {
                     const comp = await compRes.json();
                     
@@ -2471,13 +2604,16 @@ exportCsvBtn.addEventListener('click', () => {
             doc.save("CairoAI_Quotation.pdf");
         }
 
-        // The backend reads X-Company-ID to resolve the subscription tier. If the
-        // header is absent it defaults to "starter_corp", which has agent_enabled:
-        // false, so /api/agent/chat returns 403 before Claude is ever called.
-        // Valid ids come from MOCK_CLIENT_REGISTRY in agent/subscription.py:
-        // starter_corp | pro_corp | enterprise_corp
+        // The company comes from the session, not from this page.
+        //
+        // This used to be `localStorage.getItem('cairoai-company-id') ||
+        // 'pro_corp'`, sent to the backend as an X-Company-ID header which the
+        // backend believed. Editing one localStorage key was enough to become
+        // any tenant and unlock any tier. Nothing sends that header any more;
+        // the value below is for labelling the UI and nothing else, and the
+        // server ignores it entirely.
         function getCompanyId() {
-            return localStorage.getItem('cairoai-company-id') || 'pro_corp';
+            return (window.CairoAuth && CairoAuth.companyId()) || null;
         }
 
         /* ------------------------------------------------------------------
@@ -2495,8 +2631,12 @@ exportCsvBtn.addEventListener('click', () => {
             if (!wrap) return;
             let connected = {};
             try {
-                const res = await fetch('/api/autofill/providers/status?company_id='
-                                        + encodeURIComponent(getCompanyId()));
+                // The company_id query parameter is gone: the server reads the
+                // authenticated one. It used to be the tenant claim for this
+                // whole feature, so an anonymous GET could list — and
+                // /disconnect could delete — any company's Drive credentials.
+                const res = await fetch('/api/autofill/providers/status',
+                                        { credentials: 'same-origin' });
                 if (res.ok) {
                     const data = await res.json();
                     (data.connections || []).forEach(c => { connected[c.provider] = c; });
@@ -2537,8 +2677,10 @@ exportCsvBtn.addEventListener('click', () => {
         }
 
         function connectProvider(provider) {
-            window.location.href = '/api/autofill/providers/' + provider
-                + '/connect?company_id=' + encodeURIComponent(getCompanyId());
+            // A top-level navigation, so the session cookie travels with it —
+            // SameSite=Lax permits exactly this and blocks the cross-site POSTs
+            // it is there to stop.
+            window.location.href = '/api/autofill/providers/' + provider + '/connect';
         }
 
         async function disconnectProvider(provider) {
@@ -2546,8 +2688,8 @@ exportCsvBtn.addEventListener('click', () => {
                 + '? CairoAI will stop watching that folder. This does not revoke '
                 + 'access at ' + PROVIDER_LABELS[provider] + ' itself — do that in '
                 + 'your account settings there.')) return;
-            await fetch('/api/autofill/providers/' + provider + '/disconnect?company_id='
-                        + encodeURIComponent(getCompanyId()), { method: 'POST' });
+            await fetch('/api/autofill/providers/' + provider + '/disconnect',
+                        { method: 'POST', credentials: 'same-origin' });
             loadProviderConnections();
         }
 
@@ -2568,6 +2710,16 @@ exportCsvBtn.addEventListener('click', () => {
             window.history.replaceState({}, '',
                 window.location.pathname + (qs ? '?' + qs : ''));
         }
+
+        // Show who is signed in once auth.js has asked the server. The event
+        // fires only on a real session; while there is none the login overlay
+        // is covering the page anyway.
+        document.addEventListener('cairoai:auth', (e) => {
+            const who = document.getElementById('authIdentity');
+            const out = document.getElementById('authSignOut');
+            if (who) { who.textContent = e.detail.username + ' · ' + e.detail.company_id; }
+            if (out) { out.style.display = 'inline-block'; }
+        });
 
         document.addEventListener('DOMContentLoaded', () => {
             showProviderResult();
@@ -3015,11 +3167,13 @@ exportCsvBtn.addEventListener('click', () => {
 
                 const res = await fetch('/api/agent/chat', {
                     method: 'POST',
+                    credentials: 'same-origin',
                     headers: {
-                        'Content-Type': 'application/json',
-                        // Without this the backend falls back to "starter_corp", whose
-                        // tier has agent_enabled: false -> every request 403s.
-                        'X-Company-ID': getCompanyId()
+                        'Content-Type': 'application/json'
+                        // No X-Company-ID. The tier check behind this route now
+                        // runs against the authenticated company, so a starter
+                        // account can no longer reach Claude — and our Anthropic
+                        // bill — by naming a different one.
                     },
                     body: JSON.stringify({
                         message: msg,
@@ -3135,9 +3289,8 @@ exportCsvBtn.addEventListener('click', () => {
                 appendMessage('user', msg);
                 startAgentThinking(false);
                 try {
-                    const calRes = await fetch('/api/calendar-events', {
-                        headers: { 'X-Company-ID': getCompanyId() }
-                    });
+                    const calRes = await fetch('/api/calendar-events',
+                                               { credentials: 'same-origin' });
                     if (!calRes.ok) throw new Error('calendar unavailable');
                     const calData = await calRes.json();
                     const evtCount = (calData.events || []).length;
@@ -3195,9 +3348,8 @@ exportCsvBtn.addEventListener('click', () => {
 
             let status = null;
             try {
-                const res = await fetch('/api/vault-status', {
-                    headers: { 'X-Company-ID': getCompanyId() }
-                });
+                const res = await fetch('/api/vault-status',
+                                        { credentials: 'same-origin' });
                 if (res.ok) status = await res.json();
             } catch (e) { /* fall through to the generic wording */ }
 
@@ -3238,9 +3390,8 @@ exportCsvBtn.addEventListener('click', () => {
         async function maybeAutoVetAfterUpload() {
             if (localStorage.getItem(vaultVettedKey())) return;
             try {
-                const res = await fetch('/api/vault-status', {
-                    headers: { 'X-Company-ID': getCompanyId() }
-                });
+                const res = await fetch('/api/vault-status',
+                                        { credentials: 'same-origin' });
                 if (!res.ok) return;
                 const status = await res.json();
                 if (!status.complete) return;
@@ -3270,7 +3421,25 @@ exportCsvBtn.addEventListener('click', () => {
                 // or wipe the conversation so far.
                 openAgentConversation();
             }
+            // Refetched on every visit rather than cached: a pack can finish
+            // while the user is on another tab, and a stale PROCESSING row is
+            // exactly the "stuck" reading this tab must never give.
+            if (tabId === 'autofill' && window.AutofillPacks) {
+                window.AutofillPacks.activate();
+            }
         };
+
+        // Deep link. The sidebar is hidden below 880px (style.css), so
+        // /workspace#autofill is how this tab is reached on a phone — the same
+        // position Generate Quotation is already in.
+        function openTabFromHash() {
+            const wanted = (window.location.hash || '').replace('#', '');
+            if (!wanted) { return; }
+            const item = document.querySelector('.nav-item[data-tab="' + wanted + '"]');
+            if (item) { switchTab(wanted, item); }
+        }
+        window.addEventListener('DOMContentLoaded', openTabFromHash);
+        window.addEventListener('hashchange', openTabFromHash);
 
         // Vault uploader. Replaces triggerBlockUpload/handleArchiveFileUpload,
         // which were orphaned when the vault was redesigned: nothing called
@@ -3676,13 +3845,16 @@ exportCsvBtn.addEventListener('click', () => {
         loadWsCalendar();
 
         // --- LUXURY THEME SWITCHER (DARK / LIGHT) ---
-        let currentCompanyId = "pro_corp"; // Mocking authentication. Change to "starter_corp" to see locked state.
-
+        //
+        // `currentCompanyId = "pro_corp"; // Mocking authentication` lived here.
+        // The mock is gone: the tier below is whatever the server says the
+        // signed-in company has, and toggling the locked state now means
+        // signing in as a starter account rather than editing this line.
         async function checkSubscriptionStatus() {
             try {
-                const res = await fetch('/api/subscription-status', {
-                    headers: { 'X-Company-ID': currentCompanyId }
-                });
+                const res = await fetch('/api/subscription-status',
+                                        { credentials: 'same-origin' });
+                if (!res.ok) { return; }
                 const data = await res.json();
                 
                 const lockedState = document.getElementById('agentLockedState');

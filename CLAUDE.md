@@ -169,9 +169,58 @@ fpdf's core fonts are latin-1 only. Model-written text routinely contains
 em-dashes and curly quotes, so sanitise before writing (see
 `agent/onboarding/accreditation_report.py`).
 
+## Authentication
+
+`agent/auth.py` is the only thing that decides which company a request belongs
+to. Before it existed there was no authentication at all: every company-aware
+route read `request.headers.get("X-Company-ID", "starter_corp")`, so anyone
+could be any tenant, and an anonymous caller was always somebody. Tenant pinning
+in `tool_dispatch`, the export gate's company checks, `finalize_quote_flow`'s
+ownership check and the OAuth state binding were all real controls pinned to an
+identity nobody had proved.
+
+- **`require_company_id` is the gate.** Every route that resolves a company
+  depends on it, directly or through `require_principal`. It has **no default
+  and no fallback header** — that absence is the fix, and replacing it with any
+  default reopens the hole. `tests/test_auth.py` holds a table of every
+  protected route and asserts each answers 401 anonymously; add a company-aware
+  route and add it there.
+- **Two carriers.** An HttpOnly `cairoai_session` cookie for browsers, so no
+  script on the page can read it; `Authorization: Bearer` for the headless
+  desktop client. The token's own prefix (`cases_` / `cadev_`) selects the table.
+- **Nothing is stored in the clear.** Passwords are PBKDF2-HMAC-SHA256 with a
+  per-user salt. Tokens are `<selector>.<verifier>`: the selector is an index,
+  the verifier is stored as a SHA-256 digest and compared with
+  `hmac.compare_digest`. That split is what makes the comparison constant time —
+  a bare `WHERE token_hash = ?` leaks through the index instead.
+- **No new secret.** There is no signing key, so nothing was added to Secret
+  Manager or to `main.py` (trap 3, and the rule about never naming a secret
+  before it exists).
+- **State lives in `agent/db.py`**, so sessions and device tokens survive an
+  instance restart. A module-level dict would not.
+- **Sessions are self-hosted rather than Firebase Auth.** The reasoning is in
+  `agent/auth.py`'s docstring, including what that costs us (no MFA).
+- **Provisioning is operator-only.** `python scripts/manage_users.py create
+  --username <u> --company <company_id>`. There is deliberately no signup route
+  and no password reset: both need an email channel this project does not have,
+  and a signup without verification lets anyone claim any `company_id`, which is
+  the hole this closed. **A fresh clone therefore has no accounts and cannot log
+  in until one is created.**
+- `MOCK_CLIENT_REGISTRY` in `agent/subscription.py` maps `company_id` to a tier.
+  A user whose company is not in it resolves to starter, which is the safe
+  direction.
+- The frontend gate is `static/auth.js`, loaded by every page that calls a
+  company-aware endpoint. `getCompanyId()` no longer decides anything — it reads
+  the server's answer for labelling only.
+
 ## Running it
 
     python -m uvicorn app:app --port 8000
+
+You will need an account before anything but the public pages works:
+
+    python scripts/manage_users.py create --username you@example.test --company pro_corp
+
 
 Open **`/workspace`**, not `/static/workspace.html`. Stylesheets are linked
 relatively (`static/style.css`), so the second URL resolves them to
