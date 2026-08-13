@@ -363,6 +363,19 @@ except Exception:
     # agent_autofill package must not stop the rest of the app from serving.
     logger.exception("Agent Autofill questionnaire router unavailable")
 
+# The Autofill Vault: upload a tender's returnable forms as one pack, submit,
+# and review the whole thing in one place. This is the manual-upload stopgap
+# that ships ahead of the cloud-monitoring version (HANDOFF.md §6). Same
+# try/except as the routers below — a partially built agent_autofill package
+# must not stop the rest of the app from serving — but note the difference from
+# the auth router above, which is mounted unguarded on purpose.
+try:
+    from agent_autofill.pack_api import router as autofill_pack_router
+
+    app.include_router(autofill_pack_router)
+except Exception:
+    logger.exception("Agent Autofill pack routes unavailable")
+
 # Connecting a Drive or Dropbox account. The providers could already build a
 # consent URL and exchange a code, but nothing called either — so there was no
 # way to connect anything, and the CSRF `state` both providers generate was
