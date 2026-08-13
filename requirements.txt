@@ -53,3 +53,18 @@ dropbox>=11.36.2
 # Neither is imported unless CLOUD_SQL_INSTANCE or DATABASE_URL is set.
 cloud-sql-python-connector>=1.9
 pg8000>=1.31
+
+# Agent Autofill's document pipeline. NONE of these were declared, so the whole
+# feature failed at import in production and had never once run there:
+#
+#   ModuleNotFoundError: No module named 'rapidfuzz'
+#   [tool_dispatch] Agent Autofill tools unavailable: No module named 'docx'
+#
+# It was invisible because both import sites are wrapped in try/except so a
+# partially built package cannot take down the rest of the app — the guard did
+# its job and turned a crash into a log line nobody was reading. The lesson is
+# not to remove the guard; it is that a lazily imported dependency still has to
+# be declared.
+rapidfuzz>=3.5          # fuzzy label matching (field_alias_dictionary)
+python-docx>=1.1        # reading and writing .docx forms (document_filler)
+pdfplumber>=0.11        # PDF table and coordinate blank extraction
