@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&amp;family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&amp;family=Plus+Jakarta+Sans:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Bebas+Neue&amp;family=DM+Serif+Display:ital@0;1&amp;family=Inter:wght@400;500&amp;display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="static/style.css?v=20.0">
+    <link rel="stylesheet" href="static/style.css?v=20.1">
     <link rel="stylesheet" href="static/ui-polish.css?v=1.3">
     <style>
         body { margin: 0; padding: 0; background-color: var(--bg-color, #000000); color: var(--text-primary, #e4e4e7); font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; display: flex; height: 100vh; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
@@ -930,7 +930,7 @@ body.light-theme .quote-select { background: rgba(20,16,10,.03); color: #17130d;
     <script src="static/chatbot_engine.js"></script>
     <!-- Shared with static/vault.html so the two vault renderings cannot drift. -->
     <script src="static/vault_upload.js?v=1.1"></script>
-    <script src="static/autofill_packs.js?v=1.1"></script>
+    <script src="static/autofill_packs.js?v=1.2"></script>
 </head>
 <body>
 
@@ -2757,10 +2757,64 @@ exportCsvBtn.addEventListener('click', () => {
         const QUOTE_STAGES = [
             { at: 0,     text: 'Reading the tender document' },
             { at: 2000,  text: 'Extracting line items' },
-            { at: 5000,  text: 'Sourcing prices' },
+            // Not 'Sourcing prices'. price_search performs no lookup: every
+            // line is flagged for a person to price. Saying otherwise on the
+            // screen that produces a bid document is the same class of claim
+            // as inventing the price itself.
+            { at: 5000,  text: 'Preparing the pricing schedule' },
             { at: 9000,  text: 'Building the quotation PDF' },
             { at: 16000, text: 'Still working — larger documents take longer' }
         ];
+
+        /* ------------------------------------------------------------------
+           Pack narration — real stages, not a timer
+
+           CHAT_STAGES and QUOTE_STAGES above advance on a clock because a
+           single request is opaque until it returns. Pack processing is not
+           opaque: the server records each stage as it happens and the client
+           polls for them, so these lines are what actually occurred rather
+           than what usually occurs by now.
+
+           Rendered as agent messages so the user reads one continuous voice
+           instead of watching a progress bar in a different part of the app.
+           ------------------------------------------------------------------ */
+        window.AgentNarration = (function () {
+            let row = null;
+
+            function ensureRow() {
+                if (!row) row = appendMessageRow('agent', 'Agent');
+                return row;
+            }
+
+            function line(text, kind) {
+                const parts = ensureRow();
+                if (!parts) return;
+                const el = document.createElement('div');
+                el.className = 'msg-line ap-narration' + (kind ? ' ' + kind : '');
+                // textContent: filenames and document types come from uploaded
+                // files and from the model, and neither is ours to trust as
+                // markup.
+                el.textContent = text;
+                parts.bubble.appendChild(el);
+                scrollAgentLog();
+            }
+
+            return {
+                start: function (packName) {
+                    row = null;
+                    line('Working on ' + (packName || 'your pack') + '.');
+                },
+                step: function (text) { line(text); },
+                usage: function (u) {
+                    if (!u || !u.model_calls) return;
+                    line(u.model_calls + ' model call' + (u.model_calls === 1 ? '' : 's')
+                         + ' used — one per document, to identify what it is.',
+                         'ap-narration-usage');
+                },
+                fail: function (text) { line(text, 'ap-narration-error'); },
+                end: function () { row = null; }
+            };
+        })();
 
         // --- message rendering ------------------------------------------------
         //

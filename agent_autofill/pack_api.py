@@ -45,10 +45,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
+from fastapi import (APIRouter, BackgroundTasks, Depends, File, HTTPException,
+                     Query, Request, UploadFile)
 
 from agent.auth import Principal, assert_company, require_principal
-from agent_autofill.integration import pack_store
+from agent_autofill.integration import pack_events, pack_store
 from agent_autofill.integration.pack_store import (
     PackInputError,
     PackNotFound,
@@ -193,10 +194,23 @@ async def api_submit_pack(pack_id: str, background: BackgroundTasks,
 
 @router.get("/{pack_id}/status")
 async def api_pack_status(pack_id: str,
+                          since: int = Query(default=0, ge=0),
                           principal: Principal = Depends(require_principal)):
+    """
+    Poll one pack.
+
+    `since` is the highest event `seq` the caller already has, so a client
+    reconnecting mid-run resumes the narration rather than replaying it from
+    the top. The pack row is loaded first, which is what enforces ownership —
+    the events are keyed only by pack_id, so reading them before that check
+    would leak another tenant's progress.
+    """
     company_id = _company(principal)
     try:
-        return pack_store.pack_status(company_id, pack_id)
+        payload = pack_store.pack_status(company_id, pack_id)
+        payload["events"] = pack_events.events_since(pack_id, since)
+        payload["usage"] = pack_events.token_totals(pack_id)
+        return payload
     except (PackNotFound, PackStateError, PackRefused, PackInputError) as e:
         _fail(e)
 

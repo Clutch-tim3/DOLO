@@ -559,6 +559,11 @@
             await saveName(state.draft.pack_name);
             await api(API + '/' + encodeURIComponent(packId) + '/submit',
                       { method: 'POST' });
+            // Open the narration before polling, so the first line is on
+            // screen while the server is still opening the first document.
+            if (window.AgentNarration) {
+                window.AgentNarration.start(state.draft && state.draft.pack_name);
+            }
             closeComposer();
             await loadPacks();
             startPolling(packId);
@@ -578,10 +583,42 @@
     function startPolling(packId) {
         if (!packId) { return; }
         stopPolling();
+        // lastSeq drives the ?since= cursor; usageShown stops the cost line
+        // being repeated on every poll after the work finishes.
         state.poll = { packId: packId, started: Date.now(), fails: 0, timer: null,
+                       lastSeq: 0, usageShown: false,
                        stopped: false };
         renderStatus({ status: 'processing', files_done: 0, files_total: 0 }, null);
         pollOnce();
+    }
+
+    /* Read the server's own record of what happened into the agent chat.
+
+       These are not timed guesses. Each line was written by the code that did
+       the work, at the moment it did it, so a slow document shows a pause
+       rather than a stage advancing on a clock as though it had finished. */
+    function narrate(poll, raw) {
+        var N = window.AgentNarration;
+        if (!N || !raw) { return; }
+        var events = raw.events || [];
+        for (var i = 0; i < events.length; i++) {
+            var e = events[i];
+            if (typeof e.seq === 'number' && e.seq > (poll.lastSeq || 0)) {
+                poll.lastSeq = e.seq;
+            }
+            if (e.stage === 'pack_failed' || e.stage === 'file_failed') {
+                N.fail(e.message);
+            } else {
+                N.step(e.message);
+            }
+        }
+        // Only once the work is over, so the count is final rather than
+        // creeping upward while the user reads it.
+        if (raw.status && raw.status !== 'processing' && !poll.usageShown) {
+            poll.usageShown = true;
+            N.usage(raw.usage);
+            N.end();
+        }
     }
 
     async function pollOnce() {
@@ -589,8 +626,13 @@
         if (!poll || poll.stopped) { return; }
         var packId = poll.packId;
         try {
-            var raw = await api(API + '/' + encodeURIComponent(packId) + '/status');
+            // `since` is the highest event seq already shown, so a poll that
+            // lands after a reconnect resumes the narration instead of
+            // repeating it.
+            var raw = await api(API + '/' + encodeURIComponent(packId) + '/status'
+                                + '?since=' + (poll.lastSeq || 0));
             poll.fails = 0;
+            narrate(poll, raw);
             var status = normalisePack(raw || {});
             status.pack_id = status.pack_id || packId;
             renderStatus(status, null);

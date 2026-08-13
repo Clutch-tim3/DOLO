@@ -63,6 +63,7 @@ from agent import db
 from agent.db_paths import AGENT_MEMORY_DB as DB_PATH
 from agent.file_paths import generated_dir, pack_upload_dir, public_url
 from agent.generated_files import register as register_generated
+from agent_autofill.integration import pack_events
 from agent.memory.company_store import get_company_profile
 from agent.subscription import check_autofill_quota
 from agent_autofill.extraction.legacy_doc_reader import detect_format
@@ -476,6 +477,8 @@ def process_pack(company_id: str, pack_id: str) -> dict:
     primary_file_id = None
 
     try:
+        pack_events.emit(pack_id, "pack_started", {"file_count": len(files)})
+
         if not files:
             error_reason = "The pack has no documents."
             return {"status": outcome_status, "error_reason": error_reason}
@@ -512,6 +515,25 @@ def process_pack(company_id: str, pack_id: str) -> dict:
                 )
                 continue
 
+            pack_events.emit(pack_id, "file_opened",
+                             {"filename": f["original_filename"]})
+            # Token counts come from the run itself — classification is the only
+            # paid step, so this is the whole cost of the document.
+            # From the classification result itself. An earlier version read
+            # run.status ("awaiting review") and a confidence attribute that
+            # does not exist, so every document was narrated as
+            # "awaiting review (confidence 0.00)" — a sentence that was wrong
+            # twice and looked authoritative.
+            cls = getattr(run, "classification", None)
+            if cls is not None:
+                pack_events.emit(pack_id, "classified", {
+                    "filename": f["original_filename"],
+                    "verdict": (getattr(cls, "document_type", None)
+                                or ("a tender document" if getattr(cls, "is_tender", False)
+                                    else "not a tender document")),
+                    "confidence": f"{getattr(cls, 'confidence', 0.0) or 0.0:.2f}",
+                }, model_calls=getattr(run, "claude_calls", 0) or 0)
+
             review_id = None
             if run.produced_draft and run.fill_result is not None:
                 # The per-file review gate, unchanged and unforked. One review
@@ -523,6 +545,11 @@ def process_pack(company_id: str, pack_id: str) -> dict:
                 )
                 review_id = review["review_id"]
                 drafted += 1
+                pack_events.emit(pack_id, "filled", {
+                    "filename": f["original_filename"],
+                    "filled_count": len(run.fill_result.filled),
+                    "flagged_count": len(run.fill_result.skipped),
+                })
                 # Both artefacts are served by /api/generated/<name>, which
                 # fails closed on an unregistered file. Without this the draft
                 # and its summary exist and cannot be downloaded.
@@ -553,12 +580,16 @@ def process_pack(company_id: str, pack_id: str) -> dict:
             try:
                 from agent_autofill.integration.tender_assessment import assess_tender
 
+                pack_events.emit(pack_id, "eligibility_run", {})
                 assessment = assess_tender(primary["storage_path"],
                                            company_profile=profile)
                 # The stored path is ours and uninteresting to a client; the
                 # name the user uploaded is what they will recognise.
                 if isinstance(assessment, dict):
                     assessment["document"] = primary["original_filename"]
+                    pack_events.emit(pack_id, "eligibility_result", {
+                        "recommendation": assessment.get("recommendation")
+                                          or assessment.get("status") or "unknown"})
             except Exception as exc:  # noqa: BLE001
                 log.exception("pack %s: eligibility assessment failed", pack_id)
                 assessment = {
@@ -580,12 +611,38 @@ def process_pack(company_id: str, pack_id: str) -> dict:
             )
             return {"status": outcome_status, "error_reason": error_reason}
 
+        # Said explicitly rather than left as an absence. There is no price
+        # lookup — every line item is flagged for a person — and a user who is
+        # not told that will assume the blanks mean "nothing found".
+        pack_events.emit(pack_id, "pricing_skipped", {})
+
+        # Counted from the same place the detail endpoint counts it. A previous
+        # version called a helper that was not in scope, so this always reported
+        # 0 while the per-file line above said 15 were outstanding — the two
+        # sentences contradicted each other in the same transcript.
+        try:
+            detail = pack_detail(company_id, pack_id)
+            flag_total = int(detail.get("flags", {}).get("outstanding", 0))
+            value_total = int(detail.get("values", {}).get("unconfirmed", 0))
+        except Exception:  # noqa: BLE001
+            # Logged, not swallowed. The first version called a function that
+            # did not exist and this except turned that into "0 items need your
+            # confirmation" while the same transcript said 15 were outstanding.
+            # A count that is wrong reads as authoritative; a count that is
+            # missing does not.
+            log.exception("pack %s: could not count outstanding items", pack_id)
+            flag_total = value_total = 0
+        pack_events.emit(pack_id, "review_ready",
+                         {"flag_count": flag_total + value_total})
+
         outcome_status = STATUS_NEEDS_REVIEW
         error_reason = None
         return {"status": outcome_status, "drafted": drafted}
 
     except Exception as exc:  # noqa: BLE001
         log.exception("pack %s processing failed", pack_id)
+        pack_events.emit(pack_id, "pack_failed",
+                         {"reason": f"{type(exc).__name__}: {exc}"})
         outcome_status = STATUS_ERROR
         error_reason = f"{type(exc).__name__}: {exc}"
         return {"status": outcome_status, "error_reason": error_reason}
