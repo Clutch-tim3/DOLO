@@ -20,6 +20,57 @@ If a change would relax this, stop and raise it rather than loosening it.
 | Profile | `agent/memory/` | Additive migration; writes require `confirmed=True` and return a diff; signature images refused even when confirmed |
 | Fill engine | `fill_engine/` | safe/never split, document_filler (copy-on-write, gold shading, `[ ! ]` markers), review_summary HTML |
 
+## The Autofill Vault (packs) — 13 August 2026
+
+The manual-upload stopgap, shipped ahead of the cloud-monitoring version that
+is blocked on Drive's scope model (HANDOFF.md §6). A **pack** is a group of
+uploaded documents reviewed and exported as one thing.
+
+`integration/pack_store.py` + `pack_api.py`, mounted in `app.py`. Eleven routes
+under `/api/autofill-packs`, all `require_principal`, all listed in
+`tests/test_auth.py`'s PROTECTED table. 46 tests in
+`tests/test_autofill_packs.py`.
+
+**It is a wrapper, not a second pipeline.** Every per-file decision belongs to
+`run_autofill_batch`; every review decision belongs to `review_gate`. The pack
+adds three things and nothing else: a file group, an aggregation, and a
+pack-level status *derived* from the per-document reviews on every read. There
+is no request that sets a pack to `reviewed` — a test asserts that.
+
+Things worth knowing before changing it:
+
+- **Status is a column, not a dict.** `BATCH_JOBS` in app.py is process-local
+  and a Cloud Functions restart loses it. A pack whose spinner never clears is
+  worse than one that failed, so the worker writes its terminal status in a
+  `finally` and a pack is never left in `processing`.
+- **The tier check at submit is not a second gate**, it is
+  `subscription.check_autofill_quota` — the same free COUNT `run_autofill` runs
+  as its own first step, called early so Starter gets a 403 from submit rather
+  than a 200 followed by an error. Proven with a call counter: the whole Starter
+  flow makes **0** Anthropic requests, including when the endpoint gate is
+  bypassed and the worker is driven directly.
+- **`flag_kind()` maps a stored reason back through `BLOCK_MESSAGES`** rather
+  than re-examining the label. A second classifier would drift from the first
+  the moment either changed, and the one that decided is the one that should be
+  reported. Two block messages are built at the block site (an unreadable label,
+  a counterparty section) and fall through to a plain `blocked`.
+- **A pack of several documents exports as a zip**, because the endpoint
+  promises one `download_url` and returning the first of six would silently lose
+  five. The zip is not itself an export `/api/generated` can verify, so every
+  member is checked with `verify_export` before it goes in.
+- **Known cosmetic gap:** a document that filled nothing (SBD 4 fills 0 of 43)
+  reports `values_confirmed=True` before anyone confirms anything — that is
+  `_values_unconfirmed` correctly returning empty for a review with no values.
+  The gate is unaffected; the pack's `values.confirmed` counter can look
+  partially satisfied on a declaration-only pack.
+
+Benchmarks on a real 3-document pack (MBD 1 supplier block + REVISED SBD 4
+Annexure A + alfred_duma.pdf): 49 flags aggregated — 43
+`declaration_of_interest`, 1 `signature`, 1 `signing_date`, 1 `pricing`,
+1 `narrative`, 2 `no_data` — 12 values written, all from MBD 1. `SIGNATURE OF
+BIDDER` is flagged and does not appear among the written values. The PDF is
+`analysis_only` (no PDF writer) and is what the eligibility gate runs on.
+
 ## Not done
 
 1. **Subagent 5** — classification gate (Haiku, ≥0.7) and tier limits.
