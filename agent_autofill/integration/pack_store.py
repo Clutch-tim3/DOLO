@@ -534,6 +534,13 @@ def process_pack(company_id: str, pack_id: str) -> dict:
                     "confidence": f"{getattr(cls, 'confidence', 0.0) or 0.0:.2f}",
                 }, model_calls=getattr(run, "claude_calls", 0) or 0)
 
+            summary = getattr(run, "extraction_summary", None) or {}
+            blanks = summary.get("blank_count") if isinstance(summary, dict) else None
+            if blanks is not None:
+                pack_events.emit(pack_id, "extracted_summary",
+                                 {"filename": f["original_filename"],
+                                  "blank_count": blanks})
+
             review_id = None
             if run.produced_draft and run.fill_result is not None:
                 # The per-file review gate, unchanged and unforked. One review
@@ -558,6 +565,14 @@ def process_pack(company_id: str, pack_id: str) -> dict:
                 if run.review_summary_path:
                     register_generated(Path(run.review_summary_path).name, company_id,
                                        "autofill_pack_summary")
+
+            if not (run.produced_draft and run.fill_result is not None):
+                # Silence here read as "nothing happened". A PDF has no writer,
+                # a legacy .doc is read-only, and a refusal has a reason — all
+                # three are worth a sentence rather than a gap in the transcript.
+                pack_events.emit(pack_id, "no_draft", {
+                    "filename": f["original_filename"],
+                    "reason": (run.message or "no draft could be produced")[:200]})
 
             _record_file_outcome(
                 pack_id, f["file_id"],
@@ -590,6 +605,15 @@ def process_pack(company_id: str, pack_id: str) -> dict:
                     pack_events.emit(pack_id, "eligibility_result", {
                         "recommendation": assessment.get("recommendation")
                                           or assessment.get("status") or "unknown"})
+                    # A verdict with no reason is not actionable. These are the
+                    # gate's own words, not a paraphrase.
+                    for reason in (assessment.get("hard_failures") or []):
+                        pack_events.emit(pack_id, "eligibility_reason",
+                                         {"reason": str(reason)})
+                    skipped = assessment.get("prediction_unavailable_reason")
+                    if skipped:
+                        pack_events.emit(pack_id, "prediction_skipped",
+                                         {"reason": str(skipped)})
             except Exception as exc:  # noqa: BLE001
                 log.exception("pack %s: eligibility assessment failed", pack_id)
                 assessment = {
@@ -606,6 +630,7 @@ def process_pack(company_id: str, pack_id: str) -> dict:
                 f"{f['original_filename']}: {(f['run_message'] or '')[:160]}"
                 for f in _pack_files(pack_id)
             )
+            pack_events.emit(pack_id, "pack_no_drafts", {})
             error_reason = (
                 "No draft could be produced from any document in this pack. " + reasons
             )

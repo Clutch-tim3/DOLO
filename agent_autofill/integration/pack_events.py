@@ -57,6 +57,12 @@ STAGE_TEMPLATES = {
     "analysis_only":      "{filename} has no fillable form, so I read it for eligibility only.",
     "eligibility_run":    "Checking whether you can bid on this at all.",
     "eligibility_result": "Eligibility: {recommendation}.",
+    "eligibility_reason":  "  — {reason}",
+    "prediction_skipped":  "  — {reason}",
+    "extracted_summary":   "{filename}: {blank_count} blank field(s) found.",
+    "no_draft":            "{filename}: {reason}",
+    "pack_no_drafts":      "Nothing in this pack could be pre-filled, so there is "
+                           "no draft to review. The eligibility check above still applies.",
     "pricing_skipped":    "No prices were filled in — every line needs a figure from you.",
     "review_ready":       "Done. {flag_count} item(s) need your confirmation before export.",
     "file_failed":        "Could not process {filename}: {reason}.",

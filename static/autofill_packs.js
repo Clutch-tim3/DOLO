@@ -34,7 +34,9 @@
 
     var API = '/api/autofill-packs';
 
-    var POLL_MS = 1500;          // status cadence while processing
+    // Tight enough that a multi-document pack visibly advances rather than
+    // arriving as one block at the end.
+    var POLL_MS = 700;           // status cadence while processing
     var POLL_MAX_FAILS = 5;      // consecutive network failures before we stop
     var SLOW_AFTER_MS = 180000;  // 3 min — past here, say so rather than spin
 
@@ -612,13 +614,21 @@
                 N.step(e.message);
             }
         }
-        // Only once the work is over, so the count is final rather than
-        // creeping upward while the user reads it.
-        if (raw.status && raw.status !== 'processing' && !poll.usageShown) {
-            poll.usageShown = true;
-            N.usage(raw.usage);
-            N.end();
+        N.progress(raw.files_done || 0, raw.files_total || 0);
+    }
+
+    /* One sentence for the chat once the panel goes away. */
+    function summarise(raw) {
+        if (raw.status === 'error') {
+            return 'I could not finish that pack. ' + (raw.error_reason || '');
         }
+        if (raw.status === 'needs_review') {
+            return 'That pack is pre-filled and waiting for you. Open it to '
+                 + 'confirm the flagged fields — nothing can be exported until '
+                 + 'you have been through them.';
+        }
+        if (raw.status === 'reviewed') { return 'That pack is reviewed and ready to download.'; }
+        return '';
     }
 
     async function pollOnce() {
@@ -641,8 +651,27 @@
                 poll.timer = setTimeout(pollOnce, POLL_MS);
                 return;
             }
-            // Left processing. Refresh the history so the row carries the new
-            // state, and stop.
+            // Left processing. One more fetch before stopping: the worker
+            // emits its closing lines (why nothing could be drafted, the
+            // eligibility reasons) after the poll that first sees a terminal
+            // status, so stopping here dropped the most useful part of the
+            // transcript.
+            try {
+                var tail = await api(API + '/' + encodeURIComponent(packId)
+                                     + '/status?since=' + (poll.lastSeq || 0));
+                narrate(poll, tail);
+            } catch (tailErr) { /* the summary below still lands */ }
+
+            // Closed AFTER the tail, not during it. narrate() used to call
+            // end() the moment it saw a terminal status, which tore the panel
+            // down before the closing lines had been fetched — so the most
+            // useful part of the transcript (why nothing could be drafted, why
+            // the bid was disqualified) rendered into nothing.
+            if (window.AgentNarration) {
+                window.AgentNarration.usage(status.usage || (raw && raw.usage));
+                window.AgentNarration.end(summarise(status));
+            }
+
             poll.stopped = true;
             state.poll = null;
             await loadPacks();
