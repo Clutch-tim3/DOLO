@@ -24,6 +24,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent import db
 
+ROOT_DIR = Path(__file__).resolve().parent.parent
+
 
 @pytest.fixture
 def pg(monkeypatch):
@@ -406,3 +408,75 @@ def test_direct_url_is_parsed_into_pg8000_arguments(monkeypatch):
     assert seen["host"] == "dbhost"
     assert seen["port"] == 6543
     assert seen["database"] == "cairoai"
+
+
+# --- executescript ---------------------------------------------------------
+#
+# Found against a real Cloud SQL instance, not locally: `executescript` is a
+# SQLite extension. No Postgres driver has it, so `__getattr__` delegation
+# raised AttributeError and BOTH callers — company_store loading schema.sql and
+# provider_db loading its inline schema — failed at import. On Postgres that
+# meant no company_profile, company_documents, conversation_log, or provider
+# table was ever created. SQLite has the method, so nothing caught it here.
+
+
+def test_split_sql_ignores_semicolons_inside_string_literals():
+    """
+    agent/memory/schema.sql has four semicolons and THREE are inside string
+    literals (default values, comments). A naive split produces fragments that
+    are not valid SQL and a schema that half-applies.
+    """
+    script = """
+        CREATE TABLE a (x TEXT DEFAULT 'has; semicolon');
+        CREATE TABLE b (y TEXT DEFAULT 'another; one');
+    """
+    parts = db._split_sql(script)
+    assert len(parts) == 2, parts
+    assert "has; semicolon" in parts[0]
+    assert "another; one" in parts[1]
+
+
+def test_split_sql_handles_doubled_quote_escapes():
+    parts = db._split_sql("INSERT INTO t VALUES ('it''s; fine'); SELECT 1")
+    assert len(parts) == 2, parts
+    assert "it''s; fine" in parts[0]
+
+
+def test_split_sql_ignores_semicolons_in_line_comments():
+    parts = db._split_sql("-- a comment; with a semicolon\nSELECT 1; SELECT 2")
+    assert len(parts) == 2, parts
+
+
+def test_split_sql_drops_empty_trailing_statements():
+    assert db._split_sql("SELECT 1;  ;\n\n") == ["SELECT 1"]
+
+
+def test_the_real_schema_file_splits_into_whole_statements():
+    """The actual file, not a synthetic one."""
+    schema = (ROOT_DIR / "agent" / "memory" / "schema.sql").read_text(encoding="utf-8")
+    parts = db._split_sql(schema)
+    creates = [p for p in parts if "CREATE TABLE" in p.upper()]
+    assert len(creates) >= 2
+    for p in creates:
+        assert p.count("(") == p.count(")"), "statement split mid-parentheses"
+
+
+def test_executescript_runs_every_statement_on_sqlite(lite, tmp_path):
+    path = tmp_path / "s.db"
+    with db.connect(path) as conn:
+        conn.executescript(
+            "CREATE TABLE one (a TEXT DEFAULT 'x; y');"
+            "CREATE TABLE two (b TEXT);"
+        )
+    with db.connect(path) as conn:
+        names = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    assert {"one", "two"} <= names
+
+
+def test_executescript_exists_on_the_wrapper_not_just_the_driver():
+    """
+    The bug was relying on __getattr__ to find it on the raw connection. It has
+    to be on the wrapper, or Postgres has no implementation to fall through to.
+    """
+    assert "executescript" in vars(db.Connection)

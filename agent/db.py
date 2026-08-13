@@ -170,6 +170,55 @@ def translate(sql: str) -> str:
     return out
 
 
+def _split_sql(script: str) -> list[str]:
+    """
+    Split a SQL script into statements on semicolons that actually terminate one.
+
+    Not a naive `script.split(";")`. `agent/memory/schema.sql` has four
+    semicolons and THREE of them sit inside string literals — default values
+    and comments — so splitting naively produces fragments that are not valid
+    SQL and a schema that half-applies. Quoted strings (single and double, with
+    SQL's doubled-quote escaping) and `--` line comments are skipped over.
+    """
+    statements: list[str] = []
+    current: list[str] = []
+    quote: str | None = None
+    in_line_comment = False
+    i = 0
+    while i < len(script):
+        ch = script[i]
+        nxt = script[i + 1] if i + 1 < len(script) else ""
+
+        if in_line_comment:
+            current.append(ch)
+            if ch == "\n":
+                in_line_comment = False
+        elif quote:
+            current.append(ch)
+            if ch == quote:
+                # A doubled quote is an escaped quote, not the end of the string.
+                if nxt == quote:
+                    current.append(nxt)
+                    i += 1
+                else:
+                    quote = None
+        elif ch == "-" and nxt == "-":
+            in_line_comment = True
+            current.append(ch)
+        elif ch in ("'", '"'):
+            quote = ch
+            current.append(ch)
+        elif ch == ";":
+            statements.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+
+    statements.append("".join(current))
+    return [s for s in (st.strip() for st in statements) if s]
+
+
 class _Cursor:
     """Cursor that translates SQL on the way in and yields mappings on the way out."""
 
@@ -267,6 +316,24 @@ class Connection:
     def executemany(self, sql: str, seq):
         cursor = _Cursor(self._raw.cursor(), self._postgres)
         return cursor.executemany(sql, seq)
+
+    def executescript(self, script: str):
+        """
+        Run a multi-statement SQL script.
+
+        `executescript` is a SQLite extension — no Postgres driver has it, and
+        `__getattr__` delegation therefore raised AttributeError against a real
+        server. Two callers depend on it (`company_store` loading schema.sql,
+        `provider_db` loading its inline schema), so on Postgres both failed at
+        import and no company or provider table was ever created. Nothing caught
+        it locally because SQLite has the method.
+
+        Statements are split here and run one at a time through `execute`, so
+        each still passes through `translate`.
+        """
+        for statement in _split_sql(script):
+            self.execute(statement)
+        return self
 
     def cursor(self):
         return _Cursor(self._raw.cursor(), self._postgres)

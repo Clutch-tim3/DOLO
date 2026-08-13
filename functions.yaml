@@ -18,6 +18,7 @@ endpoints:
     - key: ANTHROPIC_API_KEY
     - key: AUTOFILL_STAMP_SECRET
     - key: GOOGLE_OAUTH_CLIENT_SECRET
+    - key: CLOUD_SQL_PASSWORD
     serviceAccountEmail: null
     timeoutSeconds: 300
 params: []
