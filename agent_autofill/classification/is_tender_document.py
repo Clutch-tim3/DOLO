@@ -105,6 +105,13 @@ class ClassificationResult:
     #: True only when the model was actually invoked.
     api_called: bool = False
     text_head: str = field(default="", repr=False)
+    #: True when the text above came from OCR rather than off the page. Worth
+    #: carrying all the way out: a confidence built on recognised text deserves
+    #: to be read differently from one built on the document's own words.
+    ocr_used: bool = False
+    #: What to tell the user about the scan — that OCR read it, that OCR is not
+    #: configured, or that it ran and found nothing. Empty when OCR never ran.
+    ocr_note: str = ""
 
     @property
     def proceed(self) -> bool:
@@ -200,19 +207,70 @@ def _docx_head(path: Path, max_chars: int) -> str:
     return "\n".join(parts)[:max_chars]
 
 
-def extract_text_head(path: str | Path, max_chars: int = HEAD_CHARS) -> str:
-    """First `max_chars` of readable text. Empty string if there is none."""
+@dataclass
+class HeadText:
+    """The readable head of a document, and how it was obtained.
+
+    `extract_text_head` returns only the string, which is all most callers
+    want. This carries the extra fact the narration needs: whether the text
+    came off the page or out of an OCR engine, because a user should be told
+    when what they are reading is a machine's guess at a photograph.
+    """
+
+    text: str = ""
+    ocr_used: bool = False
+    ocr: "object | None" = None      # ocr.OcrResult when ocr_used, else None
+
+    def __bool__(self) -> bool:
+        return bool(self.text.strip())
+
+
+def read_head(path: str | Path, max_chars: int = HEAD_CHARS) -> HeadText:
+    """
+    First `max_chars` of readable text, falling back to OCR on a scan.
+
+    The fallback is only ever reached when the ordinary reader found nothing,
+    so a document with a text layer is never sent to Vision — that would cost
+    money to produce a worse copy of text already in the file.
+    """
     path = Path(path)
     fmt = detect_format(path)
     try:
         if fmt == "pdf":
-            return _pdf_head(path, max_chars)
+            text = _pdf_head(path, max_chars)
+            if text.strip():
+                return HeadText(text=text)
+            return _ocr_head(path, max_chars)
         if fmt == "docx":
-            return _docx_head(path, max_chars)
+            return HeadText(text=_docx_head(path, max_chars))
     except Exception as exc:  # noqa: BLE001 - a malformed file must not crash a folder scan
         log.warning("agent_autofill.classification: could not read %s: %s", path.name, exc)
-        return ""
-    return ""
+        return HeadText()
+    return HeadText()
+
+
+def _ocr_head(path: Path, max_chars: int) -> HeadText:
+    """
+    Last resort for a PDF that yielded no text: read it as an image.
+
+    A failure here is reported, not swallowed. `HeadText.ocr` carries the
+    reason so the caller can tell the user "this is a scan and OCR is not
+    configured" instead of the older and much less useful "this document
+    appears to be empty".
+    """
+    from agent_autofill.extraction import ocr as ocr_module
+
+    if not ocr_module.needs_ocr(path):
+        return HeadText()
+
+    result = ocr_module.ocr_pdf(path)
+    return HeadText(text=(result.text or "")[:max_chars],
+                    ocr_used=True, ocr=result)
+
+
+def extract_text_head(path: str | Path, max_chars: int = HEAD_CHARS) -> str:
+    """First `max_chars` of readable text. Empty string if there is none."""
+    return read_head(path, max_chars).text
 
 
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
@@ -266,13 +324,27 @@ def classify_document(path: str | Path, company_id: str) -> ClassificationResult
         log.info("agent_autofill.classification skip (%s): %s", result.status, why)
         return result
 
-    head = extract_text_head(path)
+    head_result = read_head(path)
+    head = head_result.text
     result.text_head = head
+    result.ocr_used = head_result.ocr_used
+    if head_result.ocr_used and head_result.ocr is not None:
+        from agent_autofill.extraction.ocr import ocr_note
+
+        result.ocr_note = ocr_note(head_result.ocr, path.name)
+
     if len(head.strip()) < MIN_TEXT_CHARS:
         result.status = "unreadable"
-        result.reason = (f"{path.name} has no extractable text in its opening pages — "
-                         f"it is probably a scan. Agent Autofill cannot read it.")
-        log.info("agent_autofill.classification skip (unreadable): %s", path.name)
+        # Three different situations used to share one sentence: a scan nobody
+        # could read, a scan OCR *could* have read if it were configured, and a
+        # genuinely blank file. Telling them apart is the difference between
+        # "this cannot be done" and "this needs one setting changed".
+        result.reason = result.ocr_note or (
+            f"{path.name} has no extractable text in its opening pages — "
+            f"it is probably a scan. Agent Autofill cannot read it."
+        )
+        log.info("agent_autofill.classification skip (unreadable, ocr_used=%s): %s",
+                 head_result.ocr_used, path.name)
         return result
 
     # Shared global throttle. Layer 3 in the existing scheme; there is

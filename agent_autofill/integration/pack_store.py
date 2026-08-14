@@ -525,6 +525,16 @@ def process_pack(company_id: str, pack_id: str) -> dict:
             # "awaiting review (confidence 0.00)" — a sentence that was wrong
             # twice and looked authoritative.
             cls = getattr(run, "classification", None)
+            # Before the verdict, because that is the order it happened in: a
+            # scan has to be OCR-ed before there is anything to classify. A
+            # user watching a scanned document go through deserves to know the
+            # text being judged is a machine's reading of an image.
+            if cls is not None and getattr(cls, "ocr_used", False):
+                pack_events.emit(pack_id, "ocr_used",
+                                 {"filename": f["original_filename"]})
+                if getattr(cls, "ocr_note", ""):
+                    pack_events.emit(pack_id, "ocr_detail",
+                                     {"detail": cls.ocr_note})
             if cls is not None:
                 pack_events.emit(pack_id, "classified", {
                     "filename": f["original_filename"],

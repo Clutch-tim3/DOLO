@@ -68,3 +68,22 @@ pg8000>=1.31
 rapidfuzz>=3.5          # fuzzy label matching (field_alias_dictionary)
 python-docx>=1.1        # reading and writing .docx forms (document_filler)
 pdfplumber>=0.11        # PDF table and coordinate blank extraction
+
+# The same omission as the three above, caught before it shipped rather than
+# after. `fill_engine/pdf_filler.py` imports fitz inside the function so a
+# machine without it can still use the .docx path — which means an undeclared
+# PyMuPDF does not fail at import, it fails the moment a user submits a PDF,
+# as "no draft could be produced". Most SA tender packs are PDF.
+PyMuPDF>=1.24
+
+# OCR for scanned tenders, which have no text layer at all: pypdf returns "",
+# the classifier sees an empty document and pdfplumber finds no ruled lines.
+#
+# Cloud Vision rather than Tesseract because Tesseract needs a system binary
+# the Functions gen2 Python buildpack cannot install. It would have worked on
+# the developer's machine and been absent in production — the exact shape of
+# the rapidfuzz failure, and not a mistake worth making twice.
+#
+# Imported inside the function like the provider SDKs, so its absence is a
+# reported "OCR unavailable" and never an import-time crash.
+google-cloud-vision>=3.7

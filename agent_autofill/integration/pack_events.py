@@ -47,6 +47,8 @@ STAGE_TEMPLATES = {
     "quota_checked":      "Checked your plan — {remaining} of {limit} autofills left today.",
     "file_opened":        "Opening {filename}.",
     "format_detected":    "{filename} is {format}.",
+    "ocr_used":           "{filename} has no text layer, so I read it with OCR.",
+    "ocr_detail":         "  — {detail}",
     "classifying":        "Reading {filename} to see whether it is a tender document.",
     "classified":         "{filename}: {verdict} (confidence {confidence}).",
     "extracting":         "Finding the fillable fields in {filename}.",
