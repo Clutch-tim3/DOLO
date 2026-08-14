@@ -70,13 +70,29 @@ SKIP_FONT_SIZE = 7.5
 #: A blank narrower than this cannot hold anything meaningful.
 MIN_BLANK_WIDTH = 24.0
 
-#: Rough average glyph width as a fraction of point size for Helvetica. Used to
-#: refuse a value that would overflow rather than writing it and hoping.
+#: Fallback glyph width as a fraction of point size for Helvetica, used only if
+#: PyMuPDF cannot measure a string. It is an average, so it under-estimates
+#: wide strings: "TCS0001234567" measured 55pt by this rule and rendered past
+#: the right-hand rule of its cell into the column beside it.
 CHAR_WIDTH_RATIO = 0.5
+
+#: Clearance kept inside the blank, in points: 2 for the left inset that
+#: `_write_value` applies and 2 so a glyph never touches the closing rule.
+FIT_PADDING = 4.0
+
+
+def _text_width(text: str, size: float = FONT_SIZE) -> float:
+    """The real rendered width of `text`, falling back to the average rule."""
+    try:
+        import fitz
+
+        return fitz.get_text_length(str(text), fontname="helv", fontsize=size)
+    except Exception:  # noqa: BLE001 - measurement is an optimisation, not a gate
+        return len(str(text)) * size * CHAR_WIDTH_RATIO
 
 
 def _fits(text: str, width: float, size: float = FONT_SIZE) -> bool:
-    return len(str(text)) * size * CHAR_WIDTH_RATIO <= max(width - 4.0, 0)
+    return _text_width(text, size) <= max(width - FIT_PADDING, 0)
 
 
 def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
@@ -147,7 +163,17 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
             canonical = getattr(match, "canonical", None) if match else None
             score = getattr(match, "score", 0.0) if match else 0.0
             if not canonical:
-                _mark_skipped(page, bbox)
+                # Deliberately NOT marked on the page. `[ ! ]` means "a field
+                # was refused on purpose"; an unmatched cell is usually not a
+                # field at all. On the real SBD 1 the ruled-cell extractor
+                # offered up a table header ("BIDDING PROCEDURE ENQUIRIES MAY
+                # BE DIRECTED TO") and a footnote in italics, and both came
+                # back stamped in red on the user's document.
+                #
+                # This mirrors `review_gate.ADVISORY_CATEGORIES`, where the
+                # same category was dropped from the confirmation list for the
+                # same reason: it is a note about extraction, not a decision
+                # about the form.
                 skipped.append(SkippedField(
                     label=label or "(unlabelled)",
                     reason="I could not tell what this field is asking for.",

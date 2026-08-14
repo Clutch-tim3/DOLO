@@ -187,3 +187,96 @@ def test_source_pdf_is_never_modified(blank_pdf, tmp_path, monkeypatch):
     fill_pdf(blank_pdf, out, PROFILE, _match_company_name)
 
     assert blank_pdf.read_bytes() == before
+
+
+# ---------------------------------------------------------------------------
+# What gets marked, and how wide a value is allowed to be.
+#
+# Both of these were visible on a rendered page and invisible in the counts,
+# same as the page indexing above: a value crossing into the next column still
+# counts as "filled", and a red marker on a table header still counts as
+# "skipped".
+# ---------------------------------------------------------------------------
+
+from agent_autofill.fill_engine.pdf_filler import (   # noqa: E402
+    CHAR_WIDTH_RATIO,
+    FIT_PADDING,
+    FONT_SIZE,
+    SKIP_MARKER,
+    _fits,
+    _text_width,
+)
+
+#: Narrow enough to clear MIN_BLANK_WIDTH but too small for the value, so a
+#: refusal here is about width and not about the blank being unusable.
+TIGHT_BBOX = (60.0, 300.0, 96.0, 316.0)
+
+
+def test_the_fit_check_uses_the_measured_width():
+    value = "TCS0001234567"
+    real = _text_width(value)
+    assert _fits(value, real + FIT_PADDING)
+    assert not _fits(value, real + FIT_PADDING - 1.0)
+
+
+def test_the_average_glyph_rule_underestimates_and_is_no_longer_the_gate():
+    """The overflow, in numbers.
+
+    On the real SBD 1 the Tax Compliance PIN measured 64.3pt and the old
+    average-width rule called it 55.25pt, so a value nine points too wide was
+    written and ran through the closing rule of its cell into the column
+    beside it.
+    """
+    value = "TCS0001234567"
+    estimate = len(value) * FONT_SIZE * CHAR_WIDTH_RATIO
+    assert _text_width(value) > estimate
+    assert not _fits(value, estimate + FIT_PADDING)
+
+
+def test_a_value_too_wide_for_its_blank_is_refused_not_truncated(
+        blank_pdf, tmp_path, monkeypatch):
+    out = tmp_path / "filled.pdf"
+    monkeypatch.setattr(pdf_filler, "extract_pdf_blanks",
+                        lambda _p: [_blank(page_number=0, bbox=TIGHT_BBOX)])
+
+    result = fill_pdf(blank_pdf, out, PROFILE, _match_company_name)
+
+    assert not result.filled
+    assert result.skipped[0].category == "does_not_fit"
+    # Not a shortened version of itself either — a clipped registration number
+    # reads as an answer.
+    assert "CairoAI" not in _page_text(out, 0)
+
+
+def test_an_unmatched_cell_is_not_marked_on_the_page(blank_pdf, tmp_path,
+                                                     monkeypatch):
+    """`[ ! ]` means "refused on purpose", and a header is not a refusal.
+
+    The ruled-cell extractor offered up a table header and an italic footnote
+    as blanks, and both came back stamped in red on the user's own document.
+    """
+    out = tmp_path / "filled.pdf"
+    monkeypatch.setattr(pdf_filler, "extract_pdf_blanks",
+                        lambda _p: [_blank(page_number=0,
+                                           label="BIDDING PROCEDURE ENQUIRIES")])
+
+    result = fill_pdf(blank_pdf, out, PROFILE, lambda _l: None)
+
+    assert result.skipped[0].category == "unmatched"
+    assert SKIP_MARKER not in _page_text(out, 0)
+
+
+def test_a_deliberate_refusal_is_still_marked(blank_pdf, tmp_path, monkeypatch):
+    """The other half: dropping the marker everywhere would hide real refusals.
+
+    A signature block left blank on purpose has to look different from one
+    nobody got to.
+    """
+    out = tmp_path / "filled.pdf"
+    monkeypatch.setattr(pdf_filler, "extract_pdf_blanks",
+                        lambda _p: [_blank(page_number=0, label="SIGNATURE OF BIDDER")])
+
+    result = fill_pdf(blank_pdf, out, PROFILE, _match_company_name)
+
+    assert result.skipped[0].category == "blocked"
+    assert SKIP_MARKER in _page_text(out, 0)
