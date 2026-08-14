@@ -311,30 +311,59 @@ def run_autofill(
             tier=tier, quota=quota, classification=classification, claude_calls=calls,
         )
 
-    # ---- 5. Fill. DOCX only — the fill engine has no PDF writer. -----------
-    if report.doc_type != "docx":
+    # ---- 5. Fill. -----------------------------------------------------------
+    #
+    # PDFs are filled by writing at the blank's own coordinates (pdf_filler).
+    # This used to return ANALYSIS_ONLY for anything that was not .docx, which
+    # meant a real SA tender pack — three PDFs — produced nothing at all and
+    # told the user to "ask the buyer for the Word version". Most buyers do not
+    # have one. A .doc stays analysis-only: there is no pure-Python writer for
+    # binary OLE2, and that is a real limit rather than a missing feature.
+    profile = get_company_profile(company_id)
+    out_root = Path(output_dir) if output_dir else file_paths.generated_dir()
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    if report.doc_type not in ("docx", "pdf"):
         analysis = _pdf_analysis(report)
-        message = (
-            f"This is a tender document ({classification.confidence:.0%} confidence), and "
-            f"{analysis['blanks_detected']} blanks were found across it. Agent Autofill "
-            f"cannot write into a PDF, so no draft was produced — ask the buyer for the "
-            f"Word (.docx) version of the returnable forms and re-run."
-        )
         run = AutofillRun(
             company_id=company_id, source_path=str(source), status=STATUS_ANALYSIS_ONLY,
-            message=message, tier=tier, quota=quota, classification=classification,
+            message=(f"This is a tender document ({classification.confidence:.0%} "
+                     f"confidence), but it is a legacy .doc file. There is no way to "
+                     f"write into one safely, so it was read for eligibility only."),
+            tier=tier, quota=quota, classification=classification,
             extraction_summary=analysis, claude_calls=calls,
         )
         _consume_quota(run)
         return run
 
-    profile = get_company_profile(company_id)
-    out_root = Path(output_dir) if output_dir else file_paths.generated_dir()
-    out_root.mkdir(parents=True, exist_ok=True)
-    draft_path = out_root / _output_name(source, ".docx")
+    is_pdf = report.doc_type == "pdf"
+    draft_path = out_root / _output_name(source, ".pdf" if is_pdf else ".docx")
 
     try:
-        fill_result = fill_docx(source, draft_path, profile, match_label)
+        if is_pdf:
+            from agent_autofill.fill_engine.pdf_filler import fill_pdf
+
+            fill_result = fill_pdf(source, draft_path, profile, match_label)
+        else:
+            fill_result = fill_docx(source, draft_path, profile, match_label)
+
+        # A PDF with no detectable blanks is a notice or a specification, not a
+        # form. Saying "0 filled" would imply a form we failed at; analysis-only
+        # is the truthful description.
+        if is_pdf and not fill_result.filled and not fill_result.skipped:
+            analysis = _pdf_analysis(report)
+            run = AutofillRun(
+                company_id=company_id, source_path=str(source),
+                status=STATUS_ANALYSIS_ONLY,
+                message=(f"This is a tender document ({classification.confidence:.0%} "
+                         f"confidence) with no fillable blanks — it reads as a notice "
+                         f"or specification rather than a form. It was used for the "
+                         f"eligibility check."),
+                tier=tier, quota=quota, classification=classification,
+                extraction_summary=analysis, claude_calls=calls,
+            )
+            _consume_quota(run)
+            return run
     except Exception as exc:  # noqa: BLE001
         log.error("agent_autofill.orchestrator fill failed on %s: %s", source.name, exc)
         return AutofillRun(
