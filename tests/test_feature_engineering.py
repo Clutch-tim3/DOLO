@@ -21,10 +21,42 @@ def test_feature_vector_differs_across_different_tenders(fixtures_dir, loaded_mo
         vectors.append(df.iloc[0])
         
     v1, v2, v3 = vectors
-    
-    # Assert at least 8 features differ between v1 and v2
-    diff_1_2 = sum(1 for c in v1.index if v1[c] != v2[c])
-    assert diff_1_2 >= 8
+
+    # What this is really asking: does reading a document put that document's
+    # own numbers into the feature vector, or does every tender come out the
+    # same?
+    #
+    # It used to assert ">= 8 of 67 columns differ", which is a count with no
+    # meaning behind it. 60 of those 67 are supplier- and buyer-history
+    # features (pit_*, buyer_*), and both rows here are the SAME supplier with
+    # no history, so they are identical by construction — no parser change
+    # could ever move them. Only the tender-level columns can differ, and the
+    # arbitrary bar sat one above how many there are.
+    #
+    # So name them instead. This fails if the parser stops extracting any one
+    # of them, which the count could not distinguish from a fixture changing.
+    from_the_document = [
+        "deadline_days",
+        "tender_description_length",
+        "bid_priceUsd",
+        "tender_estimatedpriceUsd",
+        "had_functionality_gate",
+        "tender_supplytype",
+    ]
+    for column in from_the_document:
+        assert v1[column] != v2[column], (
+            f"{column} is identical across two different tenders — "
+            f"the parser is not extracting it"
+        )
+
+    # tender_supplytype above is the one that had to be *fixed* to get here.
+    # The OrdinalEncoder had been fitted on a one-row training split, so it
+    # knew a single category and every document encoded to -1: two different
+    # tenders, same dead value. It is in the list to keep that closed.
+    assert v1["tender_supplytype"] >= 0 and v2["tender_supplytype"] >= 0, (
+        "supply type encoded as unknown (-1) — the encoder's vocabulary is "
+        "missing categories that exist in the training data"
+    )
     
 def test_no_feature_vector_is_all_defaults(fixtures_dir, loaded_models):
     artifacts = loaded_models

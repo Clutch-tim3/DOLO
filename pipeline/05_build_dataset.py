@@ -391,20 +391,62 @@ def build_dataset():
         pct = 100 * cnt / total_rows
         print(f"         {yr}: {cnt:>10,} rows ({pct:5.1f}%)", flush=True)
 
-    # Adaptive year-based split
+    # Cutoffs chosen by where the ROWS are, not where the years are.
+    #
+    # This used to key off min_year and max_year: `min_year <= 2019 and
+    # max_year >= 2021` selected hardcoded 2019/2020 cutoffs. Both conditions
+    # are satisfied by a single stray row. This dataset is 2021-2026 plus one
+    # 2018 row and one 2020 row, so "train = everything up to 2019" meant a
+    # training split of exactly ONE ROW, a validation split of one, and 1079
+    # rows in test.
+    #
+    # Everything downstream inherited that quietly. The OrdinalEncoder is fitted
+    # on training rows only — correct practice — so it learned exactly one
+    # category per column, the values in that single row: procedure type knew
+    # only 'open' while the data has three, supply type knew only 'services'
+    # while the data has four. Every other value encoded to -1 at inference, so
+    # those features were dead, and the model itself was fitted on one example.
+    # Nothing failed. It all just quietly stopped meaning anything.
+    #
+    # Row-fraction targets cannot be moved by an outlier year: one stray row is
+    # one row's worth of the cumulative distribution, not a whole boundary.
     years = [r[0] for r in year_dist if r[0] is not None]
     min_year = min(years) if years else 2016
     max_year = max(years) if years else 2024
 
-    if min_year <= 2019 and max_year >= 2021:
-        train_end_year = 2019
-        val_end_year = 2020
-    else:
-        span = max_year - min_year
-        train_end_year = min_year + int(span * 0.6)
-        val_end_year = min_year + int(span * 0.8)
-        if val_end_year <= train_end_year:
-            val_end_year = train_end_year + 1
+    TRAIN_FRACTION = 0.6
+    VAL_FRACTION = 0.8
+
+    counted = [(yr, cnt) for yr, cnt in year_dist if yr is not None]
+    cumulative: list[tuple[int, float]] = []
+    running = 0
+    for yr, cnt in counted:
+        running += cnt
+        cumulative.append((yr, running / total_rows if total_rows else 0.0))
+
+    def _year_closest_to(target: float, exclude_last: bool) -> int:
+        """The boundary year whose cumulative row share sits nearest `target`.
+
+        Nearest rather than first-to-exceed: with only a handful of distinct
+        years, "first year past 60%" can land on a year holding 74% of the
+        data and leave test with almost nothing.
+        """
+        candidates = cumulative[:-1] if exclude_last and len(cumulative) > 1 else cumulative
+        return min(candidates, key=lambda pair: abs(pair[1] - target))[0]
+
+    # `exclude_last` keeps the final year out of the train and val boundaries,
+    # so test can never come back empty.
+    train_end_year = _year_closest_to(TRAIN_FRACTION, exclude_last=True)
+    val_end_year = _year_closest_to(VAL_FRACTION, exclude_last=True)
+
+    # Each split needs at least one year of its own, in order.
+    if val_end_year <= train_end_year:
+        val_end_year = train_end_year + 1
+    if val_end_year >= max_year:
+        # Pull train back rather than let test fall empty.
+        val_end_year = max_year - 1
+        if train_end_year >= val_end_year:
+            train_end_year = val_end_year - 1
 
     print(f"       Applying strict time split:", flush=True)
     print(f"         Train: <= {train_end_year}", flush=True)
@@ -423,6 +465,29 @@ def build_dataset():
                 ELSE 'test'
             END
     """)
+
+    # A split too small to train or evaluate on stops the build.
+    #
+    # The one-row training split did not fail anything. It flowed into the
+    # encoder, which learned one category per column; into the model, which was
+    # fitted on a single example; into the calibrator; and out to production,
+    # where every prediction looked ordinary. A dataset this broken must not be
+    # able to leave this script.
+    MIN_ROWS_PER_SPLIT = 30
+    sizes = dict(con.execute(
+        "SELECT split, COUNT(*) FROM joined GROUP BY split").fetchall())
+    starved = {name: sizes.get(name, 0) for name in ("train", "val", "test")
+               if sizes.get(name, 0) < MIN_ROWS_PER_SPLIT}
+    if starved:
+        raise SystemExit(
+            f"\nSplit is unusable: {starved} — each split needs at least "
+            f"{MIN_ROWS_PER_SPLIT} rows.\n"
+            f"Cutoffs were train<={train_end_year}, val=={val_end_year}, "
+            f"test>={val_end_year + 1} over years {min_year}-{max_year} "
+            f"({total_rows:,} rows).\n"
+            f"This usually means the publish_year distribution is concentrated "
+            f"in too few years to split on."
+        )
 
     # Print split stats
     split_stats = con.execute("""

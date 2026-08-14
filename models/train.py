@@ -244,22 +244,56 @@ def main():
     oof_cb = np.zeros(len(X_train))
     predicted_mask = np.zeros(len(X_train), dtype=bool)
 
+    def _usable_fold(train_idx, val_idx) -> bool:
+        """Both sides of a fold need both classes.
+
+        Non-empty was the only condition here, and it is not enough. Wins are
+        ~16% of rows, so an early time fold is easily all losses — and the
+        boosters do not warn about that, they raise:
+
+            ValueError: Invalid classes inferred from unique values of `y`.
+            Expected: [0], got [1]
+
+        which takes the whole run down at fold 1. The first fold of this
+        dataset trains on a single 2018 row, so it could never have been
+        anything else.
+        """
+        if len(train_idx) == 0 or len(val_idx) == 0:
+            return False
+        return (y_train.iloc[train_idx].nunique() > 1
+                and y_train.iloc[val_idx].nunique() > 1)
+
     # Determine time-based splits
     unique_years = sorted(X_train["publish_year"].unique()) if "publish_year" in X_train.columns else []
     folds = []
+    skipped_years = []
     if len(unique_years) > 1:
         for i in range(1, len(unique_years)):
             val_year = unique_years[i]
             train_idx = np.where(X_train["publish_year"] < val_year)[0]
             val_idx = np.where(X_train["publish_year"] == val_year)[0]
-            if len(train_idx) > 0 and len(val_idx) > 0:
+            if _usable_fold(train_idx, val_idx):
                 folds.append((train_idx, val_idx))
+            else:
+                skipped_years.append(val_year)
+
+    if skipped_years:
+        print(f"  Skipped {len(skipped_years)} fold(s) without both classes on "
+              f"each side: {skipped_years}", flush=True)
 
     if not folds:
         from sklearn.model_selection import TimeSeriesSplit
         tscv = TimeSeriesSplit(n_splits=5)
         for train_idx, val_idx in tscv.split(X_train):
-            folds.append((train_idx, val_idx))
+            if _usable_fold(train_idx, val_idx):
+                folds.append((train_idx, val_idx))
+
+    if not folds:
+        raise SystemExit(
+            "No usable CV fold: every time-based split had a single class on "
+            "one side. The training data is too small or too imbalanced to "
+            "produce out-of-fold predictions."
+        )
 
     print(f"  Running {len(folds)}-fold time-based CV for OOF predictions...", flush=True)
     for fold, (train_idx, val_idx) in enumerate(folds):

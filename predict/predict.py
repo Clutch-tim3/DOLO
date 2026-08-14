@@ -233,6 +233,31 @@ def encode_and_impute(df: pd.DataFrame, encoder, cat_cols: list, medians: dict) 
         
     if cat_cols_present and encoder is not None:
         df[cat_cols_present] = df[cat_cols_present].fillna("UNKNOWN").astype(str)
+
+        # Match the encoder's own vocabulary case- and whitespace-insensitively.
+        #
+        # The training data spells procedure types in lower case ('open',
+        # 'direct'); the document parser produces them capitalised ('Open').
+        # Ordinal encoding is an exact string lookup, so the one category that
+        # column actually had still missed and every row came back -1 —
+        # "unknown" — making the feature dead in a way no error reports.
+        #
+        # Only values that match a KNOWN category are rewritten. A genuinely
+        # unseen value ('RFP') is left alone and still encodes to -1, which is
+        # what it is.
+        if hasattr(encoder, "categories_"):
+            for col in cat_cols_present:
+                try:
+                    known = {
+                        str(cat).strip().lower(): cat
+                        for cat in encoder.categories_[cat_cols.index(col)]
+                        if cat is not None
+                    }
+                except (ValueError, IndexError):
+                    continue
+                df[col] = df[col].map(
+                    lambda value, _k=known: _k.get(str(value).strip().lower(), value)
+                )
         try:
             if isinstance(encoder, dict):
                 for col in cat_cols_present:
