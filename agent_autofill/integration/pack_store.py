@@ -790,6 +790,7 @@ def _review_view(company_id: str, review_id: str) -> dict:
         "flagged_count": review["flagged_count"],
         "acknowledged_count": review["acknowledged_count"],
         "outstanding_count": review["outstanding_count"],
+        "advisory_count": review.get("advisory_count", 0),
         "items": items,
         "filled_values": values["values"],
         "values_confirmed": not unconfirmed,
@@ -816,6 +817,7 @@ def pack_detail(company_id: str, pack_id: str) -> dict:
         "flags_total": 0,
         "flags_acknowledged": 0,
         "flags_outstanding": 0,
+        "advisory_total": 0,
         "values_total": 0,
         "values_unconfirmed": 0,
         "documents_with_review": 0,
@@ -848,12 +850,20 @@ def pack_detail(company_id: str, pack_id: str) -> dict:
                 totals["flags_total"] += review["flagged_count"]
                 totals["flags_acknowledged"] += review["acknowledged_count"]
                 totals["flags_outstanding"] += review["outstanding_count"]
+                totals["advisory_total"] += review.get("advisory_count", 0)
                 totals["values_total"] += len(review["filled_values"])
                 totals["values_unconfirmed"] += review["unconfirmed_value_count"]
                 for item in review["items"]:
                     kind = item["flag_kind"]
+                    # Counted over items that actually need a person, so the
+                    # breakdown sums to `outstanding` rather than to every row
+                    # ever recorded. It used to include the 370 advisory blanks
+                    # on a 145-page tender, so the screen said "275 outstanding"
+                    # above a list of kinds totalling 645.
+                    if item.get("advisory") or item["acknowledged"]:
+                        continue
                     flag_kinds[kind] = flag_kinds.get(kind, 0) + 1
-                    if not item["acknowledged"]:
+                    if True:
                         outstanding.append({
                             "file_id": f["file_id"],
                             "original_filename": f["original_filename"],

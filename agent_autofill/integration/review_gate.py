@@ -24,7 +24,8 @@ a conditional UPDATE:
     UPDATE ... SET status='REVIEWED'
      WHERE review_id=? AND company_id=? AND status='DRAFT'
        AND NOT EXISTS (SELECT 1 FROM autofill_review_item
-                        WHERE review_id=? AND acknowledged_at IS NULL)
+                        WHERE review_id=? AND acknowledged_at IS NULL
+                          AND advisory=0)
 
 If `rowcount` is 0 nothing happened and nothing is exported. There is no
 parameter to forge and no read-then-write window to race.
@@ -36,7 +37,10 @@ ten calls, each recorded separately with what the person said about it. That is
 the requirement: per-item confirmation, not a single "I agree".
 
 What "reviewed" means here, precisely: a person has looked at every field the
-agent refused to fill and said so, one at a time. It does NOT mean the document
+agent refused to fill FOR A REASON — a signature, a declaration, a price, a
+field it knows but has no value for — and said so, one at a time. Blanks it
+could not identify at all are recorded and marked in the document but do not
+require a tick; see ADVISORY_CATEGORIES for why. It does NOT mean the document
 is complete — the `[ ! ]` markers are still in it, because a signature, a
 declaration and a price are never ours to write. The export banner says exactly
 that.
@@ -77,6 +81,18 @@ BLANKET_TOKENS = {
     "*", "all", "any", "everything", "every", "each", "-", "none",
     "yes", "ok", "okay", "confirm", "confirmed", "agree", "i agree", "all fields",
 }
+
+#: Categories recorded but NOT requiring an acknowledgement.
+#:
+#: `unmatched` is a blank whose label we could not identify. We did not fill it,
+#: could not have filled it, and left it visibly marked in the document. Asking
+#: a person to tick it is not a safety property — it is noise, and on a real
+#: 145-page tender it was 370 of 651 items, which makes the whole gate unusable
+#: and trains people to click through the ones that matter.
+#:
+#: Everything else still requires a person: blocked (signature, declaration,
+#: pricing), no_data, low confidence, and every value actually written.
+ADVISORY_CATEGORIES = {"unmatched", "unplaceable"}
 
 #: Minimum characters in an acknowledgement note. Short enough not to be busy
 #: work, long enough that "ok" does not clear a state-employee declaration.
@@ -140,6 +156,12 @@ def init_review_db() -> None:
         existing = db.table_columns(conn, "autofill_review_item")
         if "ack_mac" not in existing:
             conn.execute("ALTER TABLE autofill_review_item ADD COLUMN ack_mac TEXT")
+        # Blanks we never identified and never wrote into. They are recorded so
+        # the record is complete and still marked [ ! ] in the document, but
+        # they do not require an acknowledgement — see ADVISORY_CATEGORIES.
+        if "advisory" not in existing:
+            conn.execute("ALTER TABLE autofill_review_item"
+                         " ADD COLUMN advisory INTEGER NOT NULL DEFAULT 0")
 
         # The digest of the exported copy as it stood before stamping. The
         # stamp rewrites the file, so this cannot be recovered from the export
@@ -192,10 +214,15 @@ def open_review(company_id: str, fill_result, company_name: str = "",
     Record a fill so its flagged fields can be acknowledged one by one.
 
     `fill_result` is a `fill_engine.document_filler.FillResult`. Every skipped
-    field becomes an outstanding item — blocked, low-confidence, no-data and
-    unmatched alike. Nothing is pre-acknowledged, including the fields that were
-    blocked by design: the user still has to look at a signature line and say
-    they have seen it, because that is the field most likely to be missed.
+    field is recorded. Those with a REASON — blocked, low-confidence, no-data —
+    become outstanding items requiring an individual acknowledgement; nothing is
+    pre-acknowledged, including fields blocked by design, because a signature
+    line is the one most likely to be skimmed past.
+
+    Blanks in ADVISORY_CATEGORIES are recorded and marked in the document but do
+    not require a tick. On a real 145-page PDF tender they were 370 of 651
+    items. A gate that demands 651 confirmations is not a stricter gate; it is
+    one people learn to click through, including past the 25 signatures.
 
     The draft is stamped UNREVIEWED on the way out, so the file on disk carries
     its state from the moment it exists rather than from the moment it is
@@ -216,6 +243,7 @@ def open_review(company_id: str, fill_result, company_name: str = "",
             skipped.location,
             skipped.category,
             skipped.reason,
+            1 if (skipped.category or "") in ADVISORY_CATEGORIES else 0,
         ))
 
     with _connect() as conn:
@@ -229,8 +257,8 @@ def open_review(company_id: str, fill_result, company_name: str = "",
         )
         conn.executemany(
             """INSERT INTO autofill_review_item
-               (review_id, item_key, label, location, category, reason)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               (review_id, item_key, label, location, category, reason, advisory)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             items,
         )
         conn.executemany(
@@ -280,6 +308,7 @@ def _outstanding_rows(review_id: str) -> list[dict]:
             """SELECT item_key, label, location, category, reason
                  FROM autofill_review_item
                 WHERE review_id = ? AND acknowledged_at IS NULL
+                  AND advisory = 0
                 ORDER BY item_key""",
             (review_id,),
         ).fetchall()
@@ -312,12 +341,20 @@ def get_review(company_id: str, review_id: str) -> dict:
     with _connect() as conn:
         items = [dict(r) for r in conn.execute(
             """SELECT item_key, label, location, category, reason,
-                      acknowledged_at, acknowledged_note
+                      acknowledged_at, acknowledged_note, advisory
                  FROM autofill_review_item WHERE review_id = ? ORDER BY item_key""",
             (review_id,),
         ).fetchall()]
 
-    outstanding = [i for i in items if not i["acknowledged_at"]]
+    # Advisory rows are returned — they belong in the record and the UI should
+    # be able to list them — but they are not counted as outstanding and do not
+    # hold the export gate. This filter has to match the one in
+    # `_outstanding_rows` and in the export UPDATE; three places computing
+    # "outstanding" differently is how a gate ends up disagreeing with the
+    # screen that describes it.
+    outstanding = [i for i in items
+                   if not i["acknowledged_at"] and not i.get("advisory")]
+    advisory = [i for i in items if i.get("advisory")]
     return {
         "status": "success",
         "review_id": review_id,
@@ -327,8 +364,11 @@ def get_review(company_id: str, review_id: str) -> dict:
         "summary_path": row["summary_path"],
         "filled_count": row["filled_count"],
         "flagged_count": row["flagged_count"],
-        "acknowledged_count": len(items) - len(outstanding),
+        "acknowledged_count": sum(1 for i in items
+                                   if i["acknowledged_at"] and not i.get("advisory")),
         "outstanding_count": len(outstanding),
+        "advisory_count": len(advisory),
+        "advisory": advisory,
         "items": items,
         "outstanding": outstanding,
         "exportable_as_reviewed": row["status"] == "DRAFT" and not outstanding,
@@ -565,6 +605,7 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
                   AND NOT EXISTS (
                         SELECT 1 FROM autofill_review_item
                          WHERE review_id = ? AND acknowledged_at IS NULL
+                           AND advisory = 0
                   )""",
             (now, review_id, company_id, review_id),
         )

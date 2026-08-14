@@ -390,3 +390,69 @@ def test_core_properties_stay_inside_the_255_char_opc_limit(review):
     state = em.read_review_state(draft)
     for key in ("content_status", "category", "subject", "keywords", "comments"):
         assert len(state[key]) <= em.MAX_PROP_CHARS, f"{key} exceeds the OPC limit"
+
+
+# --- advisory blanks -------------------------------------------------------
+#
+# A real 145-page PDF tender produced 651 items to confirm, 370 of them blanks
+# whose labels could not be identified. Those were never filled and never could
+# have been. A gate demanding 651 confirmations is not stricter than one
+# demanding 281 — it is one people learn to click through, including past the
+# 25 signatures.
+
+
+def test_unmatched_blanks_do_not_require_acknowledgement(review):
+    """They are recorded, and marked in the document, but not counted."""
+    from agent_autofill.integration.review_gate import ADVISORY_CATEGORIES
+
+    assert "unmatched" in ADVISORY_CATEGORIES
+
+    review_id, result, _ = review
+    state = rg.get_review(COMPANY, review_id)
+    counted = {i["item_key"] for i in state["outstanding"]}
+    for item in state["items"]:
+        if item.get("advisory"):
+            assert item["item_key"] not in counted, (
+                f"{item['item_key']} is advisory but counted as outstanding")
+
+
+def test_advisory_items_are_still_recorded(review):
+    """Dropped from the tally, not from the record."""
+    review_id, _, _ = review
+    state = rg.get_review(COMPANY, review_id)
+    assert "advisory_count" in state
+    assert isinstance(state.get("advisory"), list)
+
+
+def test_signatures_are_never_advisory():
+    """
+    The whole point of narrowing the list is that the things which matter stay
+    on it. A signature must never be quietly reclassified as advisory.
+    """
+    from agent_autofill.integration.review_gate import ADVISORY_CATEGORIES
+
+    for must_stay in ("blocked", "no_data", "low_confidence"):
+        assert must_stay not in ADVISORY_CATEGORIES
+
+
+def test_the_export_gate_still_refuses_while_a_real_flag_is_open(review):
+    """Narrowing the count must not narrow the gate."""
+    review_id, _, _ = review
+    state = rg.get_review(COMPANY, review_id)
+    if not state["outstanding"]:
+        pytest.skip("fixture produced no non-advisory flags")
+    out = rg.export_reviewed(COMPANY, review_id)
+    assert out["status"] == "error"
+
+
+def test_advisory_alone_does_not_hold_the_gate(review):
+    """
+    A document whose ONLY remaining items are advisory must be exportable once
+    its real flags and values are done — otherwise the change achieved nothing.
+    """
+    review_id, _, _ = review
+    _ack_all(review_id)
+    state = rg.get_review(COMPANY, review_id)
+    assert state["outstanding_count"] == 0
+    out = rg.export_reviewed(COMPANY, review_id)
+    assert out["status"] == "success", out.get("message")
