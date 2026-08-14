@@ -110,11 +110,19 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
     try:
         for blank in blanks:
             label = (getattr(blank, "label_text", "") or "").strip()
-            page_no = getattr(blank, "page_number", 1) or 1
+            # `Blank.page_number` is 0-BASED — the extractor says so in a
+            # comment on the field, and this code read it as 1-based. Every
+            # value was written one page early, into whatever happened to be
+            # there. On the real 145-page tender that put seven fields onto a
+            # nearly empty page while the form they belonged to stayed blank,
+            # and the counts still said "31 filled" because the data was right
+            # and only the placement was wrong. Nothing but rendering a page
+            # and looking at it would have caught this.
+            page_index = getattr(blank, "page_number", 0) or 0
             bbox = getattr(blank, "bbox", None)
-            location = f"page {page_no}"
+            location = f"page {page_index + 1}"   # 1-based for a human
 
-            if bbox is None or page_no < 1 or page_no > doc.page_count:
+            if bbox is None or page_index < 0 or page_index >= doc.page_count:
                 skipped.append(SkippedField(
                     label=label or "(unlabelled)",
                     reason="This blank has no position on the page, so nothing "
@@ -122,7 +130,7 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
                     category="unplaceable", location=location))
                 continue
 
-            page = doc[page_no - 1]
+            page = doc[page_index]
             x0, y0, x1, y1 = bbox
             width = float(x1) - float(x0)
 
