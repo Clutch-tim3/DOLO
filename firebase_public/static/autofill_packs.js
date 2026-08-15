@@ -286,8 +286,39 @@
         if (Array.isArray(docs)) {
             pack.documents = docs.map(normaliseDocument);
         } else {
-            var flat = asList(pick(raw, ['flags', 'flagged_fields', 'items'], []));
-            pack.documents = flat.length ? groupFlatFlags(flat) : [];
+            /* The API puts the review on each FILE, under files[].review, and
+               sends `flags` as a counts object ({total, acknowledged,
+               outstanding, by_kind}) rather than a list.
+
+               This looked only for a top-level `documents` key and then fell
+               back to treating `flags` as a flat list. Neither exists, so
+               pack.documents was always empty — and with no documents there
+               was no values panel, nothing to confirm, and an export button
+               that said "this pack has no reviewed documents yet" forever.
+               The seven filled values were sitting in files[0].review the
+               whole time.
+
+               The review row has no filename of its own; the file it belongs
+               to does, and the screen is organised by document. */
+            var fromFiles = asList(pick(raw, ['files'], []))
+                .filter(function (f) { return f && f.review; })
+                .map(function (f) {
+                    var merged = {};
+                    Object.keys(f.review).forEach(function (k) {
+                        merged[k] = f.review[k];
+                    });
+                    if (!merged.document) {
+                        merged.document = f.original_filename || f.filename || '';
+                    }
+                    return merged;
+                });
+
+            if (fromFiles.length) {
+                pack.documents = fromFiles.map(normaliseDocument);
+            } else {
+                var flat = asList(pick(raw, ['flags', 'flagged_fields', 'items'], []));
+                pack.documents = flat.length ? groupFlatFlags(flat) : [];
+            }
         }
         pack.download_url = pick(raw, ['download_url', 'export_url'], '') || '';
         return pack;
