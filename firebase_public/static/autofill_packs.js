@@ -225,7 +225,19 @@
             category: String(pick(raw, ['category', 'kind', 'type'], '') || ''),
             reason: String(pick(raw, ['reason', 'why', 'detail'], '') || ''),
             acknowledged: ackAt ? true : Boolean(pick(raw, ['acknowledged'], false)),
-            note: String(pick(raw, ['acknowledged_note', 'note'], '') || '')
+            note: String(pick(raw, ['acknowledged_note', 'note'], '') || ''),
+            /* The backend marks a flag advisory when it is a note about
+               extraction rather than a decision about the form — an unmatched
+               cell is usually not a field at all. It reports these separately
+               (advisory_count) and leaves them out of outstanding_count.
+
+               This field was being dropped here, so the screen counted an
+               advisory note as a blocking flag and held export on "1 of 1
+               flagged field not acknowledged" for something the server had
+               already decided does not block. That is the opposite of the
+               decision to keep unmatched blanks out of the confirmation
+               list. */
+            advisory: Boolean(pick(raw, ['advisory', 'is_advisory'], false))
         };
     }
 
@@ -252,7 +264,12 @@
             fills: asList(pick(raw, ['fills', 'filled_values', 'filled', 'values'], []))
                        .map(normaliseFill),
             values_confirmed: Boolean(pick(raw, ['values_confirmed', 'values_confirmed_at'],
-                                           false))
+                                           false)),
+            /* So the review screen can offer a look at the document itself.
+               Confirming a value means agreeing it belongs on this form, and
+               that is not something anyone can do from a list of strings —
+               where a value landed on the page is the whole question. */
+            draft_url: String(pick(raw, ['draft_url', 'draftUrl'], '') || '')
         };
     }
 
@@ -310,6 +327,11 @@
                     if (!merged.document) {
                         merged.document = f.original_filename || f.filename || '';
                     }
+                    // The link to the filled document is on the file, not the
+                    // review row.
+                    if (!merged.draft_url && f.draft_url) {
+                        merged.draft_url = f.draft_url;
+                    }
                     return merged;
                 });
 
@@ -334,6 +356,10 @@
         (detail.documents || []).forEach(function (doc) {
             var open = 0;
             doc.items.forEach(function (item) {
+                // Advisory notes are shown but never block. They are remarks
+                // about what the extractor could not identify, and the server
+                // already excludes them from outstanding_count.
+                if (item.advisory) { return; }
                 totals.flags += 1;
                 if (item.acknowledged) { totals.acked += 1; } else { open += 1; }
             });
@@ -1014,12 +1040,34 @@
 
         var head = el('div', 'ap-doc-head');
         head.appendChild(el('h4', 'ap-doc-name', doc.document));
-        var open = doc.items.filter(function (i) { return !i.acknowledged; }).length;
+
+        // Advisory notes are excluded from the count for the same reason they
+        // are excluded from the export gate: they are remarks about what could
+        // not be identified, not fields anyone must sign off. Counting them
+        // here said "1 of 1 still to acknowledge" beside an export that the
+        // server was perfectly willing to allow.
+        var blocking = doc.items.filter(function (i) { return !i.advisory; });
+        var open = blocking.filter(function (i) { return !i.acknowledged; }).length;
         head.appendChild(el('span', 'ap-doc-count',
-            open === 0
-                ? (doc.items.length + ' ' + plural(doc.items.length, 'field', 'fields')
-                   + ' · all acknowledged')
-                : (open + ' of ' + doc.items.length + ' still to acknowledge')));
+            blocking.length === 0
+                ? 'nothing to acknowledge'
+                : (open === 0
+                    ? (blocking.length + ' ' + plural(blocking.length, 'field', 'fields')
+                       + ' · all acknowledged')
+                    : (open + ' of ' + blocking.length + ' still to acknowledge'))));
+
+        // A look at the actual document. Opened in a new tab rather than
+        // downloaded, and it is NOT an export: the draft carries no reviewed
+        // stamp, the gate is untouched, and nothing here confirms anything.
+        if (doc.draft_url) {
+            var preview = document.createElement('a');
+            preview.className = 'ap-link-btn ap-preview-link';
+            preview.href = doc.draft_url;
+            preview.target = '_blank';
+            preview.rel = 'noopener';
+            preview.textContent = 'PREVIEW DRAFT';
+            head.appendChild(preview);
+        }
         section.appendChild(head);
 
         doc.items.forEach(function (item) {
