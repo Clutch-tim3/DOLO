@@ -1,63 +1,63 @@
 {
   "train": {
-    "roc_auc": 0.688257,
-    "log_loss": 0.402372,
+    "roc_auc": 0.519011,
+    "log_loss": 0.44673,
     "precision_at_20": null,
-    "n_samples": 19997,
+    "n_samples": 26184,
     "calibration": [
       {
         "bin": "0.0-0.1",
-        "count": 3640,
-        "mean_predicted": 0.05869533093602789,
-        "actual_rate": 0.023351648351648352
+        "count": 3,
+        "mean_predicted": 0.09809772064964596,
+        "actual_rate": 0.0
       },
       {
         "bin": "0.1-0.2",
-        "count": 14108,
-        "mean_predicted": 0.17458561657313726,
-        "actual_rate": 0.16664303941026368
+        "count": 26098,
+        "mean_predicted": 0.1661476254800658,
+        "actual_rate": 0.16388228983063835
       },
       {
         "bin": "0.2-0.3",
-        "count": 1800,
-        "mean_predicted": 0.21708229501296009,
-        "actual_rate": 0.2866666666666667
+        "count": 4,
+        "mean_predicted": 0.23428305674836647,
+        "actual_rate": 0.0
       },
       {
         "bin": "0.3-0.4",
-        "count": 89,
-        "mean_predicted": 0.33751292786326836,
-        "actual_rate": 0.5842696629213483
+        "count": 16,
+        "mean_predicted": 0.363973340905735,
+        "actual_rate": 0.75
       },
       {
         "bin": "0.4-0.5",
-        "count": 22,
-        "mean_predicted": 0.45086001563003353,
-        "actual_rate": 0.5454545454545454
+        "count": 63,
+        "mean_predicted": 0.4258477464593479,
+        "actual_rate": 0.873015873015873
       },
       {
         "bin": "0.5-0.6",
-        "count": 9,
-        "mean_predicted": 0.5713900475345886,
-        "actual_rate": 0.3333333333333333
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.6-0.7",
-        "count": 3,
-        "mean_predicted": 0.6631706488527259,
-        "actual_rate": 0.6666666666666666
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.7-0.8",
-        "count": 28,
-        "mean_predicted": 0.7636309869335054,
-        "actual_rate": 0.6428571428571429
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.8-0.9",
-        "count": 298,
-        "mean_predicted": 0.8524992230283421,
-        "actual_rate": 0.9429530201342282
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.9-1.0",
@@ -68,64 +68,64 @@
     ]
   },
   "val": {
-    "roc_auc": 0.657278,
-    "log_loss": 0.409476,
+    "roc_auc": 0.520771,
+    "log_loss": 0.446029,
     "precision_at_20": null,
-    "n_samples": 5428,
+    "n_samples": 13469,
     "calibration": [
       {
         "bin": "0.0-0.1",
-        "count": 1754,
-        "mean_predicted": 0.054503396182854894,
-        "actual_rate": 0.09007981755986318
+        "count": 3,
+        "mean_predicted": 0.09723916590402991,
+        "actual_rate": 0.0
       },
       {
         "bin": "0.1-0.2",
-        "count": 2828,
-        "mean_predicted": 0.16265960326633058,
-        "actual_rate": 0.1661951909476662
+        "count": 13387,
+        "mean_predicted": 0.16543571507730495,
+        "actual_rate": 0.16284455068349893
       },
       {
         "bin": "0.2-0.3",
-        "count": 619,
-        "mean_predicted": 0.21943556215485113,
-        "actual_rate": 0.19224555735056542
+        "count": 1,
+        "mean_predicted": 0.20066915249211947,
+        "actual_rate": 0.0
       },
       {
         "bin": "0.3-0.4",
-        "count": 49,
-        "mean_predicted": 0.3401701567896368,
-        "actual_rate": 0.2653061224489796
+        "count": 21,
+        "mean_predicted": 0.3685935095563265,
+        "actual_rate": 0.7142857142857143
       },
       {
         "bin": "0.4-0.5",
-        "count": 18,
-        "mean_predicted": 0.43206031645863063,
-        "actual_rate": 0.3888888888888889
+        "count": 57,
+        "mean_predicted": 0.4213719840827755,
+        "actual_rate": 0.7894736842105263
       },
       {
         "bin": "0.5-0.6",
-        "count": 6,
-        "mean_predicted": 0.5332048701145616,
-        "actual_rate": 0.6666666666666666
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.6-0.7",
-        "count": 13,
-        "mean_predicted": 0.6585822751510992,
-        "actual_rate": 0.6153846153846154
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.7-0.8",
-        "count": 19,
-        "mean_predicted": 0.7535116582176572,
-        "actual_rate": 0.8947368421052632
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.8-0.9",
-        "count": 122,
-        "mean_predicted": 0.8484258356907212,
-        "actual_rate": 0.8852459016393442
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.9-1.0",
@@ -136,64 +136,64 @@
     ]
   },
   "test": {
-    "roc_auc": 0.687525,
-    "log_loss": 0.395673,
+    "roc_auc": 0.556724,
+    "log_loss": 0.440977,
     "precision_at_20": null,
-    "n_samples": 44429,
+    "n_samples": 13121,
     "calibration": [
       {
         "bin": "0.0-0.1",
-        "count": 17790,
-        "mean_predicted": 0.05368551831985471,
-        "actual_rate": 0.08982574480044969
+        "count": 6,
+        "mean_predicted": 0.09616671691692534,
+        "actual_rate": 0.3333333333333333
       },
       {
         "bin": "0.1-0.2",
-        "count": 20883,
-        "mean_predicted": 0.15750681413448225,
-        "actual_rate": 0.16716946798831586
+        "count": 12923,
+        "mean_predicted": 0.1630719253941444,
+        "actual_rate": 0.15809022672754006
       },
       {
         "bin": "0.2-0.3",
-        "count": 3900,
-        "mean_predicted": 0.21883653820307153,
-        "actual_rate": 0.2053846153846154
+        "count": 13,
+        "mean_predicted": 0.2822543602926728,
+        "actual_rate": 0.3076923076923077
       },
       {
         "bin": "0.3-0.4",
-        "count": 213,
-        "mean_predicted": 0.3396177469498781,
-        "actual_rate": 0.3145539906103286
+        "count": 73,
+        "mean_predicted": 0.35812143949594977,
+        "actual_rate": 0.6712328767123288
       },
       {
         "bin": "0.4-0.5",
-        "count": 107,
-        "mean_predicted": 0.4474997342187119,
-        "actual_rate": 0.5233644859813084
+        "count": 106,
+        "mean_predicted": 0.4177904264524825,
+        "actual_rate": 0.8018867924528302
       },
       {
         "bin": "0.5-0.6",
-        "count": 97,
-        "mean_predicted": 0.5495794230505562,
-        "actual_rate": 0.6804123711340206
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.6-0.7",
-        "count": 112,
-        "mean_predicted": 0.6470580300654307,
-        "actual_rate": 0.7767857142857143
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.7-0.8",
-        "count": 199,
-        "mean_predicted": 0.7594391835862906,
-        "actual_rate": 0.7839195979899497
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.8-0.9",
-        "count": 1128,
-        "mean_predicted": 0.8447865023537567,
-        "actual_rate": 0.9335106382978723
+        "count": 0,
+        "mean_predicted": null,
+        "actual_rate": null
       },
       {
         "bin": "0.9-1.0",
@@ -205,25 +205,25 @@
   },
   "best_hyperparameters": {
     "xgb": {
-      "learning_rate": 0.0483488480393205,
-      "max_depth": 3,
-      "subsample": 0.7624368802749555,
-      "colsample_bytree": 0.6991373636150576,
+      "learning_rate": 0.018201886518689713,
+      "max_depth": 6,
+      "subsample": 0.9754351876636214,
+      "colsample_bytree": 0.7968064203169045,
       "min_child_weight": 35
     },
     "lgb": {
-      "learning_rate": 0.03784437992454096,
-      "num_leaves": 215,
-      "max_depth": -1,
-      "subsample": 0.9705289980536514,
-      "colsample_bytree": 0.6161543531694467,
-      "min_child_samples": 7
+      "learning_rate": 0.05687413219122334,
+      "num_leaves": 100,
+      "max_depth": 8,
+      "subsample": 0.6898436415695968,
+      "colsample_bytree": 0.9570512172389298,
+      "min_child_samples": 31
     },
     "cb": {
-      "learning_rate": 0.06983629910338778,
-      "depth": 8,
-      "l2_leaf_reg": 3.297232201070649,
-      "subsample": 0.921050759456924
+      "learning_rate": 0.08644087213632497,
+      "depth": 4,
+      "l2_leaf_reg": 7.9039585570863755,
+      "subsample": 0.838126981417788
     }
   },
   "n_features": 58,

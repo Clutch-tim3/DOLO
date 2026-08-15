@@ -15,6 +15,7 @@ Main work:
   7. Save labeled_pairs.parquet + SQLite table 'labeled_pairs'
 """
 
+import os
 import sys
 import time
 import sqlite3
@@ -30,6 +31,25 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 INPUT_PATH = PROJECT_ROOT / "data" / "processed" / "raw_contracts.parquet"
 OUTPUT_PATH = PROJECT_ROOT / "data" / "processed" / "labeled_pairs.parquet"
 SQLITE_DB = PROJECT_ROOT / "data" / "procurement.db"
+
+# ── Sampling ───────────────────────────────────────────────────────────────
+# Fraction of raw award rows kept. 1.0 = all of them.
+#
+# This was `AND RANDOM() <= 0.02` written directly into the SQL — a 2% sample,
+# almost certainly a shortcut for a fast local run that nobody took back out.
+# It threw away 98% of the data before anything downstream saw it: 8,767 award
+# rows became 172, and the log line said "2% sample" in a wall of other output.
+#
+# The cost was not just volume. Supplier history features (pit_total_entries,
+# pit_is_incumbent, pit_win_rate_buyer) only mean anything when the same
+# bidder appears more than once, and 1,015 of the 7,088 bidders do — but at 2%
+# the odds of catching the same bidder twice are almost nil, so every history
+# feature came out ~empty (pit_is_incumbent averaged 0.006) and the model had
+# nothing to distinguish one bidder from another.
+#
+# Override for a quick run with PAIRS_SAMPLE_FRACTION=0.02; the default is now
+# everything, because a sample belongs in a flag and not in the query.
+SAMPLE_FRACTION = float(os.environ.get("PAIRS_SAMPLE_FRACTION", "1.0"))
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -136,6 +156,16 @@ def main():
         "lot_updateddurationdays::INTEGER" if has_duration else "NULL::INTEGER"
     )
 
+    # Empty at the default of 1.0, so the full-data path runs no sampling
+    # predicate at all rather than a RANDOM() <= 1.0 that reads like one.
+    sample_clause = (
+        "" if SAMPLE_FRACTION >= 1.0
+        else f"AND RANDOM() <= {SAMPLE_FRACTION}"
+    )
+    if SAMPLE_FRACTION < 1.0:
+        log(f"  WARNING: PAIRS_SAMPLE_FRACTION={SAMPLE_FRACTION} — building from a "
+            f"SAMPLE, not the full dataset.")
+
     # Select columns to carry forward — keep all useful columns from upstream
     # plus the new pair-level features
     pairs_sql = f"""
@@ -211,14 +241,18 @@ def main():
     WHERE bid_iswinning IS NOT NULL
       AND lot_id IS NOT NULL
       AND bidder_masterid IS NOT NULL
-      AND RANDOM() <= 0.02
+      {sample_clause}
     """
 
     # Create the pairs view
     con.execute(f"CREATE TABLE pairs AS {pairs_sql}")
 
     pairs_count = con.execute("SELECT COUNT(*) FROM pairs").fetchone()[0]
-    log(f"  Pairs created (2% sample): {pairs_count:,}")
+    if SAMPLE_FRACTION >= 1.0:
+        log(f"  Pairs created (all rows): {pairs_count:,}")
+    else:
+        log(f"  Pairs created ({SAMPLE_FRACTION:.0%} SAMPLE - not the full data): "
+            f"{pairs_count:,}")
 
     # Rows dropped due to nulls in required fields
     dropped = row_count - pairs_count

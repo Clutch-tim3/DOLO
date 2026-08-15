@@ -1,5 +1,7 @@
 from predict.regional_router import predict_tender_region, detect_region
 import traceback
+
+from predict import model_validation
 import os
 import sys
 import json
@@ -1165,6 +1167,10 @@ async def api_tender_submit(
             "win_probability": final_probability,
             "sa_adjusted_probability": final_probability,
             "base_probability": base_prob,
+            # What that number is worth, travelling with it. The model scores
+            # ~0.53-0.56 AUC on held-out data; presented bare, a percentage
+            # reads as a measurement.
+            "model_validation": model_validation.validation_status(),
             "recommendation": recommendation,
             "confidence": confidence,
             "threshold": threshold,
@@ -1329,6 +1335,7 @@ async def process_batch_job(job_id: str, file_paths: list, filenames: list, name
                 "hard_failures": [],
                 "win_probability": base_prob,
                 "sa_adjusted_probability": final_probability,
+                "model_validation": model_validation.validation_status(),
                 "recommendation": recommendation,
                 "competitive_position": sa_score["competitive_position"],
                 "parsed_tender_value": tender_value,
