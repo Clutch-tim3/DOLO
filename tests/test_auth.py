@@ -576,3 +576,25 @@ def test_no_credential_travels_in_a_url(company_a):
                        headers=bearer(company_a)).json()["pairing_code"]
     response = client.post(f"/api/auth/device/pair?code={code}")
     assert response.status_code in (401, 422)
+
+
+def test_the_session_cookie_is_named_for_firebase_hosting():
+    """
+    The name is a deployment constraint, not branding.
+
+    Firebase Hosting forwards exactly one cookie to a function — `__session` —
+    and strips the rest, which is what lets its CDN cache anything. Under any
+    other name the browser stores the cookie and it never arrives back at the
+    server.
+
+    The symptom is a sign-in that looks like it works: login returns 200 with a
+    Set-Cookie, the next request reaches the function with no cookie, whoami()
+    returns null and the overlay reappears. It failed on every load through the
+    site and passed on every test against the Cloud Run URL directly, because
+    that path has no Hosting in front of it.
+    """
+    assert auth.SESSION_COOKIE == "__session", (
+        "Firebase Hosting strips every cookie except __session; renaming this "
+        "breaks sign-in through cairoai.web.app while leaving direct-to-function "
+        "tests green"
+    )

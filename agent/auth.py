@@ -103,7 +103,22 @@ _SALT_BYTES = 16
 #: The browser session cookie. HttpOnly so script cannot read it, SameSite=Lax
 #: so a cross-site POST does not carry it, Secure on anything that is not
 #: localhost (where Secure would make the browser drop it entirely).
-SESSION_COOKIE = "cairoai_session"
+#:
+#: THE NAME IS NOT A CHOICE. Firebase Hosting strips every cookie except
+#: `__session` from requests it forwards to a function — it is what makes the
+#: CDN able to cache anything at all. Any other name is set in the browser
+#: perfectly happily and then silently dropped on the way back in.
+#:
+#: This was `cairoai_session`, and the result was a sign-in that appeared to
+#: work and then asked again, forever: POST /api/auth/login returned 200 and a
+#: Set-Cookie the browser stored, the very next GET /api/auth/me arrived at the
+#: function with no cookie at all, whoami() returned null, and the overlay came
+#: straight back. Through the site it failed every time; against the Cloud Run
+#: URL directly — which is how it was tested — it passed every time, because
+#: that path has no Hosting in front of it.
+#:
+#: Do not "tidy" this back to a branded name.
+SESSION_COOKIE = "__session"
 
 #: Absolute lifetime of a browser session, extended on use (see `_touch`).
 SESSION_TTL_SECONDS = 12 * 60 * 60
