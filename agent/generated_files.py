@@ -84,9 +84,39 @@ def register(filename: str, company_id: str, kind: str = "", conn=None) -> None:
 
     if conn is not None:
         conn.execute(sql, params)
+        _mirror(name)
         return
     with db.connect(DB_PATH) as own:
         own.execute(sql, params)
+    _mirror(name)
+
+
+def _mirror(name: str) -> None:
+    """
+    Copy the file into durable storage, if there is any.
+
+    Registration is the right moment: it is the point at which a generated file
+    becomes something a user can be handed a link to, and every generator
+    already calls it beside the write.
+
+    Without this the ownership row outlives the document. That is not a
+    hypothetical — a filled SBD 1 in production downloaded fine seconds after it
+    was made and returned "File not found or expired" ten minutes later, with
+    its row still sitting in Cloud SQL, because `/tmp` belongs to one instance.
+
+    Failure is logged and swallowed. The alternative is a generator that
+    completes the work and then throws away the result over a storage error,
+    and the file is still on this instance either way.
+    """
+    try:
+        from agent.file_paths import safe_generated_path
+        from agent import object_store
+
+        if not object_store.enabled():
+            return
+        object_store.upload(safe_generated_path(name), name)
+    except Exception:  # noqa: BLE001 - mirroring must never fail a generation
+        logger.exception("could not mirror %s to durable storage", name)
 
 
 def owner_of(filename: str) -> str | None:

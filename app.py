@@ -802,9 +802,14 @@ async def api_serve_generated(filename: str,
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid filename")
 
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found or expired")
-
+    # OWNERSHIP FIRST, then look for the bytes.
+    #
+    # This used to check existence first, which was fine while the file was
+    # only ever on local disk. It is not fine now that a miss can trigger a
+    # fetch from durable storage: checking ownership afterwards would let
+    # anyone holding a filename cause an object to be pulled out of the bucket.
+    # The order below means an unauthorised caller never reaches storage at all.
+    #
     # Same 404 for "not yours" as for "does not exist". A distinct 403 would
     # confirm the file is real to someone holding only a filename.
     from agent.generated_files import belongs_to
@@ -813,6 +818,18 @@ async def api_serve_generated(filename: str,
         logger.warning(
             "refused generated file %s for company %s (not the owner, or "
             "no owner recorded)", filename, principal.company_id)
+        raise HTTPException(status_code=404, detail="File not found or expired")
+
+    # `/tmp` is per-instance, so the instance answering this request is very
+    # often not the one that produced the file. Restore it from the bucket
+    # rather than telling the owner their document expired — which is what
+    # happened to a real filled SBD 1 ten minutes after it was generated.
+    if not file_path.exists():
+        from agent import object_store
+
+        object_store.ensure_local(filename, file_path)
+
+    if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found or expired")
 
     # An Agent Autofill export is checked against its review record before it

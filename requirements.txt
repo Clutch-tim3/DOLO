@@ -97,3 +97,12 @@ google-cloud-vision>=3.7
 # connected-component labelling needed here are a few lines of ndimage, and
 # opencv-python would add ~60MB to a deploy bundle that is already 49MB.
 scipy>=1.11
+
+# Durable storage for generated documents (agent/object_store.py). /tmp is
+# per-instance on Cloud Run, so a filled tender form downloaded fine seconds
+# after it was made and returned "File not found or expired" ten minutes later
+# — the ownership row outliving the document it points at.
+#
+# Arrives today as a firebase-functions dependency, which is the fourth time
+# that reasoning has been wrong in this file. Named explicitly.
+google-cloud-storage>=2.14

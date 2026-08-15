@@ -158,3 +158,65 @@ def test_every_generator_records_an_owner():
         text = (ROOT / path).read_text(encoding="utf-8")
         calls = len(re.findall(r"register_generated\(", text))
         assert calls >= expected, f"{path}: {calls} registrations, expected {expected}"
+
+
+# --- durable storage, and who may cause a fetch from it --------------------
+
+
+def test_a_missing_local_file_is_restored_for_its_owner(client, monkeypatch):
+    """
+    `/tmp` is per-instance, so the instance answering a download is often not
+    the one that produced the file. A real filled SBD 1 downloaded fine seconds
+    after it was made and 404'd ten minutes later with its ownership row still
+    in the database.
+    """
+    import uuid
+
+    from agent import object_store
+
+    name = f"quote_{uuid.uuid4().hex[:8]}.pdf"
+    generated_files.register(name, "pro_corp", "quotation")
+    # Registered but NOT on this instance's disk — the cold-instance case.
+    assert not (generated_dir() / name).exists()
+
+    def restore(filename, local_path):
+        Path(local_path).write_bytes(b"%PDF-1.4 restored from the bucket")
+        return True
+
+    monkeypatch.setattr(object_store, "ensure_local", restore)
+
+    r = client.get(f"/api/generated/{name}", headers=_headers_for("pro_corp"))
+    assert r.status_code == 200
+    assert b"restored from the bucket" in r.content
+    (generated_dir() / name).unlink(missing_ok=True)
+
+
+def test_a_non_owner_cannot_cause_a_fetch_from_storage(client, monkeypatch):
+    """
+    Ownership is checked BEFORE the restore, and this is why.
+
+    The route used to check existence first, which was harmless while files
+    only ever sat on local disk. Once a miss can pull an object out of a
+    bucket, that order would let anyone holding a filename cause a fetch —
+    turning a 404 into a way to move someone else's document onto a machine
+    and into its logs and metrics.
+    """
+    import uuid
+
+    from agent import object_store
+
+    name = f"quote_{uuid.uuid4().hex[:8]}.pdf"
+    generated_files.register(name, "pro_corp", "quotation")
+
+    attempts = []
+
+    def record(filename, local_path):
+        attempts.append(filename)
+        return False
+
+    monkeypatch.setattr(object_store, "ensure_local", record)
+
+    r = client.get(f"/api/generated/{name}", headers=_headers_for("enterprise_corp"))
+    assert r.status_code == 404
+    assert attempts == [], (
+        f"storage was consulted for a caller who does not own the file: {attempts}")
