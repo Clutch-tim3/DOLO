@@ -30,7 +30,10 @@
       "**/*.csv",
 
       ".env",
-      ".env.local"
+      ".env.local",
+
+      "**/backup_pre_split_fix_*/**",
+      "models/saved/archive/**"
     ]
   },
   "hosting": {
