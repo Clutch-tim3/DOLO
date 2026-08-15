@@ -87,3 +87,13 @@ PyMuPDF>=1.24
 # Imported inside the function like the provider SDKs, so its absence is a
 # reported "OCR unavailable" and never an import-time crash.
 google-cloud-vision>=3.7
+
+# Ruled-line detection for scanned forms (scanned_form_extractor). scipy
+# already arrives as a scikit-learn dependency, which is exactly the reason to
+# name it: rapidfuzz and pdfplumber were also "already there" on the machine
+# they were written on, and were absent in production for weeks.
+#
+# scipy.ndimage rather than OpenCV deliberately. The morphological opening and
+# connected-component labelling needed here are a few lines of ndimage, and
+# opencv-python would add ~60MB to a deploy bundle that is already 49MB.
+scipy>=1.11

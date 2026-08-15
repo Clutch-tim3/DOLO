@@ -115,6 +115,13 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
 
     blanks = extract_pdf_blanks(str(source))
     if not blanks:
+        # Nothing found in the vector graphics. That is either a document with
+        # no form in it, or a scan — where there ARE no vector graphics to read
+        # and pdfplumber can only ever return zero. Recovering the rules from
+        # the image is the difference between "no draft could be produced" and
+        # a filled SBD 1, so it is worth the second look.
+        blanks = _scanned_blanks(source)
+    if not blanks:
         return FillResult(source_path=str(source), output_path=str(output),
                           filled=[], skipped=[], context=set())
 
@@ -151,7 +158,18 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
             width = float(x1) - float(x0)
 
             # --- the decision. Not made here. ---------------------------------
-            block = is_blocked(label, section=getattr(blank, "notes", None) or None)
+            # `Blank.notes` is a TUPLE, and `is_blocked` regex-searches its
+            # `section` argument. This read the tuple straight through, which
+            # worked only because the vector path leaves notes empty — an empty
+            # tuple is falsy and became None. Any blank carrying a note raised
+            # `TypeError: expected string or bytes-like object, got 'tuple'`
+            # from inside the blocklist, which is the worst place in this
+            # package to throw: it is the check standing between a stored
+            # profile and a signed declaration.
+            notes = getattr(blank, "notes", None)
+            section = (" ".join(notes) if isinstance(notes, (list, tuple))
+                       else notes) or None
+            block = is_blocked(label, section=section)
             if block.blocked:
                 _mark_skipped(page, bbox)
                 skipped.append(SkippedField(
@@ -219,6 +237,39 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
              source.name, len(filled), len(skipped))
     return FillResult(source_path=str(source), output_path=str(output),
                       filled=filled, skipped=skipped, context=set())
+
+
+def _scanned_blanks(source: Path) -> list:
+    """
+    Blanks recovered from the page image, for a PDF with no vector graphics.
+
+    Only attempted when the document actually looks like a scan, because the
+    detection renders every page and the OCR behind the labels is billed per
+    page. A text PDF that simply has no form in it must not pay for either.
+
+    Returns [] on any failure. A scan that cannot be read is the situation the
+    caller was already in; it must not become an exception thrown out of the
+    fill engine.
+    """
+    try:
+        from agent_autofill.extraction.ocr import needs_ocr
+        from agent_autofill.extraction.scanned_form_extractor import (
+            extract_scanned_blanks,
+        )
+    except ImportError as exc:  # noqa: BLE001 - optional path
+        log.warning("scanned fill unavailable: %s", exc)
+        return []
+
+    try:
+        if not needs_ocr(source):
+            return []
+        found = extract_scanned_blanks(source)
+        log.info("scanned fill %s: recovered %d blank(s) from the image",
+                 source.name, len(found))
+        return found
+    except Exception as exc:  # noqa: BLE001
+        log.warning("scanned blank detection failed on %s: %s", source.name, exc)
+        return []
 
 
 def _write_value(page, bbox, value: str) -> None:
