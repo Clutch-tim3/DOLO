@@ -106,3 +106,42 @@ def test_no_leakage_correlation():
     
     # Assert no feature exceeds 0.5 absolute correlation (no extreme leakage)
     assert (corrs > 0.5).sum() == 0
+
+
+def test_numeric_buyer_country_does_not_raise(loaded_models):
+    """A string default written into a numeric column.
+
+    The feature vector is seeded from the training medians, which are numeric,
+    so buyer_country can arrive as int64. `df.loc[mask, 'buyer_country'] = 'ZA'`
+    then raises on pandas 2.x:
+
+        TypeError: Invalid value 'ZA' for dtype 'int64'
+
+    It was a FutureWarning long enough to be ignored, and surfaced in
+    production as a prediction skipped on a real scanned tender — visible only
+    because the agent narrates what it does.
+    """
+    import numpy as np
+    artifacts = loaded_models
+    for value in (0, np.nan, "ZA", "", None, "Unknown"):
+        df = pd.DataFrame([{c: 0 for c in artifacts["cat_cols"]}])
+        df["buyer_country"] = pd.Series([value])
+        out = encode_and_impute(df, artifacts["encoder"],
+                                artifacts["cat_cols"], artifacts["medians"])
+        assert len(out) == 1, value
+
+
+def test_a_missing_country_becomes_za_not_the_string_nan(loaded_models):
+    """`isin` never matched a numeric NaN.
+
+    A missing country fell through to `.astype(str)`, became the literal
+    "nan", and encoded as an unknown category instead of the South African
+    default this dataset is entirely made of.
+    """
+    import numpy as np
+    artifacts = loaded_models
+    df = pd.DataFrame([{c: 0 for c in artifacts["cat_cols"]}])
+    df["buyer_country"] = pd.Series([np.nan])
+    out = encode_and_impute(df, artifacts["encoder"], artifacts["cat_cols"],
+                            artifacts["medians"])
+    assert out["buyer_country"].iloc[0] >= 0, "encoded as unknown, not as ZA"

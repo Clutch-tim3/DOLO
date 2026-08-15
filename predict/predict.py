@@ -229,8 +229,24 @@ def encode_and_impute(df: pd.DataFrame, encoder, cat_cols: list, medians: dict) 
     cat_cols_present = [c for c in cat_cols if c in df.columns]
     
     if 'buyer_country' in df.columns:
-        df.loc[df['buyer_country'].isin([None, 'Unknown', '']), 'buyer_country'] = 'ZA'
-        
+        # Cast before assigning. The feature vector is seeded from the training
+        # medians, which are numeric, so this column can arrive as int64 — and
+        # writing the string 'ZA' into an int64 column raises on pandas 2.x:
+        #
+        #   TypeError: Invalid value 'ZA' for dtype 'int64'
+        #
+        # It was a FutureWarning for a while, which is why it went unnoticed
+        # until it surfaced in production as a skipped prediction on a real
+        # document.
+        #
+        # `isin` also never matched a numeric NaN, so a missing country fell
+        # through to `.astype(str)` below, became the literal string "nan", and
+        # encoded as an unknown category. Both are handled here.
+        country = df['buyer_country'].astype(object)
+        missing = country.isna() | country.isin([None, 'Unknown', '', 'nan', 'None'])
+        df['buyer_country'] = country.mask(missing, 'ZA')
+
+
     if cat_cols_present and encoder is not None:
         df[cat_cols_present] = df[cat_cols_present].fillna("UNKNOWN").astype(str)
 
