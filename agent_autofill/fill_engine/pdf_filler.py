@@ -76,13 +76,79 @@ MIN_BLANK_WIDTH = 24.0
 #: the right-hand rule of its cell into the column beside it.
 CHAR_WIDTH_RATIO = 0.5
 
+#: A handwriting face for the values, so a completed form reads the way a
+#: person filling it in by hand would leave it.
+#:
+#: Patrick Hand, SIL Open Font License — free to embed and redistribute, which
+#: the handwriting faces shipped with Windows (Ink Free, Lucida Handwriting,
+#: Comic Sans) are NOT. Bundling one of those in a PDF this server generates
+#: and hands to a user is a licensing problem, not a stylistic one.
+#:
+#: Chosen for legibility rather than flourish: it is neat handwritten printing,
+#: not cursive. A VAT number an evaluator misreads is a rejected bid.
+#:
+#: THE HIGHLIGHT STAYS. Handwriting-styled text is the one change here that
+#: works against this module's own rule — "a reader can see at a glance what
+#: came from CairoAI rather than from a person" — and the gold band is what
+#: keeps that true. A form where machine-placed values are indistinguishable
+#: from a person's, beside a signature block this engine refuses to fill
+#: precisely because signatures must be human, is not something to ship by
+#: accident. Removing the highlight is a deliberate decision for someone else
+#: to make, out loud.
+HANDWRITING_FILE = Path(__file__).resolve().parent / "fonts" / "PatrickHand-Regular.ttf"
+
+#: The name the face is registered under inside each generated PDF.
+HANDWRITING_ALIAS = "cairohand"
+
+_hand_font = None
+_hand_loaded = False
+
+
+def _handwriting():
+    """
+    The embedded handwriting face, or None to fall back to Helvetica.
+
+    Loaded once and cached. A missing or unreadable font file must not stop a
+    document being filled — the values matter, the styling does not — so this
+    degrades to Helvetica and says so in the log rather than raising.
+    """
+    global _hand_font, _hand_loaded
+    if _hand_loaded:
+        return _hand_font
+    _hand_loaded = True
+    try:
+        import fitz
+
+        if HANDWRITING_FILE.exists():
+            _hand_font = fitz.Font(fontfile=str(HANDWRITING_FILE))
+        else:
+            log.warning("handwriting font missing at %s; using Helvetica",
+                        HANDWRITING_FILE)
+    except Exception:  # noqa: BLE001 - styling must never fail a fill
+        log.exception("could not load the handwriting font; using Helvetica")
+        _hand_font = None
+    return _hand_font
+
 #: Clearance kept inside the blank, in points: 2 for the left inset that
 #: `_write_value` applies and 2 so a glyph never touches the closing rule.
 FIT_PADDING = 4.0
 
 
 def _text_width(text: str, size: float = FONT_SIZE) -> float:
-    """The real rendered width of `text`, falling back to the average rule."""
+    """
+    The real rendered width of `text`, in the face it will actually be drawn in.
+
+    Measuring in one font and drawing in another is how a value ends up past
+    the rule of its cell while every check said it fitted. Patrick Hand happens
+    to be narrower than Helvetica — "TCS-TESTPIN" is 42.2pt against 55.7pt — so
+    measuring in Helvetica would refuse values that fit comfortably.
+    """
+    face = _handwriting()
+    if face is not None:
+        try:
+            return face.text_length(str(text), fontsize=size)
+        except Exception:  # noqa: BLE001
+            pass
     try:
         import fitz
 
@@ -277,12 +343,42 @@ def _write_value(page, bbox, value: str) -> None:
     import fitz
 
     x0, y0, x1, y1 = [float(v) for v in bbox]
+    # The highlight is drawn whatever face the value uses. With handwriting it
+    # matters more, not less: it is the only thing left saying a machine put
+    # this here.
+    #
+    # OVERLAY, NOT UNDERLAY. This was `overlay=False`, which draws beneath the
+    # existing content. That is invisible on a scan: the entire page is one
+    # image, so the band went behind the bitmap and no reader ever saw it. The
+    # safeguard was missing on exactly the documents where the values are least
+    # distinguishable from handwriting — checked by sampling the pixel inside a
+    # filled cell, which came back pure white on both a scanned fill and the
+    # one before the font changed.
+    #
+    # Semi-transparent so the form underneath still reads: the cell's own rules
+    # and any faint print stay visible through the wash rather than being
+    # painted out.
     page.draw_rect(fitz.Rect(x0, y0, x1, y1), color=None,
-                   fill=FILL_HIGHLIGHT, overlay=False)
+                   fill=FILL_HIGHLIGHT, overlay=True, fill_opacity=0.45)
+
     # Baseline nudged up from the bottom edge so the text sits on the rule
     # rather than under it.
-    page.insert_text(fitz.Point(x0 + 2, y1 - 2.5), value,
-                     fontsize=FONT_SIZE, fontname="helv", color=(0, 0, 0))
+    point = fitz.Point(x0 + 2, y1 - 2.5)
+    # Dark blue-black rather than pure black, the way a pen leaves ink. Still
+    # unmistakably legible on a photocopy.
+    colour = (0.05, 0.08, 0.25)
+
+    if _handwriting() is not None:
+        try:
+            page.insert_text(point, value, fontsize=FONT_SIZE,
+                             fontname=HANDWRITING_ALIAS,
+                             fontfile=str(HANDWRITING_FILE), color=colour)
+            return
+        except Exception:  # noqa: BLE001 - fall through to the built-in face
+            log.exception("could not draw %r in the handwriting font", value[:40])
+
+    page.insert_text(point, value, fontsize=FONT_SIZE, fontname="helv",
+                     color=(0, 0, 0))
 
 
 def _mark_skipped(page, bbox) -> None:

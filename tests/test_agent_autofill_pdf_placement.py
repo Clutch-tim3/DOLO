@@ -219,18 +219,39 @@ def test_the_fit_check_uses_the_measured_width():
     assert not _fits(value, real + FIT_PADDING - 1.0)
 
 
-def test_the_average_glyph_rule_underestimates_and_is_no_longer_the_gate():
-    """The overflow, in numbers.
+def test_width_is_measured_in_the_face_the_value_is_drawn_in():
+    """Measure the font you draw in, or the fit check means nothing.
 
-    On the real SBD 1 the Tax Compliance PIN measured 64.3pt and the old
-    average-width rule called it 55.25pt, so a value nine points too wide was
-    written and ran through the closing rule of its cell into the column
-    beside it.
+    This used to assert the measured width EXCEEDS the average-glyph rule,
+    which was a fact about Helvetica: on the real SBD 1 the Tax Compliance PIN
+    measured 64.3pt against the rule's 55.25pt, and a value nine points too
+    wide ran through the closing rule of its cell.
+
+    Values are drawn in Patrick Hand now, which is NARROWER than Helvetica —
+    so the direction of that error flipped, and pinning it would have pinned
+    the wrong thing. What actually matters is that the measurement follows the
+    face: measuring in Helvetica while drawing in handwriting would refuse
+    values that fit perfectly well, and the reverse would overflow cells again.
     """
+    from agent_autofill.fill_engine.pdf_filler import _handwriting
+
     value = "TCS0001234567"
+    measured = _text_width(value)
     estimate = len(value) * FONT_SIZE * CHAR_WIDTH_RATIO
-    assert _text_width(value) > estimate
-    assert not _fits(value, estimate + FIT_PADDING)
+
+    # A real measurement, not the crude average.
+    assert abs(measured - estimate) > 1.0, (
+        f"{measured} looks like the average rule ({estimate}), not a measurement")
+
+    face = _handwriting()
+    if face is not None:
+        assert measured == pytest.approx(
+            face.text_length(value, fontsize=FONT_SIZE), abs=0.01), (
+            "width was measured in a different font from the one drawn")
+
+    # And the fit check follows the measurement, whichever way it goes.
+    assert _fits(value, measured + FIT_PADDING)
+    assert not _fits(value, measured + FIT_PADDING - 1.0)
 
 
 def test_a_value_too_wide_for_its_blank_is_refused_not_truncated(
@@ -280,3 +301,44 @@ def test_a_deliberate_refusal_is_still_marked(blank_pdf, tmp_path, monkeypatch):
 
     assert result.skipped[0].category == "blocked"
     assert SKIP_MARKER in _page_text(out, 0)
+
+
+def test_the_highlight_is_visible_on_a_scanned_page(tmp_path, monkeypatch):
+    """The band must be drawn OVER the page, not under it.
+
+    `overlay=False` draws beneath existing content. On a vector PDF that is
+    fine. On a scan the whole page is one image, so the highlight went behind
+    the bitmap and no reader ever saw it — sampling a pixel inside a filled
+    cell came back pure white.
+
+    That safeguard matters most on exactly those documents: values are drawn in
+    a handwriting face, and the band is the only thing left saying a machine
+    put them there rather than a person.
+    """
+    source = tmp_path / "scan.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    # A full-page image, the way a scanned document is built.
+    white = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 800, 1100), False)
+    white.clear_with(255)
+    page.insert_image(page.rect, pixmap=white)
+    doc.save(str(source))
+    doc.close()
+
+    out = tmp_path / "filled.pdf"
+    monkeypatch.setattr(pdf_filler, "extract_pdf_blanks",
+                        lambda _p: [_blank(page_number=0)])
+    fill_pdf(source, out, PROFILE, _match_company_name)
+
+    filled = fitz.open(str(out))
+    try:
+        rendered = filled[0].get_pixmap(dpi=150)
+        scale = rendered.width / filled[0].rect.width
+        # Inside the blank, clear of the glyphs themselves.
+        pixel = rendered.pixel(int(430 * scale), int(305 * scale))[:3]
+    finally:
+        filled.close()
+
+    assert pixel != (255, 255, 255), (
+        "the highlight is not visible over the scanned page — it was drawn "
+        "underneath the bitmap")
