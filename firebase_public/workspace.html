@@ -1006,7 +1006,7 @@ body.light-theme .quote-select { background: rgba(20,16,10,.03); color: #17130d;
             <div style="font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px;">ENGINE TELEMETRY</div>
             <div class="model-status-indicator">
                 <span class="pulse-dot"></span>
-                <span id="activeModelLabel">Conquest CatBoost (0.8578 AUC)</span>
+                <span id="activeModelLabel">Conquest CatBoost</span>
             </div>
         </div>
     </aside>
@@ -1023,8 +1023,8 @@ body.light-theme .quote-select { background: rgba(20,16,10,.03); color: #17130d;
                     <span id="themeLabel">LIGHT MODE</span>
                 </button>
                 <select id="workspaceModelSelector" onchange="onModelChange(this.value)" style="background: var(--input-bg); color: var(--text-white); border: 1px solid rgba(197,168,128,0.4); padding: 6px 12px; border-radius: 4px; font-size: 12px; font-family: 'Plus Jakarta Sans', sans-serif;">
-                    <option value="conquest">Conquest (CatBoost Engine - 0.8578 AUC)</option>
-                    <option value="sailor">Sailor (Default - 0.8187 AUC)</option>
+                    <option value="conquest">Conquest (CatBoost Engine)</option>
+                    <option value="sailor">Sailor (Default)</option>
                 </select>
                 <!-- Who is signed in, and the way out. Filled by auth.js's
                      identity, never from localStorage. -->
@@ -2213,30 +2213,23 @@ exportCsvBtn.addEventListener('click', () => {
 
     <script>
         async function loadSystem(model = "sailor") {
-            // Render fallback metrics instantly
-            const fallback = {
-                model_version: "Conquest-ZA & Conquest-UK Dual Engine",
-                last_trained_at: "2026-07-25",
-                test_auc: 0.8578,
-                current_threshold: 0.7850,
-                threshold_precision: 0.8920,
-                threshold_recall: 0.8410,
-                calibration_method: "Isotonic Regression",
-                total_predictions_made: 465517,
-                total_companies_archived: 8767,
-                ensemble_models: [
-                    { name: "Conquest CatBoost (ZA)", individual_auc: 0.8578, weight: 0.65 },
-                    { name: "Conquest XGBoost (UK)", individual_auc: 0.6941, weight: 0.35 }
-                ],
-                top_features: [
-                    { name: "pit_win_rate_overall", plain_language_label: "Point-in-Time Win Rate", importance: 0.94 },
-                    { name: "tender_size_ratio", plain_language_label: "Tender Value vs Medians", importance: 0.82 },
-                    { name: "buyer_loyalty_score", plain_language_label: "Buyer Contracting Loyalty", importance: 0.76 },
-                    { name: "submission_period", plain_language_label: "Bidding Notice Window", importance: 0.68 }
-                ],
-                data_sources: ["South Africa National Treasury (GPPD)", "UK Contracts Finder (Releases)"]
-            };
-            renderSystemData(fallback);
+            // An empty shell, not a set of numbers. Same block as system.html —
+            // see the note there. These were unmeasured figures rendered before
+            // the API responded, and kept if it never did.
+            renderSystemData({
+                model_version: null,
+                last_trained_at: null,
+                test_auc: null,
+                current_threshold: null,
+                threshold_precision: null,
+                threshold_recall: null,
+                calibration_method: null,
+                total_predictions_made: null,
+                total_companies_archived: null,
+                ensemble_models: [],
+                top_features: [],
+                data_sources: []
+            });
 
             try {
                 const res = await fetch(`/api/system-status?model_version=${model}`);
@@ -2247,21 +2240,44 @@ exportCsvBtn.addEventListener('click', () => {
             } catch(e) { console.error(e); }
         }
 
+        // See system.html for why these guards exist: a null AUC threw on
+        // .toFixed, and a null precision rendered as a confident "0.0%".
+        const NOT_MEASURED = 'Not measured';
+
+        function setText(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = (value === null || value === undefined || value === '') ? NOT_MEASURED : value;
+        }
+
+        function asFixed(value, dp) {
+            return (typeof value === 'number' && isFinite(value)) ? value.toFixed(dp) : null;
+        }
+
+        function asPercent(value, dp) {
+            return (typeof value === 'number' && isFinite(value)) ? (value * 100).toFixed(dp) + '%' : null;
+        }
+
         function renderSystemData(data) {
                 if(!data) return;
-                document.getElementById('model_version').textContent = data.model_version;
-                document.getElementById('last_trained_at').textContent = data.last_trained_at.includes('T') ? data.last_trained_at.split('T')[0] : data.last_trained_at;
-                document.getElementById('test_auc').textContent = data.test_auc.toFixed(4);
-                document.getElementById('current_threshold').textContent = (data.current_threshold * 100).toFixed(2) + '%';
-                document.getElementById('threshold_precision').textContent = (data.threshold_precision * 100).toFixed(1) + '%';
-                document.getElementById('threshold_recall').textContent = (data.threshold_recall * 100).toFixed(1) + '%';
-                document.getElementById('calibration_method').textContent = data.calibration_method;
-                document.getElementById('total_predictions_made').textContent = data.total_predictions_made;
-                document.getElementById('total_companies_archived').textContent = data.total_companies_archived;
-                
+                setText('model_version', data.model_version);
+                setText('last_trained_at', typeof data.last_trained_at === 'string'
+                    ? (data.last_trained_at.includes('T') ? data.last_trained_at.split('T')[0] : data.last_trained_at)
+                    : null);
+                setText('test_auc', asFixed(data.test_auc, 4));
+                setText('current_threshold', asPercent(data.current_threshold, 2));
+                setText('threshold_precision', asPercent(data.threshold_precision, 1));
+                setText('threshold_recall', asPercent(data.threshold_recall, 1));
+                setText('calibration_method', data.calibration_method);
+                setText('total_predictions_made', data.total_predictions_made);
+                setText('total_companies_archived', data.total_companies_archived);
+
                 const ensemble = document.getElementById('ensembleContainer');
                 ensemble.innerHTML = '';
-                data.ensemble_models.forEach(m => {
+                const ensembleModels = data.ensemble_models || [];
+                if (!ensembleModels.length) {
+                    ensemble.innerHTML = '<div style="font-size:12px; color:#8b8b95;">Per-model breakdown is not published. The figures shown here previously were not measured.</div>';
+                }
+                ensembleModels.forEach(m => {
                     ensemble.innerHTML += `
                         <div class="model-card">
                             <div class="model-name">${m.name}</div>
@@ -2278,9 +2294,15 @@ exportCsvBtn.addEventListener('click', () => {
                 features.innerHTML = '';
                 
                 // Find max importance to scale bars
-                const maxImp = Math.max(...data.top_features.map(f => f.importance));
-                
-                data.top_features.forEach(f => {
+                const topFeatures = data.top_features || [];
+                if (!topFeatures.length) {
+                    features.innerHTML = '<div style="font-size:12px; color:#8b8b95;">Feature importances are not published. The ranking shown here previously was not read from the model.</div>';
+                }
+                // Math.max() of an empty list is -Infinity, which makes every
+                // bar NaN wide.
+                const maxImp = topFeatures.length ? Math.max(...topFeatures.map(f => f.importance)) : 1;
+
+                topFeatures.forEach(f => {
                     const widthPct = (f.importance / maxImp) * 100;
                     features.innerHTML += `
                         <div class="feature-item">
@@ -3664,7 +3686,7 @@ exportCsvBtn.addEventListener('click', () => {
         }
 
         function onModelChange(val) {
-            document.getElementById('activeModelLabel').textContent = val === 'conquest' ? 'Conquest CatBoost (0.8578 AUC)' : 'Sailor (0.8187 AUC)';
+            document.getElementById('activeModelLabel').textContent = val === 'conquest' ? 'Conquest CatBoost' : 'Sailor';
         }
 
         // --- SINGLE EVALUATION HANDLERS ---
@@ -3772,9 +3794,16 @@ exportCsvBtn.addEventListener('click', () => {
                         tender_id: data.tender_identifier || 'Tender_' + Math.random().toString(36).substr(2, 6),
                         title: file.name,
                         supplier: data.supplier_name || 'CAIROAI',
-                        prob: data.sa_adjusted_probability || data.win_probability || data.base_probability || 0.65,
-                        rec: data.recommendation || 'PURSUE',
-                        framework: '80/20'
+                        // Null when the backend withheld it, never a stand-in.
+                        // This read `|| 0.65` for the probability and
+                        // `|| 'PURSUE'` for the call — so a tender the server
+                        // declined to score was listed at 65% and marked worth
+                        // bidding on. The framework was hardcoded 80/20, which
+                        // is the wrong statute for anything over R50m; it comes
+                        // from the response now.
+                        prob: (data.sa_adjusted_probability ?? data.win_probability ?? data.base_probability ?? null),
+                        rec: data.recommendation || null,
+                        framework: data.preferential_framework || (data.sa_analysis && data.sa_analysis.evaluation_system) || null
                     });
                 } catch(e) {
                     console.error(e);
@@ -3824,7 +3853,12 @@ exportCsvBtn.addEventListener('click', () => {
         }
 
         function renderWsRankedTable() {
-            wsRankedTendersList.sort((a, b) => b.prob - a.prob);
+            // Unscored tenders sort last rather than becoming NaN comparisons.
+            wsRankedTendersList.sort((a, b) => {
+                const pa = (typeof a.prob === 'number') ? a.prob : -Infinity;
+                const pb = (typeof b.prob === 'number') ? b.prob : -Infinity;
+                return pb - pa;
+            });
             filterWsTenderTable();
         }
 
@@ -3836,7 +3870,8 @@ exportCsvBtn.addEventListener('click', () => {
 
             const filtered = wsRankedTendersList.filter(t => {
                 const matchesQuery = !query || t.title.toLowerCase().includes(query) || t.tender_id.toLowerCase().includes(query) || t.supplier.toLowerCase().includes(query);
-                const matchesRec = recFilter === 'ALL' || t.rec.toUpperCase() === recFilter.toUpperCase();
+                // t.rec is null when no recommendation was made.
+                const matchesRec = recFilter === 'ALL' || (t.rec || '').toUpperCase() === recFilter.toUpperCase();
                 return matchesQuery && matchesRec;
             });
 
@@ -3850,8 +3885,18 @@ exportCsvBtn.addEventListener('click', () => {
                 `;
             } else {
                 tbody.innerHTML = filtered.map((item, idx) => {
-                    const pPct = (item.prob * 100).toFixed(1);
-                    const isPursue = item.rec.toUpperCase().includes('PURSUE') || item.rec.toUpperCase().includes('BID');
+                    // A withheld score renders as "—" and a neutral NOT SCORED
+                    // chip. Previously a null probability became "NaN%" and a
+                    // null recommendation threw on .toUpperCase.
+                    const scored = typeof item.prob === 'number' && isFinite(item.prob);
+                    const pPct = scored ? (item.prob * 100).toFixed(1) + '%' : '—';
+                    const recText = (item.rec || 'NOT SCORED').toUpperCase();
+                    const isPursue = recText.includes('PURSUE') || recText.includes('BID');
+                    const neutral = !item.rec;
+                    const chipBg = neutral ? 'rgba(139,139,149,0.15)' : (isPursue ? 'rgba(76,175,80,0.15)' : 'rgba(224,92,92,0.15)');
+                    const chipFg = neutral ? '#8b8b95' : (isPursue ? '#4CAF50' : '#e05c5c');
+                    const chipBd = neutral ? 'rgba(139,139,149,0.3)' : (isPursue ? 'rgba(76,175,80,0.3)' : 'rgba(224,92,92,0.3)');
+                    const probFg = !scored ? '#8b8b95' : (item.prob >= 0.419 ? '#4CAF50' : '#e05c5c');
                     return `
                         <tr style="border-bottom: 1px solid var(--border-faint);">
                             <td style="padding: 12px; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--accent-gold);">#${idx + 1}</td>
@@ -3861,10 +3906,10 @@ exportCsvBtn.addEventListener('click', () => {
                             </td>
                             <td style="padding: 12px; color: var(--text-primary); font-family: 'JetBrains Mono', monospace;">${item.supplier}</td>
                             <td style="padding: 12px;">
-                                <span style="padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; background: ${isPursue ? 'rgba(76,175,80,0.15)' : 'rgba(224,92,92,0.15)'}; color: ${isPursue ? '#4CAF50' : '#e05c5c'}; border: 1px solid ${isPursue ? 'rgba(76,175,80,0.3)' : 'rgba(224,92,92,0.3)'};">${item.rec.toUpperCase()}</span>
+                                <span style="padding: 4px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.1em; background: ${chipBg}; color: ${chipFg}; border: 1px solid ${chipBd};">${recText}</span>
                             </td>
-                            <td style="padding: 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; color: ${item.prob >= 0.419 ? '#4CAF50' : '#e05c5c'};">${pPct}%</td>
-                            <td style="padding: 12px; text-align: right; font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">${item.framework}</td>
+                            <td style="padding: 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; color: ${probFg};">${pPct}</td>
+                            <td style="padding: 12px; text-align: right; font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">${item.framework || '—'}</td>
                         </tr>
                     `;
                 }).join('');
