@@ -72,14 +72,34 @@ if os.environ.get("K_SERVICE"):
     LOG_DIR = Path("/tmp/logs")
 os.makedirs(str(LOG_DIR), exist_ok=True)
 
+#: Python level -> the strings Cloud Logging recognises. Without `severity` in
+#: the payload every line is DEFAULT severity, so an alert policy cannot tell an
+#: error from an info line and `severity>=ERROR` matches nothing.
+_CLOUD_SEVERITY = {
+    "DEBUG": "DEBUG", "INFO": "INFO", "WARNING": "WARNING",
+    "ERROR": "ERROR", "CRITICAL": "CRITICAL",
+}
+
+
 class JSONFormatter(logging.Formatter):
+    """
+    One JSON object per line, shaped so Cloud Logging parses it.
+
+    `severity` and `message` are the two field names it reads; everything else
+    lands in jsonPayload and is queryable. The exception type is promoted to
+    its own field because an alert that says "errors are up" is only actionable
+    if you can group them by what broke.
+    """
+
     def format(self, record):
         log_obj = {
             "timestamp": self.formatTime(record, self.datefmt),
+            "severity": _CLOUD_SEVERITY.get(record.levelname, "DEFAULT"),
             "level": record.levelname,
             "message": record.getMessage(),
             "module": record.module,
             "funcName": record.funcName,
+            "logger": record.name,
         }
         if hasattr(record, "company_id"):
             log_obj["company_id"] = record.company_id
@@ -87,17 +107,90 @@ class JSONFormatter(logging.Formatter):
             log_obj["endpoint"] = record.endpoint
         if hasattr(record, "extra_data"):
             log_obj.update(record.extra_data)
-        return json.dumps(log_obj)
+
+        # The TypeError in the prediction path lived in production because
+        # nothing carried it anywhere a person would look. A traceback in the
+        # payload is what turns an alert into a diagnosis.
+        if record.exc_info and record.exc_info[0] is not None:
+            log_obj["error_type"] = record.exc_info[0].__name__
+            log_obj["stack_trace"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_obj, default=str)
+
 
 logger = logging.getLogger("api_monitor")
 logger.setLevel(logging.INFO)
 # Avoid adding multiple handlers in hot reloads
 if not logger.handlers:
+    # STDOUT FIRST, AND THIS IS THE ONE THAT MATTERS IN PRODUCTION.
+    #
+    # Until this there was only the file handler below, writing to LOG_DIR —
+    # which is /tmp/logs on Cloud Run, per-instance and wiped on cold start.
+    # Nothing reached Cloud Logging at all: Python's last-resort stderr handler
+    # only fires for records no handler took, and the file handler took every
+    # one. Verified by capturing stdout and stderr around logger.error() and
+    # getting two empty strings.
+    #
+    # So the premise of "errors land in Cloud Logging and nobody is told" was
+    # optimistic. They were not landing anywhere a person could reach, and no
+    # alert policy could have fired on them.
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(JSONFormatter())
+    logger.addHandler(stream_handler)
+
+    # Kept for local development, where tailing a file is convenient. On Cloud
+    # Run it writes to an ephemeral disk and is effectively a no-op.
     log_handler = RotatingFileHandler(str(LOG_DIR / "api.log"), maxBytes=5000000, backupCount=5)
     log_handler.setFormatter(JSONFormatter())
     logger.addHandler(log_handler)
 
+    # Otherwise the root logger emits a second, unstructured copy of every line.
+    logger.propagate = False
+
+
+def log_unhandled_error(request, exc, endpoint: str = "", company_id: str = ""):
+    """
+    Record an unhandled exception where the alert policy can see it.
+
+    Structured, with the exception type in its own field, so
+    `severity>=ERROR` matches it and the count can be grouped by what broke.
+    """
+    logger.error(
+        f"Unhandled error: {type(exc).__name__}",
+        exc_info=exc,
+        extra={
+            "company_id": company_id or "",
+            "endpoint": endpoint or getattr(getattr(request, "url", None), "path", ""),
+            "extra_data": {
+                "method": getattr(request, "method", ""),
+                "error_class": type(exc).__name__,
+            },
+        },
+    )
+
 app = FastAPI()
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    """
+    Log every unhandled exception, then answer 500.
+
+    Without this, an unhandled error is turned into a 500 by Starlette and the
+    traceback goes to stderr unstructured — which is how the TypeError in the
+    prediction path survived in production until the agent happened to narrate
+    it on screen. Now it is one ERROR-severity line with the exception type in
+    its own field, which is what the alert policy counts.
+
+    The response body stays generic on purpose: the detail belongs in the log,
+    not in an answer to whoever triggered it.
+    """
+    log_unhandled_error(request, exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error. The team has been notified."},
+    )
+
 
 BATCH_JOBS = {}
 
