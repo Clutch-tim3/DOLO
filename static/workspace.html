@@ -2470,18 +2470,30 @@ exportCsvBtn.addEventListener('click', () => {
                     const cName = document.getElementById('sidebarCompanyName');
                     const cMeta = document.getElementById('sidebarCompanyMeta');
                     const cTier = document.getElementById('sidebarCompanyTier');
-                    if(cName) cName.textContent = comp.name;
-                    if(cMeta) cMeta.textContent = comp.registration + ' \u00B7 ' + comp.location;
-                    if(cTier) cTier.textContent = comp.tier === 'pro' ? 'Pro Plan' : 'Starter';
+                    // These were hardcoded server-side and always present. Real
+                    // values can be missing \u2014 a profile that has not been filled
+                    // in, or a stat that genuinely cannot be computed \u2014 and
+                    // "null" rendered into the sidebar reads as a value.
+                    const orDash = v => (v === null || v === undefined || v === '') ? '\u2014' : v;
+
+                    if(cName) cName.textContent = orDash(comp.name);
+                    if(cMeta) {
+                        const meta = [comp.registration, comp.location].filter(Boolean).join(' \u00B7 ');
+                        cMeta.textContent = meta || (comp.profile_empty ? 'Profile not set up yet' : '\u2014');
+                    }
+                    if(cTier) cTier.textContent = comp.tier === 'pro' ? 'Pro Plan'
+                                                : comp.tier === 'enterprise' ? 'Enterprise' : 'Starter';
 
                     const sWins = document.getElementById('statTotalWins');
                     const sWinRate = document.getElementById('statWinRate');
                     const sBbbee = document.getElementById('statBbbee');
                     const sIncumb = document.getElementById('statIncumbent');
-                    if(sWins) sWins.textContent = comp.stats.pit_total_wins;
-                    if(sWinRate) sWinRate.textContent = comp.stats.pit_win_rate_overall;
-                    if(sBbbee) sBbbee.textContent = comp.stats.bbbee_level;
-                    if(sIncumb) sIncumb.textContent = comp.stats.pit_is_incumbent;
+                    if(sWins) sWins.textContent = orDash(comp.stats.pit_total_wins);
+                    if(sWinRate) sWinRate.textContent = orDash(comp.stats.pit_win_rate_overall);
+                    if(sBbbee) sBbbee.textContent = orDash(comp.stats.bbbee_level);
+                    // Not reported: incumbency needs the buying entity per bid,
+                    // and tracked_outcomes has no buyer column.
+                    if(sIncumb) sIncumb.textContent = orDash(comp.stats.pit_is_incumbent);
                 }
 
                 const vaultRes = await fetch('/api/compliance-status');

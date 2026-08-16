@@ -47,10 +47,11 @@ from models.pdf_parser import parse_tender_document
 # Vault uploads are recorded against the company here; the vault reads from the
 # same table, which is what makes an uploaded document actually appear.
 from agent.memory.company_store import add_company_document
+from agent.memory import company_store
 from agent.tool_dispatch import vault_type_for
 from models.quotation_generator import generate_quotation_pdf
 
-from agent.subscription import get_config, check_quote_quota, get_subscription_status, log_quote_generation
+from agent.subscription import get_config, check_quote_quota, get_subscription_status, log_quote_generation, get_company_tier
 from agent.main_agent import generate_draft_quote_flow, finalize_quote_flow, process_agent_chat, memory_tools, app_help_tools, onboarding_tools, quotation_tools
 
 # Authentication. Until this existed, every company-aware route below read its
@@ -596,21 +597,77 @@ async def api_get_companies(principal: Principal = Depends(require_principal)):
 
 @app.get("/api/company-profile")
 async def api_company_profile(company_id: str = Depends(require_company_id)):
-    """Returns the active company profile and track record stats for the agent sidebar"""
-    config = get_config(company_id)
-    
-    # In a real app this would query the DB. We'll return mock data matching the design.
+    """
+    This company's profile and track record, for the agent sidebar.
+
+    Every field here was hardcoded, and the code said so:
+
+        # In a real app this would query the DB. We'll return mock data
+        return {"name": "CairoAI", "registration": "2026/250499/07", ...}
+
+    So every user saw the same company name, the same registration number, and
+    the same invented track record — 3 wins at a 21% win rate against 2
+    buyers — regardless of who they were. The whole workspace sidebar reads
+    this endpoint.
+
+    The profile now comes from `company_store`, which is the stated single
+    source of truth for company facts, and the tier from `subscription`.
+
+    The track record comes from tracked_outcomes: outcomes this company
+    actually reported through the product. That is the only real record of
+    their bidding that exists here. It is not the `pit_*` features the mock
+    borrowed its field names from — those describe suppliers in the historical
+    procurement dataset, not this customer, and `model_validation` records that
+    they are near-empty anyway (pit_is_incumbent averages 0.007 because almost
+    no bidder recurs).
+
+    Incumbency is not reported at all. It needs the buying entity per bid, and
+    tracked_outcomes has no buyer column, so there is nothing to count.
+    """
+    profile = company_store.get_company_profile(company_id) or {}
+    tier = get_company_tier(company_id)
+
+    location = ", ".join(
+        part for part in (profile.get("registered_municipality"), profile.get("province"))
+        if part
+    )
+
+    with _state_db.connect(DB_PATH) as conn:
+        _ensure_schema(conn)
+        cur = conn.execute(
+            "SELECT actual_outcome FROM tracked_outcomes WHERE company_id = ?",
+            (company_id,),
+        )
+        outcomes = [r["actual_outcome"] for r in cur.fetchall()]
+
+    won = sum(1 for o in outcomes if o == "won")
+    lost = sum(1 for o in outcomes if o == "lost")
+    decided = won + lost
+
+    # A win rate over zero decided bids is 0/0. Reporting it as "0%" would say
+    # this company loses everything, which is a different claim from "they have
+    # not recorded an outcome yet".
+    win_rate = f"{round(100 * won / decided)}%" if decided else None
+
+    bbbee_level = profile.get("bbbee_level")
+
     return {
-        "name": "CairoAI",
-        "registration": "2026/250499/07",
-        "location": "Centurion, GP",
-        "tier": "pro" if config.get("agent_enabled") else "starter",
+        "name": profile.get("company_name"),
+        "registration": profile.get("registration_number"),
+        "location": location or None,
+        "tier": tier,
+        # True when company_store holds nothing for this company yet, so the
+        # sidebar can prompt rather than render a row of blanks.
+        "profile_empty": not profile,
         "stats": {
-            "pit_total_wins": 3,
-            "pit_win_rate_overall": "21%",
-            "bbbee_level": "Lvl 1",
-            "pit_is_incumbent": "2 buyers"
-        }
+            "pit_total_wins": won if outcomes else None,
+            "pit_win_rate_overall": win_rate,
+            "bbbee_level": f"Lvl {bbbee_level}" if bbbee_level else None,
+            # Needs the buying entity per bid; tracked_outcomes has no buyer.
+            "pit_is_incumbent": None,
+            "decided_outcomes": decided,
+            "tracked_outcomes": len(outcomes),
+        },
     }
 
 @app.post("/api/companies/upload")
