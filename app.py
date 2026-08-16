@@ -154,6 +154,14 @@ def _init_db_schema(conn):
             updated_at TEXT
         )
     ''')
+
+    # tracked_outcomes predates any notion of who owns a row, so every route
+    # reading it returned every company's records. The column is added
+    # additively: PRAGMA is SQLite-only, so table_columns answers the same
+    # question on either backend.
+    if "company_id" not in _state_db.table_columns(conn, "tracked_outcomes"):
+        conn.execute("ALTER TABLE tracked_outcomes ADD COLUMN company_id TEXT")
+
     conn.commit()
     # No conn.close() here: agent/db.py's `with` block closes the connection,
     # unlike sqlite3. Closing it inside would shut it under the caller.
@@ -1100,9 +1108,9 @@ async def api_tender_submit(
                 _ensure_schema(conn)
                 c = conn.cursor()
                 now = datetime.now().isoformat()
-                c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                            (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, None, None, "DISQUALIFIED", "pending", None, "", now, now))
+                c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at, company_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                            (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, None, None, "DISQUALIFIED", "pending", None, "", now, now, company_id))
                 conn.commit()
 
             from models.sa_scoring import (
@@ -1220,9 +1228,9 @@ async def api_tender_submit(
             _ensure_schema(conn)
             c = conn.cursor()
             now = datetime.now().isoformat()
-            c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                        (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, base_prob, final_probability, recommendation, "pending", None, "", now, now))
+            c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at, company_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                        (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, base_prob, final_probability, recommendation, "pending", None, "", now, now, company_id))
             conn.commit()
 
         return {
@@ -1276,7 +1284,16 @@ def inject_parsed_features(features_df, parsed_tender, supplier_price=None):
             features_df['functionality_threshold_pct'] = parsed_tender['functionality_threshold_pct']
     return features_df
 
-async def process_batch_job(job_id: str, file_paths: list, filenames: list, name_to_use: str, bbbee_to_use: int, target_artifacts: dict):
+async def process_batch_job(job_id: str, file_paths: list, filenames: list, name_to_use: str,
+                            bbbee_to_use: int, target_artifacts: dict, company_id: str):
+    """
+    Score a batch in the background.
+
+    `company_id` is required and has no default deliberately. Every row this
+    writes to tracked_outcomes is owned by it, and a default here would put
+    a guessed owner on real records — the same hole `require_company_id`
+    exists to close on the read side.
+    """
     # Retrieve the job
     job = BATCH_JOBS.get(job_id)
     if not job:
@@ -1399,9 +1416,9 @@ async def process_batch_job(job_id: str, file_paths: list, filenames: list, name
                 _ensure_schema(conn)
                 c = conn.cursor()
                 now = datetime.now().isoformat()
-                c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                            (str(uuid.uuid4()), prediction_id, tender_id, filename, name_to_use, base_prob, final_probability, recommendation, "pending", None, "", now, now))
+                c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at, company_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                            (str(uuid.uuid4()), prediction_id, tender_id, filename, name_to_use, base_prob, final_probability, recommendation, "pending", None, "", now, now, company_id))
                 conn.commit()
 
             job["results"].append({
@@ -1509,7 +1526,7 @@ async def api_batch_sort(
         file_paths.append(temp_path)
         filenames.append(f.filename)
         
-    background_tasks.add_task(process_batch_job, job_id, file_paths, filenames, name_to_use, bbbee_to_use, target_artifacts)
+    background_tasks.add_task(process_batch_job, job_id, file_paths, filenames, name_to_use, bbbee_to_use, target_artifacts, company_id)
     
     return {"job_id": job_id}
 
@@ -1520,34 +1537,59 @@ async def api_batch_status(job_id: str):
     return BATCH_JOBS[job_id]
 
 @app.post("/api/track-outcome")
-async def track_outcome(req: TrackOutcomeRequest):
+async def track_outcome(req: TrackOutcomeRequest,
+                        company_id: str = Depends(require_company_id)):
+    """
+    Record the real outcome of a prediction.
+
+    This was an unauthenticated write, and its lookup and UPDATE were keyed on
+    `prediction_id` alone. Anyone who could guess or observe a prediction_id
+    could overwrite another company's recorded outcome — or insert rows into
+    their table. It is not in LAUNCH_PLAN's A1 list, which covers the three
+    read endpoints; the write side had the same hole.
+
+    Both statements are scoped by company_id now, so a prediction_id belonging
+    to someone else simply does not match, and the request falls through to
+    inserting a row owned by the caller rather than editing a stranger's.
+    """
     with _state_db.connect(DB_PATH) as conn:
         _ensure_schema(conn)
         c = conn.cursor()
         now = datetime.now().isoformat()
-    
-        c.execute("SELECT id FROM tracked_outcomes WHERE prediction_id = ?", (req.prediction_id,))
+
+        c.execute(
+            "SELECT id FROM tracked_outcomes WHERE prediction_id = ? AND company_id = ?",
+            (req.prediction_id, company_id),
+        )
         row = c.fetchone()
         if row:
             c.execute("""
-                UPDATE tracked_outcomes 
+                UPDATE tracked_outcomes
                 SET actual_outcome = ?, outcome_date = ?, notes = ?, updated_at = ?
-                WHERE prediction_id = ?
-            """, (req.actual_outcome, req.outcome_date, req.notes, now, req.prediction_id))
+                WHERE prediction_id = ? AND company_id = ?
+            """, (req.actual_outcome, req.outcome_date, req.notes, now, req.prediction_id, company_id))
         else:
             c.execute("""
-                INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (str(uuid.uuid4()), req.prediction_id, req.tender_identifier, req.filename, req.supplier_name, req.predicted_probability, req.sa_adjusted_probability, req.recommendation, req.actual_outcome, req.outcome_date, req.notes, now, now))
+                INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at, company_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (str(uuid.uuid4()), req.prediction_id, req.tender_identifier, req.filename, req.supplier_name, req.predicted_probability, req.sa_adjusted_probability, req.recommendation, req.actual_outcome, req.outcome_date, req.notes, now, now, company_id))
         conn.commit()
     return {"status": "success"}
 
 @app.get("/api/accuracy-stats")
-async def get_accuracy_stats():
+async def get_accuracy_stats(company_id: str = Depends(require_company_id)):
+    """
+    How this company's predictions turned out.
+
+    Same hole as /api/tracked-outcomes: unauthenticated, and `SELECT *` with no
+    WHERE clause. Aggregates are not anonymous — a hit rate computed over every
+    company's bids is still other companies' data, and with few customers it is
+    close to reading their records directly.
+    """
     with _state_db.connect(DB_PATH) as conn:
         _ensure_schema(conn)
         c = conn.cursor()
-        c.execute("SELECT * FROM tracked_outcomes")
+        c.execute("SELECT * FROM tracked_outcomes WHERE company_id = ?", (company_id,))
         rows = c.fetchall()
     
     total = len(rows)
@@ -1585,16 +1627,45 @@ async def get_accuracy_stats():
     }
 
 @app.get("/api/tracked-outcomes")
-async def get_tracked_outcomes():
+async def get_tracked_outcomes(principal: Principal = Depends(require_principal)):
+    """
+    This company's tracked outcomes.
+
+    Was unauthenticated and unfiltered: `SELECT * FROM tracked_outcomes` with no
+    WHERE clause, reachable by any anonymous caller. It returned [] only because
+    the table was empty — the moment a customer tracked an outcome, every other
+    customer could read it.
+
+    Rows written before company_id existed carry NULL and belong to nobody, so
+    they match no principal and are returned to no one. That is deliberate:
+    invisible is the safe direction, and guessing an owner would be inventing
+    one.
+    """
     with _state_db.connect(DB_PATH) as conn:
         _ensure_schema(conn)
         c = conn.cursor()
-        c.execute("SELECT * FROM tracked_outcomes ORDER BY updated_at DESC")
+        c.execute(
+            "SELECT * FROM tracked_outcomes WHERE company_id = ? ORDER BY updated_at DESC",
+            (principal.company_id,),
+        )
         rows = [dict(r) for r in c.fetchall()]
     return rows
 
 @app.get("/api/compliance-status")
-async def get_compliance_status():
+async def get_compliance_status(principal: Principal = Depends(require_principal)):
+    """
+    Compliance status for this company's archived documents.
+
+    Authentication is added here now; the tenant filter is NOT complete, and
+    cannot be until A2. `get_archived_companies()` reads company_archive.json —
+    a flat list holding every company's documents with no company_id anywhere
+    in it — so there is no key to filter on yet. Requiring a credential closes
+    the anonymous hole; the cross-tenant hole closes when the archive moves
+    into Cloud SQL keyed by company.
+
+    Deliberately not faked: filtering on `registration_number` would look like
+    a tenant filter and would not be one.
+    """
     companies = get_archived_companies()
     results = []
     
@@ -1643,12 +1714,23 @@ async def get_compliance_status():
     return results
 
 @app.get("/api/calendar-events")
-async def get_calendar_events(month: str = None):
-    # Retrieve all single predictions and tracked outcomes
+async def get_calendar_events(month: str = None,
+                              principal: Principal = Depends(require_principal)):
+    """
+    This company's calendar events.
+
+    Was unauthenticated and read the whole table. It happens to return [] today
+    because `events` below is never populated — but the query was already
+    cross-tenant, so the leak would have arrived with the feature rather than
+    being noticed as a new bug. Filtered now, before that happens.
+    """
     with _state_db.connect(DB_PATH) as conn:
         _ensure_schema(conn)
         c = conn.cursor()
-        c.execute("SELECT * FROM tracked_outcomes")
+        c.execute(
+            "SELECT * FROM tracked_outcomes WHERE company_id = ?",
+            (principal.company_id,),
+        )
         rows = [dict(r) for r in c.fetchall()]
     
     events = []

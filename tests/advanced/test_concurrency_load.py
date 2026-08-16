@@ -41,7 +41,8 @@ async def test_high_concurrency_state_isolation(tmp_path, loaded_models):
             [f"tender_{job_index}.pdf"],
             supplier_name,
             1,
-            loaded_models
+            loaded_models,
+            "pro_corp",
         )
         
         return job_id, supplier_name, f"tender_{job_index}.pdf"

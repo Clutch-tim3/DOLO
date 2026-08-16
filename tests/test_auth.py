@@ -88,6 +88,16 @@ def bearer(actor) -> dict:
 # mode, and a table at least makes the omission visible in one place.
 
 PROTECTED = [
+    # A1: these read or write tracked_outcomes and the company archive. They
+    # required no credential at all and applied no tenant filter, returning []
+    # only because the tables were empty. Cross-tenant behaviour is covered
+    # separately in tests/test_cross_tenant_isolation.py; what is pinned here
+    # is that they no longer answer anonymously.
+    ("GET", "/api/tracked-outcomes"),
+    ("GET", "/api/calendar-events"),
+    ("GET", "/api/compliance-status"),
+    ("GET", "/api/accuracy-stats"),
+    ("POST", "/api/track-outcome"),
     ("GET", "/api/company-profile"),
     ("GET", "/api/vault-status"),
     ("GET", "/api/subscription-status"),
