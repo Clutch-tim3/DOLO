@@ -206,7 +206,12 @@ def parse_company_pdf(file_path: Path) -> dict:
             results["bid_price"] = sorted_prices[0]
         if "tender_value" not in results:
             # Assume the largest value is the tender value
-            results["tender_value"] = sorted_prices[-1] if sorted_prices[-1] > results["bid_price"] else results["bid_price"] * 1.2
+            # Only when a larger figure was actually found. The fallback here was
+            # `bid_price * 1.2`, and tender_value selects 80/20 vs 90/10 at the
+            # R50m threshold — so a bid just over R41.7m crossed that line on a
+            # guess and was told the wrong statute governed it.
+            if sorted_prices[-1] > results["bid_price"]:
+                results["tender_value"] = sorted_prices[-1]
 
         # No `lowest_price` is set here. It used to be `bid_price * 0.9` — a
         # competitor's price guessed from your own, then fed to the PPPFA price
@@ -362,7 +367,12 @@ def parse_tender_document(file_path: Path) -> dict:
         if "bid_price" not in results and len(sorted_prices) > 0:
             results["bid_price"] = sorted_prices[0]
         if "tender_value" not in results and len(sorted_prices) > 0:
-            results["tender_value"] = sorted_prices[-1] if sorted_prices[-1] > results["bid_price"] else results["bid_price"] * 1.2
+            # Only when a larger figure was actually found. The fallback here was
+            # `bid_price * 1.2`, and tender_value selects 80/20 vs 90/10 at the
+            # R50m threshold — so a bid just over R41.7m crossed that line on a
+            # guess and was told the wrong statute governed it.
+            if sorted_prices[-1] > results["bid_price"]:
+                results["tender_value"] = sorted_prices[-1]
             
     if "bid_price" in results:
         # See the note in the other price block: no `lowest_price` is invented

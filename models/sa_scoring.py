@@ -1,23 +1,57 @@
 import math
 
+SYSTEM_80_20 = '80/20'
+SYSTEM_90_10 = '90/10'
+
+#: The PPPFA threshold. Below it a tender is evaluated 80/20, at or above it
+#: 90/10. Which one applies changes the B-BBEE points a bidder can earn.
+PPPFA_THRESHOLD_ZAR = 50_000_000
+
+#: Why the evaluation system can be unknown, in the words the user should see.
+NO_TENDER_VALUE = (
+    "The tender's value was not found in the document, so it is not possible to "
+    "say whether the 80/20 or the 90/10 preference system applies. The two award "
+    "different B-BBEE points for the same level, so neither is assumed here."
+)
+
+
 def get_evaluation_system(tender_value_zar):
-    """Returns the evaluation system based on tender value."""
+    """
+    Which PPPFA preference system applies, or None when the value is unknown.
+
+    This returned '80/20' for a missing value. That is an assertion about which
+    statute governs a bid, made with no information: 80/20 awards a level 1
+    bidder 20 preference points where 90/10 awards 10, so defaulting also
+    overstates the bidder's position by double whenever the guess is wrong.
+
+    It was reachable, because `pdf_parser` filled an unparsed tender value with
+    `bid_price * 1.2` — so a bid just over R41.7m crossed the R50m threshold on
+    a guess and was told the wrong system applied.
+    """
     if tender_value_zar is None:
-        return '80/20'
-    return '80/20' if tender_value_zar < 50_000_000 else '90/10'
+        return None
+    return SYSTEM_80_20 if tender_value_zar < PPPFA_THRESHOLD_ZAR else SYSTEM_90_10
+
 
 def get_bbbee_points(bbbee_level, evaluation_system):
-    """Returns the B-BBEE points for a given level and evaluation system."""
+    """
+    Preference points for a level under a given system, or None if unknown.
+
+    The `else` branch used to catch everything that was not exactly '80/20',
+    so an unrecognised value — or None — silently returned 90/10 points. A
+    typo in a system name would have quietly halved every bidder's score.
+    """
+    if evaluation_system not in (SYSTEM_80_20, SYSTEM_90_10):
+        return None
+
     if bbbee_level is None or bbbee_level == 0:
         return 0.0
-        
+
     points_80_20 = {1: 20.0, 2: 18.0, 3: 14.0, 4: 12.0, 5: 8.0, 6: 6.0, 7: 4.0, 8: 2.0}
     points_90_10 = {1: 10.0, 2: 9.0, 3: 6.0, 4: 5.0, 5: 4.0, 6: 3.0, 7: 2.0, 8: 1.0}
-    
-    if evaluation_system == '80/20':
-        return points_80_20.get(bbbee_level, 0.0)
-    else:
-        return points_90_10.get(bbbee_level, 0.0)
+
+    table = points_80_20 if evaluation_system == SYSTEM_80_20 else points_90_10
+    return table.get(bbbee_level, 0.0)
 
 #: Why a price score can be missing, in the words the user should see.
 NO_COMPETING_PRICE = (
@@ -41,10 +75,14 @@ def calculate_price_score(supplier_price, lowest_price, evaluation_system):
         return None
     if lowest_price <= 0:
         return None
+    # The multiplier below is the system's own weighting, so an unknown system
+    # means an unknown score rather than a defaulted one.
+    if evaluation_system not in (SYSTEM_80_20, SYSTEM_90_10):
+        return None
     if supplier_price < lowest_price:
         supplier_price = lowest_price  # Avoid negative price difference if supplier is the lowest
 
-    multiplier = 80.0 if evaluation_system == '80/20' else 90.0
+    multiplier = 80.0 if evaluation_system == SYSTEM_80_20 else 90.0
     score = multiplier * (1 - (supplier_price - lowest_price) / lowest_price)
     return max(0.0, float(score))
 
@@ -54,15 +92,36 @@ def calculate_total_sa_score(supplier_price, lowest_competing_price, bbbee_level
     price_score = calculate_price_score(supplier_price, lowest_competing_price, evaluation_system)
     
     raw_bbbee_points = get_bbbee_points(bbbee_level, evaluation_system)
-    bbbee_points = raw_bbbee_points * specific_goals_bbbee_ratio
+    bbbee_points = (None if raw_bbbee_points is None
+                    else raw_bbbee_points * specific_goals_bbbee_ratio)
 
-    # B-BBEE points and the evaluation system stand on their own: they depend
-    # only on the bidder's own level and the tender's value, both of which are
-    # known. The price score does not, so when it is missing the totals built
-    # on top of it are withheld rather than computed from the half we have.
+    # Which system applies is not knowable without the tender's value, and the
+    # two award different points for the same level — so when it is unknown the
+    # B-BBEE points go with it rather than being quoted under an assumed
+    # system. This is the one case where nothing at all can be scored.
+    if evaluation_system is None:
+        return {
+            'evaluation_system': None,
+            'evaluation_system_unavailable_reason': NO_TENDER_VALUE,
+            'price_score': None,
+            'price_score_available': False,
+            'price_score_unavailable_reason': NO_TENDER_VALUE,
+            'bbbee_points': None,
+            'max_bbbee_points': None,
+            'total_score': None,
+            'max_possible_score': 100.0,
+            'score_percentage': None,
+            'competitive_position': None,
+        }
+
+    # B-BBEE points stand on their own: they depend only on the bidder's level
+    # and the system, both known here. The price score does not, so when it is
+    # missing the totals built on top of it are withheld rather than computed
+    # from the half we have.
     if price_score is None:
         return {
             'evaluation_system': evaluation_system,
+            'evaluation_system_unavailable_reason': None,
             'price_score': None,
             'price_score_available': False,
             'price_score_unavailable_reason': NO_COMPETING_PRICE,
@@ -85,6 +144,7 @@ def calculate_total_sa_score(supplier_price, lowest_competing_price, bbbee_level
 
     return {
         'evaluation_system': evaluation_system,
+        'evaluation_system_unavailable_reason': None,
         'price_score': round(price_score, 4),
         'price_score_available': True,
         'price_score_unavailable_reason': None,

@@ -1115,7 +1115,7 @@ async def api_tender_submit(
 
             from models.sa_scoring import (
                 get_evaluation_system, calculate_price_score, get_bbbee_points,
-                NO_COMPETING_PRICE,
+                NO_COMPETING_PRICE, NO_TENDER_VALUE,
             )
             disq_eval_sys = get_evaluation_system(tender_value)
             # None, not 0.0, when there is no competing price to score against.
@@ -1123,7 +1123,10 @@ async def api_tender_submit(
             # the opposite of "we could not work it out".
             disq_price_pts = calculate_price_score(supplier_price, lowest_price, disq_eval_sys)
             disq_bbbee_pts = get_bbbee_points(bbbee_to_use, disq_eval_sys)
-            disq_total = None if disq_price_pts is None else disq_price_pts + disq_bbbee_pts
+            # Both can be None: the price score without a competing price, the
+            # B-BBEE points without a tender value to say which system applies.
+            disq_total = (None if (disq_price_pts is None or disq_bbbee_pts is None)
+                          else disq_price_pts + disq_bbbee_pts)
             return {
                 "prediction_id": prediction_id,
                 "tender_id": tender_id,
@@ -1147,8 +1150,9 @@ async def api_tender_submit(
                     "price_score": None if disq_price_pts is None else round(disq_price_pts, 4),
                     "price_score_available": disq_price_pts is not None,
                     "price_score_unavailable_reason": None if disq_price_pts is not None else NO_COMPETING_PRICE,
-                    "bbbee_points": float(disq_bbbee_pts),
+                    "bbbee_points": None if disq_bbbee_pts is None else float(disq_bbbee_pts),
                     "max_bbbee_points": get_bbbee_points(1, disq_eval_sys),
+                    "evaluation_system_unavailable_reason": None if disq_eval_sys else NO_TENDER_VALUE,
                     "total_score": None if disq_total is None else round(disq_total, 4),
                     "competitive_position": disq_total,
                     "base_probability": None,
