@@ -242,6 +242,22 @@ Do not trust "Deploy complete!" — verify the live site afterwards. Past deploy
 have succeeded while serving a stale stylesheet or a function that 504'd on
 every request.
 
+**Run the smoke check as the last step of every deploy.** It signs in and makes
+an authenticated call through the Hosting origin, which is the path real
+browsers take and the one nothing else tests:
+
+    python ops/smoke_check.py --username Test --password '<password>'
+
+Exit 0 means sign-in works end to end. It defaults to `https://cairoai.web.app`
+and **refuses a Cloud Run URL** unless you pass `--allow-non-hosting`, because
+checking the origin that has never broken is exactly how sign-in stayed broken
+for every real user while the suite was green: Hosting forwards only the
+`__session` cookie and strips the rest, and the Cloud Run URL never sees the
+difference.
+
+A deploy that reports success while sign-in is broken is the failure this
+guards against, so it belongs after `firebase deploy`, not before.
+
 ## Architecture notes
 
 - **Agent tool loop** — `agent/main_agent.py` runs the full agentic loop:
