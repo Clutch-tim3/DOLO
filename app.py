@@ -214,12 +214,11 @@ app.add_middleware(
 # Ensure upload folders exist
 UPLOAD_FOLDER = DATA_DIR / "archive"
 UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+# The archive used to be DATA_DIR / "company_archive.json" — a flat list with
+# no company_id in it, on a path that resolves to /tmp on Cloud Run. It is a
+# table keyed by company now; see agent/memory/company_archive.py. The constant
+# is kept only so the migration script can find any file left behind.
 ARCHIVE_JSON_PATH = DATA_DIR / "company_archive.json"
-
-# Initialize empty archive if not exists
-if not ARCHIVE_JSON_PATH.exists():
-    with open(ARCHIVE_JSON_PATH, "w") as f:
-        json.dump([], f)
 
 artifacts_sailor = None
 artifacts_conquest = None
@@ -242,76 +241,30 @@ except Exception as e:
     artifacts_sailor = None
     artifacts_conquest = None
 
-def get_archived_companies():
-    """Reads companies list from company_archive.json"""
-    try:
-        with open(ARCHIVE_JSON_PATH, "r") as f:
-            data = json.load(f)
-            
-            # Ensure "files" list key exists for all records (self-healing migration)
-            modified = False
-            for c in data:
-                if "files" not in c or not isinstance(c["files"], list):
-                    c["files"] = [c["file_name"]] if c.get("file_name") else []
-                    modified = True
-            
-            # Scan UPLOAD_FOLDER for files that exist on disk but aren't associated in JSON
-            all_associated_files = set()
-            for c in data:
-                all_associated_files.update(c.get("files", []))
-                
-            if UPLOAD_FOLDER.exists():
-                files_on_disk = [f.name for f in UPLOAD_FOLDER.glob("*.pdf")]
-                for filename in files_on_disk:
-                    if filename not in all_associated_files:
-                        filepath = UPLOAD_FOLDER / filename
-                        parsed_info = parse_company_pdf(filepath)
-                        company_name = parsed_info.get("company_name", "").upper()
-                        
-                        target_company = None
-                        if company_name:
-                            # Match by name
-                            for c in data:
-                                if c.get("company_name") == company_name:
-                                    target_company = c
-                                    break
-                                    
-                        # Fallback: if only one company exists in the ledger, associate it there
-                        if not target_company and len(data) == 1:
-                            target_company = data[0]
-                            
-                        if target_company:
-                            if "files" not in target_company:
-                                target_company["files"] = []
-                            if filename not in target_company["files"]:
-                                target_company["files"].append(filename)
-                                
-                                # Update status flags
-                                doc_text = extract_text_from_pdf(filepath)
-                                is_csd = "csd" in doc_text.lower() or "central supplier database" in doc_text.lower() or "maaa" in doc_text.lower()
-                                is_cipc = "cipc" in doc_text.lower() or "co-operatives" in doc_text.lower() or "cor14.3" in doc_text.lower() or "cor39" in doc_text.lower()
-                                if is_csd:
-                                    target_company["csd_uploaded"] = True
-                                if is_cipc:
-                                    target_company["cipc_uploaded"] = True
-                                modified = True
-                                
-            if modified:
-                save_archived_companies(data)
-            return data
-    except Exception as e:
-        print(f"Error reading archive: {e}")
-        return []
+from agent.memory import company_archive as _company_archive
 
-def save_archived_companies(companies):
-    """Saves companies list to company_archive.json"""
-    try:
-        with open(ARCHIVE_JSON_PATH, "w") as f:
-            json.dump(companies, f, indent=4)
-        return True
-    except Exception as e:
-        print(f"Failed to save archive: {e}")
-        return False
+
+def get_archived_companies(company_id):
+    """
+    This company's archived companies.
+
+    `company_id` is now required. The previous signature took no argument and
+    returned every company's records to whoever asked — five routes read it,
+    including the compliance dashboard.
+
+    The disk scan that used to live here is gone. It walked the shared
+    UPLOAD_FOLDER and attached unassociated PDFs to a company by name match
+    across all companies, falling back to "if only one company exists,
+    associate it there". A file nobody has claimed is recoverable; a file
+    attached to the wrong company is a disclosure.
+    """
+    return _company_archive.get_archived_companies(company_id)
+
+
+def save_archived_companies(companies, company_id):
+    """Replace this company's archive. Scoped: no other tenant's rows move."""
+    return _company_archive.save_archived_companies(companies, company_id)
+
 
 # Mount static folder
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -498,7 +451,7 @@ async def api_generate_quotation(request: Request,
             evaluation_system = body.get("evaluation_system", "80/20")
             lowest_price = body.get("lowest_price")
 
-        companies = get_archived_companies()
+        companies = get_archived_companies(principal.company_id)
         supplier_info = {}
         for c in companies:
             if c.get("company_name", "").upper() == supplier_name.upper():
@@ -639,7 +592,7 @@ async def api_get_companies(principal: Principal = Depends(require_principal)):
     list being public and being behind a login. Making the archive tenant-scoped
     is separate work; see the note in the auth section of CLAUDE.md.
     """
-    return get_archived_companies()
+    return get_archived_companies(principal.company_id)
 
 @app.get("/api/company-profile")
 async def api_company_profile(company_id: str = Depends(require_company_id)):
@@ -674,7 +627,7 @@ async def api_upload_company_file(
         
     target_comp = target_company.upper().strip() if target_company else ""
     
-    companies = get_archived_companies()
+    companies = get_archived_companies(principal.company_id)
     uploaded_companies = []
     
     for f in file:
@@ -764,7 +717,7 @@ async def api_upload_company_file(
             
         uploaded_companies.append(company_data)
         
-    save_archived_companies(companies)
+    save_archived_companies(companies, principal.company_id)
     
     return {
         "success": True,
@@ -919,7 +872,7 @@ async def api_delete_company(company_name: str,
     it. It resolves no company_id, so it was not one of the header call sites —
     which is exactly why it is easy to miss.
     """
-    companies = get_archived_companies()
+    companies = get_archived_companies(principal.company_id)
     matched_idx = None
     
     name_upper = company_name.upper().strip()
@@ -947,7 +900,7 @@ async def api_delete_company(company_name: str,
                 except Exception as e:
                     print(f"Failed to delete file {filename}: {e}")
                 
-    save_archived_companies(companies)
+    save_archived_companies(companies, principal.company_id)
     
     return {
         "success": True,
@@ -997,7 +950,7 @@ async def api_tender_submit(
     num_competitors = 4
     
     matched_company = None
-    companies = get_archived_companies()
+    companies = get_archived_companies(company_id)
     
     # 1. Parse Bid PDF
     if bid_file and bid_file.filename != "":
@@ -1494,7 +1447,7 @@ async def api_batch_sort(
         
     bbbee_level_def = 9
     matched_company = None
-    companies = get_archived_companies()
+    companies = get_archived_companies(company_id)
     
     if supplier_name:
         supp_upper = supplier_name.upper().strip()
@@ -1660,17 +1613,13 @@ async def get_compliance_status(principal: Principal = Depends(require_principal
     """
     Compliance status for this company's archived documents.
 
-    Authentication is added here now; the tenant filter is NOT complete, and
-    cannot be until A2. `get_archived_companies()` reads company_archive.json —
-    a flat list holding every company's documents with no company_id anywhere
-    in it — so there is no key to filter on yet. Requiring a credential closes
-    the anonymous hole; the cross-tenant hole closes when the archive moves
-    into Cloud SQL keyed by company.
-
-    Deliberately not faked: filtering on `registration_number` would look like
-    a tenant filter and would not be one.
+    This was the route where A1 could add authentication but not a tenant
+    filter: `get_archived_companies()` read company_archive.json, a flat list
+    with no company_id in it, so there was no key to filter on. A2 moved the
+    archive into a table keyed by company, and the filter is now real rather
+    than deferred.
     """
-    companies = get_archived_companies()
+    companies = get_archived_companies(principal.company_id)
     results = []
     
     now = datetime.now()
@@ -1819,7 +1768,11 @@ async def get_system_status(model_version: str = "sailor"):
         # The real count. This was `max(1420, total_predictions)`, which floored
         # a genuine figure at a number chosen to look established.
         "total_predictions_made": total_predictions,
-        "total_companies_archived": len(get_archived_companies()),
+        # `total_companies_archived` was len(get_archived_companies()) — a
+        # count across every tenant, on an endpoint that requires no
+        # credential. How many companies your customers have archived is a
+        # fact about them, not about the system, so it is not reported here.
+        # A per-tenant count is available from an authenticated route.
         "calibration_method": "Isotonic Regression",
         "data_sources": ["GPPD (2018-2023)", "SA Treasury OCDS", "CIPC Ledger"],
         # What the AUC above is worth, travelling with it.
