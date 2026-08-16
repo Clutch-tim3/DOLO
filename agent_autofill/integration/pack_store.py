@@ -991,7 +991,7 @@ def _review_in_pack(company_id: str, pack_id: str, review_id: str) -> None:
 
 
 def acknowledge(company_id: str, pack_id: str, review_id: str, item_key: str,
-                note: str) -> dict:
+                note: str, user_id: str = "", username: str = "") -> dict:
     """
     Acknowledge ONE flagged field in one of the pack's documents.
 
@@ -1000,16 +1000,19 @@ def acknowledge(company_id: str, pack_id: str, review_id: str, item_key: str,
     "*" and a note of "ok", and none of that is relaxed by going through a pack.
     """
     _review_in_pack(company_id, pack_id, review_id)
-    result = acknowledge_field(company_id, review_id, item_key, note)
+    result = acknowledge_field(company_id, review_id, item_key, note,
+                               user_id=user_id, username=username)
     result["pack_status"] = pack_detail(company_id, pack_id)["status"]
     return result
 
 
 def confirm_values(company_id: str, pack_id: str, review_id: str,
-                   confirmed_keys: list) -> dict:
+                   confirmed_keys: list, user_id: str = "",
+                   username: str = "") -> dict:
     """Confirm the pre-filled values of ONE document in the pack."""
     _review_in_pack(company_id, pack_id, review_id)
-    result = confirm_filled_values(company_id, review_id, confirmed_keys)
+    result = confirm_filled_values(company_id, review_id, confirmed_keys,
+                                   user_id=user_id, username=username)
     result["pack_status"] = pack_detail(company_id, pack_id)["status"]
     return result
 

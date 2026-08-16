@@ -258,6 +258,10 @@ async def api_acknowledge(pack_id: str, request: Request,
             (body or {}).get("review_id", ""),
             (body or {}).get("item_key", ""),
             (body or {}).get("note", ""),
+            # A7: who. Taken from the verified principal, never from the body —
+            # a self-reported actor in an audit trail is worth nothing.
+            user_id=principal.user_id,
+            username=principal.username,
         )
     except (PackNotFound, PackStateError, PackRefused, PackInputError, ReviewGateError) as e:
         _fail(e)
@@ -278,7 +282,8 @@ async def api_confirm_values(pack_id: str, request: Request,
     keys = (body or {}).get("confirmed_keys")
     try:
         return pack_store.confirm_values(
-            company_id, pack_id, (body or {}).get("review_id", ""), keys)
+            company_id, pack_id, (body or {}).get("review_id", ""), keys,
+            user_id=principal.user_id, username=principal.username)
     except (PackNotFound, PackStateError, PackRefused, PackInputError, ReviewGateError) as e:
         _fail(e)
 

@@ -156,6 +156,14 @@ def init_review_db() -> None:
         existing = db.table_columns(conn, "autofill_review_item")
         if "ack_mac" not in existing:
             conn.execute("ALTER TABLE autofill_review_item ADD COLUMN ack_mac TEXT")
+        # A7: who acknowledged it. The user_id is inside the MAC as well; these
+        # columns are how it is displayed and queried. The username is stored
+        # alongside so the audit trail stays readable after an account is
+        # renamed or removed, but the user_id is the identity that is signed.
+        if "acknowledged_by" not in existing:
+            conn.execute("ALTER TABLE autofill_review_item ADD COLUMN acknowledged_by TEXT")
+        if "acknowledged_by_username" not in existing:
+            conn.execute("ALTER TABLE autofill_review_item ADD COLUMN acknowledged_by_username TEXT")
         # Blanks we never identified and never wrote into. They are recorded so
         # the record is complete and still marked [ ! ] in the document, but
         # they do not require an acknowledgement — see ADVISORY_CATEGORIES.
@@ -187,6 +195,13 @@ def init_review_db() -> None:
         if "values_confirmed_mac" not in review_cols:
             conn.execute(
                 "ALTER TABLE autofill_review ADD COLUMN values_confirmed_mac TEXT")
+        # A7: who confirmed the auto-filled values. Signed, same as above.
+        if "values_confirmed_by" not in review_cols:
+            conn.execute(
+                "ALTER TABLE autofill_review ADD COLUMN values_confirmed_by TEXT")
+        if "values_confirmed_by_username" not in review_cols:
+            conn.execute(
+                "ALTER TABLE autofill_review ADD COLUMN values_confirmed_by_username TEXT")
 
         # What was actually written into the document. Only filled_count was
         # recorded before, which is a number you cannot show anyone.
@@ -379,7 +394,7 @@ def get_review(company_id: str, review_id: str) -> dict:
 
 
 def acknowledge_field(company_id: str, review_id: str, item_key: str,
-                      note: str) -> dict:
+                      note: str, user_id: str = "", username: str = "") -> dict:
     """
     Acknowledge exactly ONE flagged field.
 
@@ -388,6 +403,12 @@ def acknowledge_field(company_id: str, review_id: str, item_key: str,
     against its own field with its own timestamp. That is what makes the export
     banner able to say a person saw each one, rather than that a person clicked
     once.
+
+    A7: `user_id` records WHO, and it is covered by the MAC. Until this, the
+    record could say a field was acknowledged at a time with a note, but not by
+    whom — and on a document submitted to an organ of state, the person is the
+    part that matters. `username` is stored for display only; it can change,
+    the user_id is the identity that is signed.
     """
     _load_review(company_id, review_id)  # tenant pin + existence
 
@@ -436,12 +457,13 @@ def acknowledge_field(company_id: str, review_id: str, item_key: str,
 
         # Signed before the write, so a missing secret fails the
         # acknowledgement rather than recording an unverifiable one.
-        mac = ack_mac(review_id, key, now, text)
+        mac = ack_mac(review_id, key, now, text, user_id)
         conn.execute(
             """UPDATE autofill_review_item
-                  SET acknowledged_at = ?, acknowledged_note = ?, ack_mac = ?
+                  SET acknowledged_at = ?, acknowledged_note = ?, ack_mac = ?,
+                      acknowledged_by = ?, acknowledged_by_username = ?
                 WHERE review_id = ? AND item_key = ?""",
-            (now, text, mac, review_id, key),
+            (now, text, mac, user_id or None, username or None, review_id, key),
         )
 
     outstanding = _outstanding_rows(review_id)
@@ -450,6 +472,8 @@ def acknowledge_field(company_id: str, review_id: str, item_key: str,
         "item_key": key,
         "label": row["label"],
         "acknowledged_at": now,
+        "acknowledged_by": user_id or None,
+        "acknowledged_by_username": username or None,
         "outstanding_count": len(outstanding),
         "outstanding": outstanding,
         "message": (
@@ -628,14 +652,39 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
                 ),
             }
 
+        # A7: the trail, per field — who, when, and what they said they
+        # checked. `acknowledged` keeps its three-tuple shape because
+        # stamp_docx writes it into the document properties; the attribution
+        # travels alongside in `audit_trail` and on the export result.
+        ack_rows = conn.execute(
+            """SELECT item_key, label, acknowledged_note, acknowledged_at,
+                      acknowledged_by, acknowledged_by_username
+                 FROM autofill_review_item WHERE review_id = ? ORDER BY item_key""",
+            (review_id,),
+        ).fetchall()
+
         acknowledged = [
-            (r["item_key"], r["label"], r["acknowledged_note"])
-            for r in conn.execute(
-                """SELECT item_key, label, acknowledged_note
-                     FROM autofill_review_item WHERE review_id = ? ORDER BY item_key""",
-                (review_id,),
-            ).fetchall()
+            (r["item_key"], r["label"], r["acknowledged_note"]) for r in ack_rows
         ]
+
+        audit_trail = [
+            {
+                "item_key": r["item_key"],
+                "label": r["label"],
+                "note": r["acknowledged_note"],
+                "acknowledged_at": r["acknowledged_at"],
+                "acknowledged_by": r["acknowledged_by"],
+                "acknowledged_by_username": r["acknowledged_by_username"],
+            }
+            for r in ack_rows
+        ]
+
+        values_rec = conn.execute(
+            "SELECT values_confirmed_at, values_confirmed_by,"
+            " values_confirmed_by_username FROM autofill_review"
+            " WHERE review_id = ? AND company_id = ?",
+            (review_id, company_id),
+        ).fetchone()
 
         ack_times = [
             r["acknowledged_at"]
@@ -699,6 +748,13 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
         "export_path": str(target),
         "download_url": public_url(target.name),
         "acknowledged_count": len(acknowledged),
+        # Who reviewed what, and when. On a document going to an organ of
+        # state this is the evidence a person looked at it; a count is not.
+        "audit_trail": audit_trail,
+        "values_confirmed_at": values_rec["values_confirmed_at"] if values_rec else None,
+        "values_confirmed_by": values_rec["values_confirmed_by"] if values_rec else None,
+        "values_confirmed_by_username": (
+            values_rec["values_confirmed_by_username"] if values_rec else None),
         "stamp": written,
         "message": (
             f"Exported as a reviewed draft. All {row['flagged_count']} flagged "
@@ -730,7 +786,8 @@ def filled_values(company_id: str, review_id: str) -> dict:
 
 
 def confirm_filled_values(company_id: str, review_id: str,
-                          confirmed_keys: list = None) -> dict:
+                          confirmed_keys: list = None,
+                          user_id: str = "", username: str = "") -> dict:
     """
     Confirm, in one step, every value Agent Autofill wrote into the document.
 
@@ -776,16 +833,20 @@ def confirm_filled_values(company_id: str, review_id: str,
 
     now = datetime.now().isoformat(timespec="seconds")
     pairs = [(r["item_key"], r["label"], r["value"]) for r in rows]
-    mac = sign(values_payload(company_id, review_id, pairs, now))
+    mac = sign(values_payload(company_id, review_id, pairs, now, user_id))
     with _connect() as conn:
         conn.execute(
             "UPDATE autofill_review SET values_confirmed_at = ?,"
-            " values_confirmed_mac = ? WHERE review_id = ? AND company_id = ?"
+            " values_confirmed_mac = ?, values_confirmed_by = ?,"
+            " values_confirmed_by_username = ?"
+            " WHERE review_id = ? AND company_id = ?"
             " AND status = 'DRAFT'",
-            (now, mac, review_id, company_id),
+            (now, mac, user_id or None, username or None, review_id, company_id),
         )
     return {"status": "success", "confirmed_count": len(pairs),
             "confirmed_at": now,
+            "confirmed_by": user_id or None,
+            "confirmed_by_username": username or None,
             "message": f"{len(pairs)} pre-filled value(s) confirmed."}
 
 
@@ -799,7 +860,8 @@ def _values_unconfirmed(company_id: str, review_id: str) -> list[dict]:
     """
     with _connect() as conn:
         rec = conn.execute(
-            "SELECT values_confirmed_at, values_confirmed_mac FROM autofill_review"
+            "SELECT values_confirmed_at, values_confirmed_mac, values_confirmed_by"
+            " FROM autofill_review"
             " WHERE review_id = ? AND company_id = ?",
             (review_id, company_id),
         ).fetchone()
@@ -817,7 +879,8 @@ def _values_unconfirmed(company_id: str, review_id: str) -> list[dict]:
     pairs = [(r["item_key"], r["label"], r["value"]) for r in rows]
     if not matches(rec["values_confirmed_mac"],
                    values_payload(company_id, review_id, pairs,
-                                  rec["values_confirmed_at"])):
+                                  rec["values_confirmed_at"],
+                                  rec["values_confirmed_by"] or "")):
         return [dict(r) for r in rows]
     return []
 
@@ -861,7 +924,7 @@ def _unverifiable_acknowledgements(review_id: str) -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
             """SELECT item_key, label, location, acknowledged_at,
-                      acknowledged_note, ack_mac
+                      acknowledged_note, ack_mac, acknowledged_by
                  FROM autofill_review_item
                 WHERE review_id = ? AND acknowledged_at IS NOT NULL
                 ORDER BY item_key""",
@@ -870,10 +933,13 @@ def _unverifiable_acknowledgements(review_id: str) -> list[dict]:
 
     bad = []
     for r in rows:
+        # acknowledged_by is inside the payload, so rewriting the column to
+        # credit a different person invalidates the signature.
         payload_ok = matches(
             r["ack_mac"],
             ack_payload(review_id, r["item_key"], r["acknowledged_at"],
-                        r["acknowledged_note"] or ""),
+                        r["acknowledged_note"] or "",
+                        r["acknowledged_by"] or ""),
         )
         if not payload_ok:
             bad.append({
