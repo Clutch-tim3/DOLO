@@ -107,8 +107,35 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = DATA_DIR / "procurement.db"
 
+# Application state goes through agent/db.py, which is Postgres in production
+# and SQLite locally. Opening `sqlite3.connect(DB_PATH)` here instead wrote to
+# DATA_DIR, and on Cloud Run that is /tmp — per-instance and wiped on cold
+# start. Tracked outcomes, calendar events and predictions were being written
+# to a disk that disappears.
+from agent import db as _state_db
+
+#: PIDs whose schema has been ensured, so a forked child re-runs it against its
+#: own connection. Same guard as agent/db.py's connector and the rate limiter:
+#: this must not run at import, or the Cloud SQL connector's background threads
+#: are built before the ASGI bridge forks.
+_schema_ready: set = set()
+
+
 def init_db():
-    conn = sqlite3.connect(str(DB_PATH))
+    with _state_db.connect(DB_PATH) as conn:
+        _init_db_schema(conn)
+
+
+def _ensure_schema(conn):
+    """Create the tables once per process, on first use rather than at import."""
+    pid = os.getpid()
+    if pid in _schema_ready:
+        return
+    _init_db_schema(conn)
+    _schema_ready.add(pid)
+
+
+def _init_db_schema(conn):
     c = conn.cursor()
     c.execute('''
         CREATE TABLE IF NOT EXISTS tracked_outcomes (
@@ -128,9 +155,11 @@ def init_db():
         )
     ''')
     conn.commit()
-    conn.close()
+    # No conn.close() here: agent/db.py's `with` block closes the connection,
+    # unlike sqlite3. Closing it inside would shut it under the caller.
 
-init_db()
+# init_db() is deliberately NOT called at import — see _schema_ready above.
+# Each state-touching route calls _ensure_schema() on the connection it opens.
 
 class TrackOutcomeRequest(BaseModel):
     prediction_id: str
@@ -306,24 +335,24 @@ async def serve_system_page():
 
 @app.get("/api/model-status")
 async def api_model_status():
-    """Returns active status and metrics of specialized regional engines (Conquest-ZA and Conquest-UK)."""
+    """
+    What the prediction model is worth, read from the metrics file.
+
+    The AUCs here used to be hardcoded literals — 0.857833 for ZA, marked
+    LOCKED_PRODUCTION_BASELINE — that no code could refresh and no measurement
+    backed. 0.857833 came from `metrics_conquest_za.json`, whose `auc_val` and
+    `auc_test` are the same number on 1,079 rows; the model actually serving
+    predictions scores 0.5567 on 13,121 held-out rows.
+
+    `model_validation` reads the metrics file that belongs to the model in use,
+    so this cannot drift away from it again.
+    """
     return {
-        "active_engines": {
-            "Conquest-ZA": {
-                "region": "South Africa (ZA)",
-                "framework": "PPPFA 80/20 & 90/10",
-                "auc_val": 0.857833,
-                "auc_test": 0.857833,
-                "status": "LOCKED_PRODUCTION_BASELINE"
-            },
-            "Conquest-UK": {
-                "region": "United Kingdom (GB)",
-                "framework": "MEAT PCR 2015",
-                "auc_val": 0.694060,
-                "auc_test": 0.694060,
-                "status": "STANDALONE_REGIONAL_BASELINE"
-            }
-        }
+        "regions": {
+            "ZA": {"region": "South Africa (ZA)", "framework": "PPPFA 80/20 & 90/10"},
+            "UK": {"region": "United Kingdom (GB)", "framework": "MEAT PCR 2015"},
+        },
+        "model_validation": model_validation.validation_status(),
     }
 
 @app.get("/workspace")
@@ -1018,13 +1047,17 @@ async def api_tender_submit(
         name_to_use = matched_company["company_name"]
         bbbee_to_use = matched_company["bbbee_level"]
         
-    # Impute missing pricing
+    # Impute missing pricing.
+    #
+    # The supplier's own price is imputed because the ML pipeline needs a
+    # number in the feature vector and the model's caveat already covers what
+    # its output is worth. `lowest_price` is NOT imputed: it feeds the PPPFA
+    # price score, which is presented as a calculation under the regulations
+    # rather than as a model output. `supplier_price * 0.88` made every bidder
+    # 13.6% above a competitor who did not exist.
     if supplier_price is None:
         supplier_price = 450000.0
-    if lowest_price is None:
-        lowest_price = supplier_price * 0.88
 
-        
     try:
         # ML pipeline
         features_df = extract_features_from_tender_id(
@@ -1063,20 +1096,26 @@ async def api_tender_submit(
 
         if disqualified:
             prediction_id = str(uuid.uuid4())
-            conn = sqlite3.connect(str(DB_PATH))
-            c = conn.cursor()
-            now = datetime.now().isoformat()
-            c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                        (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, None, None, "DISQUALIFIED", "pending", None, "", now, now))
-            conn.commit()
-            conn.close()
+            with _state_db.connect(DB_PATH) as conn:
+                _ensure_schema(conn)
+                c = conn.cursor()
+                now = datetime.now().isoformat()
+                c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                            (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, None, None, "DISQUALIFIED", "pending", None, "", now, now))
+                conn.commit()
 
-            from models.sa_scoring import get_evaluation_system, calculate_price_score, get_bbbee_points
+            from models.sa_scoring import (
+                get_evaluation_system, calculate_price_score, get_bbbee_points,
+                NO_COMPETING_PRICE,
+            )
             disq_eval_sys = get_evaluation_system(tender_value)
-            disq_price_pts = calculate_price_score(supplier_price, lowest_price, disq_eval_sys) if (supplier_price and lowest_price and lowest_price > 0) else 0.0
+            # None, not 0.0, when there is no competing price to score against.
+            # A price score of zero means "you are far above the lowest bid" —
+            # the opposite of "we could not work it out".
+            disq_price_pts = calculate_price_score(supplier_price, lowest_price, disq_eval_sys)
             disq_bbbee_pts = get_bbbee_points(bbbee_to_use, disq_eval_sys)
-            disq_total = disq_price_pts + disq_bbbee_pts
+            disq_total = None if disq_price_pts is None else disq_price_pts + disq_bbbee_pts
             return {
                 "prediction_id": prediction_id,
                 "tender_id": tender_id,
@@ -1097,9 +1136,12 @@ async def api_tender_submit(
                 "logistics_warnings": logistics_warnings,
                 "sa_analysis": {
                     "evaluation_system": disq_eval_sys,
-                    "price_score": round(disq_price_pts, 4),
+                    "price_score": None if disq_price_pts is None else round(disq_price_pts, 4),
+                    "price_score_available": disq_price_pts is not None,
+                    "price_score_unavailable_reason": None if disq_price_pts is not None else NO_COMPETING_PRICE,
                     "bbbee_points": float(disq_bbbee_pts),
-                    "total_score": round(disq_total, 4),
+                    "max_bbbee_points": get_bbbee_points(1, disq_eval_sys),
+                    "total_score": None if disq_total is None else round(disq_total, 4),
                     "competitive_position": disq_total,
                     "base_probability": None,
                     "final_probability": None,
@@ -1136,7 +1178,10 @@ async def api_tender_submit(
         sa_analysis = {
             "evaluation_system": sa_score["evaluation_system"],
             "price_score": sa_score["price_score"],
+            "price_score_available": sa_score["price_score_available"],
+            "price_score_unavailable_reason": sa_score["price_score_unavailable_reason"],
             "bbbee_points": sa_score["bbbee_points"],
+            "max_bbbee_points": sa_score["max_bbbee_points"],
             "total_score": sa_score["total_score"],
             "competitive_position": sa_score["competitive_position"],
             "base_probability": base_prob,
@@ -1148,29 +1193,37 @@ async def api_tender_submit(
             "parsed_lowest_price": lowest_price,
             "parsed_tender_value": tender_value
         }
-                
+
         threshold = target_artifacts["threshold"]
-        recommendation = "PURSUE" if final_probability >= threshold else "PASS"
-        
-        if final_probability > threshold + 0.15:
-            confidence = "HIGH"
-        elif final_probability > threshold + 0.05:
-            confidence = "MEDIUM"
-        elif final_probability > threshold:
-            confidence = "LOW"
+
+        # Without a PPPFA score there is no adjusted probability, and PURSUE /
+        # PASS is a recommendation about money derived from a number we do not
+        # have. Withheld, with the reason attached.
+        if final_probability is None:
+            recommendation = None
+            confidence = None
         else:
-            confidence = "PASS"
+            recommendation = "PURSUE" if final_probability >= threshold else "PASS"
+
+            if final_probability > threshold + 0.15:
+                confidence = "HIGH"
+            elif final_probability > threshold + 0.05:
+                confidence = "MEDIUM"
+            elif final_probability > threshold:
+                confidence = "LOW"
+            else:
+                confidence = "PASS"
             
         prediction_id = str(uuid.uuid4())
         
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        now = datetime.now().isoformat()
-        c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                    (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, base_prob, final_probability, recommendation, "pending", None, "", now, now))
-        conn.commit()
-        conn.close()
+        with _state_db.connect(DB_PATH) as conn:
+            _ensure_schema(conn)
+            c = conn.cursor()
+            now = datetime.now().isoformat()
+            c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                        (str(uuid.uuid4()), prediction_id, tender_id, tender_file.filename if tender_file else "", name_to_use, base_prob, final_probability, recommendation, "pending", None, "", now, now))
+            conn.commit()
 
         return {
             "prediction_id": prediction_id,
@@ -1291,9 +1344,12 @@ async def process_batch_job(job_id: str, file_paths: list, filenames: list, name
                 # if Path(path).exists(): Path(path).unlink()
                 continue
                 
-            # Impute missing pricing
-            supplier_price = 450000.0
-            lowest_price = supplier_price * 0.88
+            # Impute missing pricing. This path overwrote `supplier_price`
+            # unconditionally, so a price actually parsed from the document was
+            # discarded and every tender in a batch was scored as R450,000
+            # against R396,000. Use what was parsed when there is something.
+            supplier_price = parsed_tender.get("bid_price") or 450000.0
+            lowest_price = parsed_tender.get("lowest_price")
 
             num_competitors = 4
                 
@@ -1332,17 +1388,21 @@ async def process_batch_job(job_id: str, file_paths: list, filenames: list, name
             
             final_probability = sa_adj["final_probability"]
             threshold = target_artifacts["threshold"]
-            recommendation = "PURSUE" if final_probability >= threshold else "PASS"
-            
+            # Same rule as the single path: no score, no recommendation.
+            recommendation = (
+                None if final_probability is None
+                else ("PURSUE" if final_probability >= threshold else "PASS")
+            )
+
             prediction_id = str(uuid.uuid4())
-            conn = sqlite3.connect(str(DB_PATH))
-            c = conn.cursor()
-            now = datetime.now().isoformat()
-            c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                        (str(uuid.uuid4()), prediction_id, tender_id, filename, name_to_use, base_prob, final_probability, recommendation, "pending", None, "", now, now))
-            conn.commit()
-            conn.close()
+            with _state_db.connect(DB_PATH) as conn:
+                _ensure_schema(conn)
+                c = conn.cursor()
+                now = datetime.now().isoformat()
+                c.execute('''INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                            (str(uuid.uuid4()), prediction_id, tender_id, filename, name_to_use, base_prob, final_probability, recommendation, "pending", None, "", now, now))
+                conn.commit()
 
             job["results"].append({
                 "prediction_id": prediction_id,
@@ -1355,6 +1415,9 @@ async def process_batch_job(job_id: str, file_paths: list, filenames: list, name
                 "model_validation": model_validation.validation_status(),
                 "recommendation": recommendation,
                 "competitive_position": sa_score["competitive_position"],
+                "price_score_available": sa_score["price_score_available"],
+                "price_score_unavailable_reason": sa_score["price_score_unavailable_reason"],
+                "bbbee_points": sa_score["bbbee_points"],
                 "parsed_tender_value": tender_value,
                 "preferential_framework": sa_score["evaluation_system"],
                 "processing_error": None,
@@ -1458,35 +1521,34 @@ async def api_batch_status(job_id: str):
 
 @app.post("/api/track-outcome")
 async def track_outcome(req: TrackOutcomeRequest):
-    conn = sqlite3.connect(str(DB_PATH))
-    c = conn.cursor()
-    now = datetime.now().isoformat()
+    with _state_db.connect(DB_PATH) as conn:
+        _ensure_schema(conn)
+        c = conn.cursor()
+        now = datetime.now().isoformat()
     
-    c.execute("SELECT id FROM tracked_outcomes WHERE prediction_id = ?", (req.prediction_id,))
-    row = c.fetchone()
-    if row:
-        c.execute("""
-            UPDATE tracked_outcomes 
-            SET actual_outcome = ?, outcome_date = ?, notes = ?, updated_at = ?
-            WHERE prediction_id = ?
-        """, (req.actual_outcome, req.outcome_date, req.notes, now, req.prediction_id))
-    else:
-        c.execute("""
-            INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (str(uuid.uuid4()), req.prediction_id, req.tender_identifier, req.filename, req.supplier_name, req.predicted_probability, req.sa_adjusted_probability, req.recommendation, req.actual_outcome, req.outcome_date, req.notes, now, now))
-    conn.commit()
-    conn.close()
+        c.execute("SELECT id FROM tracked_outcomes WHERE prediction_id = ?", (req.prediction_id,))
+        row = c.fetchone()
+        if row:
+            c.execute("""
+                UPDATE tracked_outcomes 
+                SET actual_outcome = ?, outcome_date = ?, notes = ?, updated_at = ?
+                WHERE prediction_id = ?
+            """, (req.actual_outcome, req.outcome_date, req.notes, now, req.prediction_id))
+        else:
+            c.execute("""
+                INSERT INTO tracked_outcomes (id, prediction_id, tender_identifier, filename, supplier_name, predicted_probability, sa_adjusted_probability, recommendation, actual_outcome, outcome_date, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (str(uuid.uuid4()), req.prediction_id, req.tender_identifier, req.filename, req.supplier_name, req.predicted_probability, req.sa_adjusted_probability, req.recommendation, req.actual_outcome, req.outcome_date, req.notes, now, now))
+        conn.commit()
     return {"status": "success"}
 
 @app.get("/api/accuracy-stats")
 async def get_accuracy_stats():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM tracked_outcomes")
-    rows = c.fetchall()
-    conn.close()
+    with _state_db.connect(DB_PATH) as conn:
+        _ensure_schema(conn)
+        c = conn.cursor()
+        c.execute("SELECT * FROM tracked_outcomes")
+        rows = c.fetchall()
     
     total = len(rows)
     pending = sum(1 for r in rows if r['actual_outcome'] == 'pending')
@@ -1524,12 +1586,11 @@ async def get_accuracy_stats():
 
 @app.get("/api/tracked-outcomes")
 async def get_tracked_outcomes():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM tracked_outcomes ORDER BY updated_at DESC")
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
+    with _state_db.connect(DB_PATH) as conn:
+        _ensure_schema(conn)
+        c = conn.cursor()
+        c.execute("SELECT * FROM tracked_outcomes ORDER BY updated_at DESC")
+        rows = [dict(r) for r in c.fetchall()]
     return rows
 
 @app.get("/api/compliance-status")
@@ -1584,12 +1645,11 @@ async def get_compliance_status():
 @app.get("/api/calendar-events")
 async def get_calendar_events(month: str = None):
     # Retrieve all single predictions and tracked outcomes
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM tracked_outcomes")
-    rows = [dict(r) for r in c.fetchall()]
-    conn.close()
+    with _state_db.connect(DB_PATH) as conn:
+        _ensure_schema(conn)
+        c = conn.cursor()
+        c.execute("SELECT * FROM tracked_outcomes")
+        rows = [dict(r) for r in c.fetchall()]
     
     events = []
     # Mocking extraction from historical records (since parse_tender_document doesn't store this in DB yet)
@@ -1615,65 +1675,51 @@ async def get_system_status(model_version: str = "sailor"):
     metrics_filename = "metrics_conquest.json" if is_conquest else "metrics_v1.json"
     metrics_path = Path(__file__).parent / "models" / metrics_filename
     
-    test_auc = 0.8578 if is_conquest else 0.8187
-    last_trained = datetime.now().strftime("%Y-%m-%dT%H:%M:%S") if is_conquest else "2026-07-19T10:00:00"
-    n_features = 67
-    
+    # Measured, or absent. These used to default to 0.8578 / 0.8187 — figures
+    # no run produced. Worse, the conquest branch read `auc_cb` from
+    # metrics_conquest.json, which has no such key, so the `.get` chain fell
+    # through to the 0.8578 literal even on the path that was "reading the real
+    # metrics file". The held-out AUC in that file is 0.5567.
+    test_auc = None
+    last_trained = None
+    n_features = None
+    precision = None
+    recall = None
+
     if metrics_path.exists():
         try:
             with open(metrics_path, "r") as f:
                 metrics_data = json.load(f)
-                if is_conquest:
-                    test_auc = metrics_data.get("auc_cb", metrics_data.get("auc_ensemble_uncalibrated", 0.8578))
-                    n_features = metrics_data.get("feature_count", 67)
-                    last_trained = metrics_data.get("timestamp", last_trained)
-                else:
-                    test_auc = metrics_data.get("test", {}).get("roc_auc", test_auc)
-                    n_features = metrics_data.get("n_features", n_features)
+            test_section = metrics_data.get("test") or {}
+            test_auc = test_section.get("roc_auc")
+            n_features = metrics_data.get("n_features", metrics_data.get("feature_count"))
+            last_trained = metrics_data.get("timestamp")
+            precision = test_section.get("precision")
+            recall = test_section.get("recall")
         except Exception as e:
             print(f"Error reading metrics JSON: {e}")
             
     # Count predictions from DB
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        c.execute("SELECT COUNT(*) FROM tracked_outcomes")
-        total_predictions = c.fetchone()[0]
-        conn.close()
+        with _state_db.connect(DB_PATH) as conn:
+            _ensure_schema(conn)
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM tracked_outcomes")
+            total_predictions = c.fetchone()[0]
     except Exception:
-        total_predictions = 1420
+        # None, not 1420. An unreadable counter is not a busy one.
+        total_predictions = None
         
-    top_features = [
-        {"name": "pit_win_rate_buyer", "importance": 0.18, "plain_language_label": "Win Rate with this specific Buyer"},
-        {"name": "buyer_total_past_awards", "importance": 0.15, "plain_language_label": "Buyer's Historic Volume"},
-        {"name": "pit_total_wins", "importance": 0.11, "plain_language_label": "Supplier's Total Market Experience"},
-        {"name": "competition_baseline", "importance": 0.09, "plain_language_label": "Average Competitors per Lot"},
-        {"name": "pit_avg_contract_value", "importance": 0.07, "plain_language_label": "Supplier's Historic Award Size"},
-        {"name": "tender_value_zar", "importance": 0.06, "plain_language_label": "Current Tender Value"},
-        {"name": "pit_recency_score", "importance": 0.05, "plain_language_label": "Supplier Recent Momentum"},
-        {"name": "buyer_openness_score", "importance": 0.04, "plain_language_label": "Buyer Willingness for New Entrants"}
-    ]
-    
-    # Adjust ensemble weights and info
-    if is_conquest:
-        ensemble_models = [
-            {"name": "CatBoost (Conquest Engine)", "individual_auc": 0.8578, "weight": 1.00},
-            {"name": "LightGBM (Auxiliary)", "individual_auc": 0.7755, "weight": 0.00},
-            {"name": "XGBoost (Auxiliary)", "individual_auc": 0.7676, "weight": 0.00}
-        ]
-        disp_version = "Conquest v1.0.0 (CatBoost Engine)"
-        precision = 0.4210
-        recall = 0.7820
-    else:
-        ensemble_models = [
-            {"name": "XGBoost (Sailor)", "individual_auc": 0.8123, "weight": 0.45},
-            {"name": "LightGBM (Sailor)", "individual_auc": 0.8095, "weight": 0.35},
-            {"name": "CatBoost (Sailor)", "individual_auc": 0.8104, "weight": 0.20}
-        ]
-        disp_version = "Sailor v2.1.0 (Ensemble)"
-        precision = 0.4167
-        recall = 0.7744
-        
+    # `top_features` and `ensemble_models` were hardcoded tables — feature
+    # importances to two decimal places that no model produced, and per-model
+    # AUCs with blend weights for an ensemble whose composition was invented.
+    # Real feature importances are obtainable from the loaded booster; until
+    # something reads them, an empty list is the honest answer.
+    top_features = []
+    ensemble_models = []
+
+    disp_version = "Conquest v1.0.0 (CatBoost Engine)" if is_conquest else "Sailor v2.1.0 (Ensemble)"
+
     return {
         "model_version": disp_version,
         "last_trained_at": meta.get("created_at", last_trained),
@@ -1684,10 +1730,14 @@ async def get_system_status(model_version: str = "sailor"):
         "ensemble_models": ensemble_models,
         "feature_count": n_features,
         "top_features": top_features,
-        "total_predictions_made": max(1420, total_predictions),
+        # The real count. This was `max(1420, total_predictions)`, which floored
+        # a genuine figure at a number chosen to look established.
+        "total_predictions_made": total_predictions,
         "total_companies_archived": len(get_archived_companies()),
         "calibration_method": "Isotonic Regression",
-        "data_sources": ["GPPD (2018-2023)", "SA Treasury OCDS", "CIPC Ledger"]
+        "data_sources": ["GPPD (2018-2023)", "SA Treasury OCDS", "CIPC Ledger"],
+        # What the AUC above is worth, travelling with it.
+        "model_validation": model_validation.validation_status(),
     }
     
 class EstimateRequest(BaseModel):
