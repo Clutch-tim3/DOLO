@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,29 +55,58 @@ TIER_CONFIG = {
 #: The action_type written to usage_logs for one completed autofill draft.
 AUTOFILL_ACTION = "agent_autofill"
 
-# Mock database mapping company_id header to a specific tier
-MOCK_CLIENT_REGISTRY = {
-    "starter_corp": "starter",
-    "pro_corp": "pro",
-    "enterprise_corp": "enterprise"
-}
+# MOCK_CLIENT_REGISTRY used to live here: a dict of three company_ids that was
+# the entire customer list. Tiers come from the `companies` table now — see
+# agent/memory/company_registry.py, which seeds those same three ids on first
+# use so nothing that existed under the dict loses its tier.
+
+_usage_schema_ready: set = set()
+
+
+def _ensure_usage_schema(conn) -> None:
+    """
+    Create usage_logs once per process, on first use.
+
+    This used to run at import as `init_subscription_db()`. With the Cloud SQL
+    connector that builds background refresh threads before the ASGI bridge
+    forks, and inheriting one across a fork is what made every request 504 once
+    already — which is why db.py keys the connector to the PID.
+    """
+    pid = os.getpid()
+    if pid in _usage_schema_ready:
+        return
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS usage_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id TEXT,
+            action_type TEXT,
+            timestamp TEXT
+        )
+    """)
+    conn.commit()
+    _usage_schema_ready.add(pid)
+
 
 def init_subscription_db():
+    """Kept because callers and tests refer to it; no longer run at import."""
     with db.connect(DB_PATH) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS usage_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                company_id TEXT,
-                action_type TEXT,
-                timestamp TEXT
-            )
-        """)
-        conn.commit()
+        _ensure_usage_schema(conn)
 
-init_subscription_db()
 
 def get_company_tier(company_id: str) -> str:
-    return MOCK_CLIENT_REGISTRY.get(company_id, "starter")
+    """
+    The tier this company is on, read from the companies table.
+
+    This was `MOCK_CLIENT_REGISTRY.get(company_id, "starter")` — a Python dict
+    holding three ids. Every quota and feature gate funnels through here, so
+    moving the lookup is what turns "three hardcoded customers" into a customer
+    list without touching any of the callers.
+
+    Unknown and suspended companies still resolve to starter. See
+    company_registry for why that is the safe direction.
+    """
+    from agent.memory import company_registry
+    return company_registry.tier_for(company_id)
 
 def get_config(company_id: str) -> Dict[str, Any]:
     tier = get_company_tier(company_id)
@@ -91,6 +121,7 @@ def get_utc_month_str() -> str:
 def get_quotes_used_today(company_id: str) -> int:
     today = get_utc_today_str()
     with db.connect(DB_PATH) as conn:
+        _ensure_usage_schema(conn)
         cur = conn.cursor()
         cur.execute(
             "SELECT COUNT(*) FROM usage_logs WHERE company_id = ? AND action_type = 'generate_quote' AND timestamp LIKE ?",
@@ -101,6 +132,7 @@ def get_quotes_used_today(company_id: str) -> int:
 def log_quote_generation(company_id: str):
     timestamp = datetime.now(timezone.utc).isoformat()
     with db.connect(DB_PATH) as conn:
+        _ensure_usage_schema(conn)
         conn.execute(
             "INSERT INTO usage_logs (company_id, action_type, timestamp) VALUES (?, ?, ?)",
             (company_id, "generate_quote", timestamp)
@@ -141,6 +173,7 @@ def check_quote_quota(company_id: str) -> dict:
 def get_autofills_used_today(company_id: str) -> int:
     today = get_utc_today_str()
     with db.connect(DB_PATH) as conn:
+        _ensure_usage_schema(conn)
         cur = conn.cursor()
         cur.execute(
             "SELECT COUNT(*) FROM usage_logs WHERE company_id = ? AND action_type = ? AND timestamp LIKE ?",
@@ -158,6 +191,7 @@ def log_autofill_run(company_id: str):
     """
     timestamp = datetime.now(timezone.utc).isoformat()
     with db.connect(DB_PATH) as conn:
+        _ensure_usage_schema(conn)
         conn.execute(
             "INSERT INTO usage_logs (company_id, action_type, timestamp) VALUES (?, ?, ?)",
             (company_id, AUTOFILL_ACTION, timestamp)

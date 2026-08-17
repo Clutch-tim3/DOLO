@@ -124,3 +124,29 @@ Closing date: 20 September 2026
 Applicable preference point system 80/20.
 Boilerplate: up to R50,000,000
 """
+
+
+# --- customer records ---------------------------------------------------------
+
+def set_company_tier(company_id: str, tier: str) -> None:
+    """
+    Put a company on a tier for the duration of a test.
+
+    Tiers used to be a dict in `agent/subscription.py`, so tests set them with
+    `monkeypatch.setitem(MOCK_CLIENT_REGISTRY, ...)` — ephemeral by
+    construction. They are rows in the `companies` table now, so a test that
+    creates one must remove it again or it leaks into every later run. Pair
+    this with `clear_company`.
+    """
+    from agent.memory import company_registry
+
+    if company_registry.get_company(company_id) is None:
+        company_registry.create_company(company_id, tier=tier, created_by="test-suite")
+    else:
+        company_registry.set_tier(company_id, tier)
+
+
+def clear_company(company_id: str) -> None:
+    """Remove a company created by a test. Safe if it was never created."""
+    from agent.memory import company_registry
+    company_registry.delete_company(company_id)
