@@ -410,6 +410,18 @@ async def api_model_status():
         "model_validation": model_validation.validation_status(),
     }
 
+@app.get("/invite")
+async def serve_invite_page():
+    """
+    The page an invitation link opens. Unauthenticated by necessity — the person
+    opening it does not have an account yet, which is the point. It carries no
+    secrets: the token is in the URL the recipient already holds, and the page
+    cannot learn anything without it.
+    """
+    return FileResponse("static/invite.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
 @app.get("/workspace")
 async def serve_workspace_page():
     return FileResponse("static/workspace.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

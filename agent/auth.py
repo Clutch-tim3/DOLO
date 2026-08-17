@@ -143,6 +143,7 @@ LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60
 _SESSION_PREFIX = "cases_"
 _DEVICE_PREFIX = "cadev_"
 _PAIRING_PREFIX = "capair_"
+_INVITE_PREFIX = "cainv_"
 
 
 class AuthError(Exception):
@@ -199,6 +200,24 @@ def init_auth_db() -> None:
                 created_at    TEXT NOT NULL,
                 expires_at    TEXT NOT NULL,
                 consumed_at   TEXT
+            )
+        """)
+        # B5: single-use invitations. An invite is the only way an account comes
+        # into existence other than an operator running manage_users.py, and it
+        # is what makes "sign up" possible without an email channel: the company
+        # is fixed by whoever issued the invite, so the recipient cannot claim
+        # one. That is the hole a bare signup route would open.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS auth_invites (
+                selector      TEXT PRIMARY KEY,
+                verifier_hash TEXT NOT NULL,
+                company_id    TEXT NOT NULL,
+                username      TEXT,
+                created_at    TEXT NOT NULL,
+                expires_at    TEXT NOT NULL,
+                created_by    TEXT,
+                consumed_at   TEXT,
+                consumed_user_id TEXT
             )
         """)
         conn.execute("""
@@ -866,3 +885,197 @@ def purge_expired() -> int:
             (_iso(_now() - timedelta(seconds=LOGIN_FAILURE_WINDOW_SECONDS)),),
         ).rowcount or 0
     return removed
+
+
+# --- invitations -------------------------------------------------------------
+#
+# B5. There is still no open signup route, and this does not add one. An invite
+# is minted by an operator against a company that already exists, and the
+# company_id travels in the STORED RECORD, never in the redemption request.
+#
+# That distinction is the whole design. A signup form that accepts a company_id
+# lets anyone claim any company - the exact hole `require_company_id` was
+# written to close on the read side. Here the recipient chooses only their
+# password; who they belong to was decided by whoever issued the link.
+#
+# The token is `<selector>.<verifier>` like sessions and device tokens: the
+# selector indexes the row, the verifier is stored as a digest and compared with
+# hmac.compare_digest, so a bare `WHERE token = ?` cannot leak through the index.
+
+#: An invite is a credential sitting in an inbox or a chat history. Long enough
+#: to be usable, short enough that a forwarded link goes stale.
+INVITE_TTL_SECONDS = 7 * 24 * 3600
+
+
+def create_invite(company_id: str, username: str = "", created_by: str = "",
+                  ttl_seconds: int = INVITE_TTL_SECONDS) -> str:
+    """
+    Mint a single-use invitation for a company. Returns the raw token, which
+    exists exactly once - here - and is never re-derivable from the row.
+
+    The company must already exist. Inviting someone into a company that was
+    never created would give them an account that silently resolves to the
+    starter tier, which looks like a broken product rather than a missing step.
+    """
+    company_id = (company_id or "").strip()
+    if not company_id:
+        raise AuthError("A company_id is required.")
+
+    from agent.memory import company_registry
+    if company_registry.get_company(company_id) is None:
+        raise AuthError(
+            "No company " + repr(company_id) + ". Create it first: "
+            "python scripts/manage_companies.py create --company " + company_id)
+
+    raw, selector, verifier_hash = _mint(_INVITE_PREFIX)
+    now = _now()
+    with db.connect(DB_PATH) as conn:
+        conn.execute(
+            """INSERT INTO auth_invites
+               (selector, verifier_hash, company_id, username, created_at,
+                expires_at, created_by, consumed_at, consumed_user_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)""",
+            (selector, verifier_hash, company_id,
+             (username or "").strip().lower() or None,
+             _iso(now), _iso(now + timedelta(seconds=ttl_seconds)),
+             created_by or ""),
+        )
+        conn.commit()
+    return raw
+
+
+def _load_invite(conn, raw_token: str):
+    """
+    The invite row a token refers to, or None.
+
+    None covers every failure identically - malformed, unknown, wrong verifier,
+    expired, already used. The caller turns all of them into one message, so a
+    guessed selector cannot be told apart from a burned one.
+    """
+    parts = _split(raw_token or "", _INVITE_PREFIX)
+    if not parts:
+        return None
+    selector, verifier = parts
+
+    row = conn.execute(
+        "SELECT * FROM auth_invites WHERE selector = ?", (selector,)).fetchone()
+    if row is None:
+        return None
+    if not hmac.compare_digest(_digest(verifier), row["verifier_hash"] or ""):
+        return None
+    if row["consumed_at"]:
+        return None
+    if _now() > _parse(row["expires_at"]):
+        return None
+    return row
+
+
+def peek_invite(raw_token: str):
+    """
+    What an invite is for, without spending it.
+
+    The redemption page needs to show which company is being joined before the
+    recipient commits to a password. Returns None for anything unusable.
+    """
+    with db.connect(DB_PATH) as conn:
+        row = _load_invite(conn, raw_token)
+        if row is None:
+            return None
+        return {
+            "company_id": row["company_id"],
+            "username": row["username"],
+            "expires_at": row["expires_at"],
+        }
+
+
+def redeem_invite(raw_token: str, username: str, password: str) -> User:
+    """
+    Turn a valid invitation into an account.
+
+    The company comes from the invite record. There is deliberately NO
+    company_id parameter: if the caller could supply one, this would be a signup
+    route that lets anyone claim any company.
+
+    The invite is burned in the same transaction that creates the user, so a
+    second redemption of the same link finds it consumed rather than creating a
+    second account.
+    """
+    username = (username or "").strip().lower()
+    if not username:
+        raise AuthError("A username is required.")
+    if len(password or "") < 12:
+        raise AuthError("Password must be at least 12 characters.")
+
+    with db.connect(DB_PATH) as conn:
+        row = _load_invite(conn, raw_token)
+        if row is None:
+            # One message for every cause. Telling an unknown token apart from
+            # an expired or already-used one is an oracle for free.
+            raise AuthError("That invitation is not valid. It may have expired or "
+                            "already been used. Ask for a new one.")
+
+        if row["username"] and row["username"] != username:
+            raise AuthError("That invitation was issued for a different email address.")
+
+        if conn.execute("SELECT 1 FROM auth_users WHERE username = ?",
+                        (username,)).fetchone():
+            raise AuthError("That username already exists.")
+
+        user_id = uuid.uuid4().hex
+        conn.execute(
+            """INSERT INTO auth_users
+               (user_id, username, company_id, password_hash, created_at, disabled)
+               VALUES (?, ?, ?, ?, ?, 0)""",
+            (user_id, username, row["company_id"], hash_password(password),
+             _iso(_now())),
+        )
+        # Burned with a null consumed_at in the WHERE, so two racing redemptions
+        # cannot both mark it.
+        conn.execute(
+            "UPDATE auth_invites SET consumed_at = ?, consumed_user_id = ?"
+            " WHERE selector = ? AND consumed_at IS NULL",
+            (_iso(_now()), user_id, row["selector"]),
+        )
+        conn.commit()
+
+    return User(user_id=user_id, username=username,
+                company_id=row["company_id"], disabled=False)
+
+
+def list_invites(company_id: str = "") -> list:
+    """Outstanding and spent invitations, for an operator to audit."""
+    with db.connect(DB_PATH) as conn:
+        if company_id:
+            rows = conn.execute(
+                "SELECT * FROM auth_invites WHERE company_id = ? ORDER BY created_at DESC",
+                (company_id,)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM auth_invites ORDER BY created_at DESC").fetchall()
+
+    now = _now()
+    out = []
+    for r in rows:
+        if r["consumed_at"]:
+            state = "used"
+        elif now > _parse(r["expires_at"]):
+            state = "expired"
+        else:
+            state = "open"
+        out.append({
+            "selector": r["selector"], "company_id": r["company_id"],
+            "username": r["username"], "state": state,
+            "created_at": r["created_at"], "expires_at": r["expires_at"],
+            "created_by": r["created_by"],
+        })
+    return out
+
+
+def revoke_invite(selector: str) -> bool:
+    """Burn an unused invitation. True if one was open."""
+    with db.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "UPDATE auth_invites SET consumed_at = ? WHERE selector = ?"
+            " AND consumed_at IS NULL", (_iso(_now()), selector))
+        conn.commit()
+        return bool(getattr(cur, "rowcount", 0))

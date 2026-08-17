@@ -188,3 +188,61 @@ async def revoke_device(device_id: str,
     if not removed:
         raise HTTPException(status_code=404, detail="No such device.")
     return {"status": "revoked", "device_id": device_id}
+
+
+# --- invitations -------------------------------------------------------------
+#
+# These are the only two unauthenticated routes here besides /login, and they
+# are safe to be unauthenticated for one reason: neither accepts a company_id.
+# The company is read from the stored invite. A signup endpoint that took a
+# company_id from the request body would let anyone claim any tenant, which is
+# the hole this whole module exists to close.
+
+
+@router.get("/invite/{token}")
+async def inspect_invite(token: str):
+    """
+    What an invitation is for, so the page can name the company before the
+    recipient commits to a password. Does not spend it.
+
+    404 for anything unusable - unknown, expired, already redeemed, malformed -
+    with one message. Distinguishing them tells a guesser which selectors exist.
+    """
+    detail = auth.peek_invite(token)
+    if detail is None:
+        raise HTTPException(
+            status_code=404,
+            detail="That invitation is not valid. It may have expired or already "
+                   "been used. Ask for a new one.")
+    return detail
+
+
+@router.post("/invite/{token}/redeem")
+async def redeem_invite(token: str, request: Request, payload: dict = Body(...)):
+    """
+    Create the account and sign the person in.
+
+    `company_id` is deliberately absent from the payload. It comes from the
+    invite record and nowhere else.
+    """
+    username = str((payload or {}).get("username") or "")
+    password = str((payload or {}).get("password") or "")
+
+    try:
+        user = auth.redeem_invite(token, username, password)
+    except auth.AuthError as exc:
+        # Logged without the password. The username is recorded because a burst
+        # of failures against one invite is worth seeing.
+        logger.warning("invite redemption refused for %r: %s", username[:64], exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    raw_token = auth.issue_session(user)
+    body = {
+        "status": "success",
+        "username": user.username,
+        "company_id": user.company_id,
+        "tier": get_company_tier(user.company_id),
+    }
+    response = JSONResponse(body)
+    auth.set_session_cookie(response, request, raw_token)
+    return response
