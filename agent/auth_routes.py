@@ -246,3 +246,57 @@ async def redeem_invite(token: str, request: Request, payload: dict = Body(...))
     response = JSONResponse(body)
     auth.set_session_cookie(response, request, raw_token)
     return response
+
+
+# --- password resets ---------------------------------------------------------
+#
+# Unauthenticated for the same reason as the invite routes, and safe for the
+# same reason: neither accepts a username. The account is read from the stored
+# reset record, so possession of the link is the whole authorisation and it
+# cannot be pointed at somebody else's account.
+
+
+@router.get("/reset/{token}")
+async def inspect_password_reset(token: str):
+    """
+    Which account a reset link is for, so the page can say whose password is
+    being changed. Does not spend it.
+
+    404 with one message for every unusable case.
+    """
+    detail = auth.peek_password_reset(token)
+    if detail is None:
+        raise HTTPException(
+            status_code=404,
+            detail="That reset link is not valid. It may have expired or already "
+                   "been used. Ask for a new one.")
+    return detail
+
+
+@router.post("/reset/{token}/redeem")
+async def redeem_password_reset(token: str, request: Request, payload: dict = Body(...)):
+    """
+    Set the new password and sign the person in.
+
+    `username` is deliberately absent from the payload — it comes from the reset
+    record. Every existing session and device token for that user is revoked by
+    `redeem_password_reset` before this issues a fresh one.
+    """
+    password = str((payload or {}).get("password") or "")
+
+    try:
+        user = auth.redeem_password_reset(token, password)
+    except auth.AuthError as exc:
+        logger.warning("password reset refused: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    raw_token = auth.issue_session(user)
+    body = {
+        "status": "success",
+        "username": user.username,
+        "company_id": user.company_id,
+        "tier": get_company_tier(user.company_id),
+    }
+    response = JSONResponse(body)
+    auth.set_session_cookie(response, request, raw_token)
+    return response

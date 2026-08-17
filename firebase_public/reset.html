@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set a new password · CairoAI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0b0d; --card: #141417; --border: #2a2a30;
+    --text: #f5f5f7; --muted: #8b8b95; --gold: #c5a880;
+    --bad: #e05c5c; --good: #4CAF50;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font-family: 'Outfit', system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 10px; padding: 32px;
+  }
+  h1 { font-size: 20px; font-weight: 700; margin: 0 0 6px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 24px; line-height: 1.5; }
+  .who {
+    font-family: 'JetBrains Mono', monospace; color: var(--gold);
+    font-size: 13px; padding: 10px 12px; background: rgba(197,168,128,0.06);
+    border-left: 2px solid rgba(197,168,128,0.35); border-radius: 0 4px 4px 0;
+    margin-bottom: 22px; word-break: break-all;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 0 0 6px; }
+  input {
+    width: 100%; padding: 11px 12px; margin-bottom: 16px; border-radius: 6px;
+    border: 1px solid var(--border); background: #0f0f12; color: var(--text);
+    font-family: inherit; font-size: 14px;
+  }
+  input:focus { outline: none; border-color: var(--gold); }
+  button {
+    width: 100%; padding: 12px; border-radius: 6px; border: none; cursor: pointer;
+    background: var(--gold); color: #1a1a1a; font-family: inherit;
+    font-weight: 600; font-size: 14px;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .hint { font-size: 12px; color: var(--muted); margin: -8px 0 16px; line-height: 1.5; }
+  .msg { font-size: 13px; margin-top: 16px; line-height: 1.5; }
+  .msg.bad { color: var(--bad); }
+  .msg.good { color: var(--good); }
+  .center { text-align: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="loading" class="center sub">Checking your link…</div>
+
+  <div id="form" style="display:none">
+    <h1>Set a new password</h1>
+    <p class="sub">Choose a new password for your CairoAI account.</p>
+    <div class="who" id="whoLine"></div>
+
+    <label for="password">New password</label>
+    <input type="password" id="password" autocomplete="new-password" placeholder="At least 12 characters">
+
+    <label for="confirm">Confirm new password</label>
+    <input type="password" id="confirm" autocomplete="new-password" placeholder="Type it again">
+    <p class="hint">
+      At least 12 characters. Signing in elsewhere will stop working — every
+      existing session and paired device is signed out when the password
+      changes.
+    </p>
+
+    <button id="submit">Set password and sign in</button>
+    <div id="formMsg" class="msg"></div>
+  </div>
+
+  <div id="dead" style="display:none">
+    <h1>This link cannot be used</h1>
+    <p class="sub" id="deadMsg"></p>
+    <p class="sub">Ask whoever sent it for a new one.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var token = new URLSearchParams(location.search).get('token') || '';
+  var loading = document.getElementById('loading');
+  var form = document.getElementById('form');
+  var dead = document.getElementById('dead');
+  var deadMsg = document.getElementById('deadMsg');
+  var formMsg = document.getElementById('formMsg');
+  var submit = document.getElementById('submit');
+
+  function showDead(message) {
+    loading.style.display = 'none';
+    form.style.display = 'none';
+    dead.style.display = 'block';
+    deadMsg.textContent = message;
+  }
+
+  if (!token) {
+    showDead('The link is missing its code. Copy it again in full — some chat ' +
+             'apps cut long links.');
+    return;
+  }
+
+  // Confirm the link and learn whose account it is before asking for a
+  // password. Peeking does not spend it.
+  fetch('/api/auth/reset/' + encodeURIComponent(token))
+    .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+    .then(function (res) {
+      if (!res.ok) { showDead(res.body.detail || 'That reset link is not valid.'); return; }
+      loading.style.display = 'none';
+      form.style.display = 'block';
+      document.getElementById('whoLine').textContent = 'Account: ' + res.body.username;
+    })
+    .catch(function () { showDead('Could not reach CairoAI. Check your connection and try again.'); });
+
+  submit.addEventListener('click', function () {
+    var password = document.getElementById('password').value;
+    var confirm = document.getElementById('confirm').value;
+
+    formMsg.className = 'msg';
+    if (password.length < 12) {
+      formMsg.classList.add('bad');
+      formMsg.textContent = 'Password must be at least 12 characters.';
+      return;
+    }
+    if (password !== confirm) {
+      formMsg.classList.add('bad');
+      formMsg.textContent = 'Those two passwords do not match.';
+      return;
+    }
+
+    submit.disabled = true;
+    formMsg.textContent = 'Setting your password…';
+
+    // No username is sent. The server takes it from the reset record, which is
+    // what stops this link being pointed at somebody else's account.
+    fetch('/api/auth/reset/' + encodeURIComponent(token) + '/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ password: password })
+    })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          submit.disabled = false;
+          formMsg.className = 'msg bad';
+          formMsg.textContent = res.body.detail || 'That did not work.';
+          return;
+        }
+        formMsg.className = 'msg good';
+        formMsg.textContent = 'Password set. Taking you to CairoAI…';
+        window.location.href = '/workspace';
+      })
+      .catch(function () {
+        submit.disabled = false;
+        formMsg.className = 'msg bad';
+        formMsg.textContent = 'Could not reach CairoAI. Try again.';
+      });
+  });
+})();
+</script>
+</body>
+</html>

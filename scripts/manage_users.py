@@ -17,10 +17,11 @@ The password is read from a prompt that does not echo, or from stdin with
 visible in the process list and in shell history, which is the same class of
 mistake as putting a credential in a URL.
 
-`--company` must be one of the ids agent/subscription.py knows about, because
-that is what resolves a tier. An unknown id is accepted with a warning rather
-than refused — a real customer registry will outgrow MOCK_CLIENT_REGISTRY, and
-falling back to the starter tier is the safe direction to be wrong in.
+`--company` must be a company that exists in the `companies` table, because
+that is what resolves a tier. Create one with `manage_companies.py create`.
+An unknown id is accepted with a warning rather than refused, because falling
+back to the starter tier is the safe direction to be wrong in — but the account
+will reach nothing until the company exists.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from agent import auth  # noqa: E402
-from agent.subscription import MOCK_CLIENT_REGISTRY  # noqa: E402
+from agent.memory import company_registry  # noqa: E402
 
 
 def _read_password(from_stdin: bool, confirm: bool = True) -> str:
@@ -50,9 +51,11 @@ def _read_password(from_stdin: bool, confirm: bool = True) -> str:
 
 
 def _warn_unknown_company(company_id: str) -> None:
-    if company_id not in MOCK_CLIENT_REGISTRY:
-        print(f"note: '{company_id}' is not in MOCK_CLIENT_REGISTRY "
-              f"(agent/subscription.py), so it resolves to the starter tier.")
+    if company_registry.get_company(company_id) is None:
+        print(f"note: there is no company '{company_id}', so this account resolves "
+              f"to the starter tier and will reach almost nothing.")
+        print(f"      create it first:  python scripts/manage_companies.py "
+              f"create --company {company_id}")
 
 
 def cmd_create(args) -> int:

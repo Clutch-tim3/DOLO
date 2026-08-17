@@ -89,6 +89,46 @@ def cmd_revoke(args) -> int:
     return 1
 
 
+def cmd_reset(args) -> int:
+    """
+    A reset link, rather than an operator-chosen password.
+
+    `manage_users.py set-password` requires the operator to invent the
+    credential and then transmit it: they know it, and it travels. A one-shot
+    link means neither.
+    """
+    try:
+        token = auth.create_password_reset(
+            args.username, created_by=args.by or "",
+            ttl_seconds=args.hours * 3600)
+    except auth.AuthError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"password reset for {args.username}, valid {args.hours} hour(s)")
+    print()
+    print(f"  {_base_url()}/reset?token={token}")
+    print()
+    print("Send that link to them. It works once, and signs out every existing")
+    print("session and paired device when used.")
+    print("It is not stored and cannot be shown again.")
+    return 0
+
+
+def cmd_list_resets(args) -> int:
+    resets = auth.list_password_resets(args.username or "")
+    if not resets:
+        print("no reset links")
+        return 0
+    print(f"{'SELECTOR':<20}{'ACCOUNT':<34}{'STATE':<10}EXPIRES")
+    for r in resets:
+        print(f"  {r['selector']:<18}{r['username']:<34}{r['state']:<10}"
+              f"{(r['expires_at'] or '')[:19]}")
+    open_count = sum(1 for r in resets if r["state"] == "open")
+    print(f"\n{len(resets)} link(s), {open_count} still open")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -108,6 +148,16 @@ def main() -> int:
     p = sub.add_parser("revoke")
     p.add_argument("--selector", required=True)
     p.set_defaults(func=cmd_revoke)
+
+    p = sub.add_parser("reset")
+    p.add_argument("--username", required=True)
+    p.add_argument("--hours", type=int, default=24)
+    p.add_argument("--by", help="who issued it")
+    p.set_defaults(func=cmd_reset)
+
+    p = sub.add_parser("resets")
+    p.add_argument("--username")
+    p.set_defaults(func=cmd_list_resets)
 
     args = ap.parse_args()
     return args.func(args)

@@ -144,6 +144,7 @@ _SESSION_PREFIX = "cases_"
 _DEVICE_PREFIX = "cadev_"
 _PAIRING_PREFIX = "capair_"
 _INVITE_PREFIX = "cainv_"
+_RESET_PREFIX = "carst_"
 
 
 class AuthError(Exception):
@@ -218,6 +219,21 @@ def init_auth_db() -> None:
                 created_by    TEXT,
                 consumed_at   TEXT,
                 consumed_user_id TEXT
+            )
+        """)
+        # Single-use password resets. Same shape as invites, and the same
+        # reason: no email channel means no self-service reset, so an operator
+        # mints a link instead of choosing a password and transmitting it.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS auth_password_resets (
+                selector      TEXT PRIMARY KEY,
+                verifier_hash TEXT NOT NULL,
+                user_id       TEXT NOT NULL,
+                username      TEXT NOT NULL,
+                created_at    TEXT NOT NULL,
+                expires_at    TEXT NOT NULL,
+                created_by    TEXT,
+                consumed_at   TEXT
             )
         """)
         conn.execute("""
@@ -1076,6 +1092,177 @@ def revoke_invite(selector: str) -> bool:
     with db.connect(DB_PATH) as conn:
         cur = conn.execute(
             "UPDATE auth_invites SET consumed_at = ? WHERE selector = ?"
+            " AND consumed_at IS NULL", (_iso(_now()), selector))
+        conn.commit()
+        return bool(getattr(cur, "rowcount", 0))
+
+
+# --- password resets ---------------------------------------------------------
+#
+# The same shape as an invitation, for the same reason: there is no email
+# channel, so there can be no self-service "forgot password" link. An operator
+# mints a single-use reset link and delivers it by whatever means they already
+# trust to reach that person.
+#
+# What this replaces is `manage_users.py set-password`, where the operator
+# CHOOSES the password and then has to transmit it. That is worse in two ways:
+# the operator knows the credential, and the credential travels. Here the
+# operator transmits a one-shot link and never learns what the person picks.
+#
+# Shorter TTL than an invitation. An invite is a future account; a reset is a
+# live one, so the window in which a forwarded or intercepted link is useful
+# should be small.
+
+RESET_TTL_SECONDS = 24 * 3600
+
+
+def create_password_reset(username: str, created_by: str = "",
+                          ttl_seconds: int = RESET_TTL_SECONDS) -> str:
+    """
+    Mint a single-use password reset for an existing account.
+
+    Returns the raw token, which exists exactly once. Refuses an unknown
+    username: minting a reset for an account that does not exist produces a
+    link that cannot work, and quietly succeeding would hide the typo until the
+    recipient complains.
+    """
+    username = (username or "").strip().lower()
+    if not username:
+        raise AuthError("A username is required.")
+
+    user = get_user(username)
+    if user is None:
+        raise AuthError(f"No account {username!r}.")
+
+    raw, selector, verifier_hash = _mint(_RESET_PREFIX)
+    now = _now()
+    with db.connect(DB_PATH) as conn:
+        conn.execute(
+            """INSERT INTO auth_password_resets
+               (selector, verifier_hash, user_id, username, created_at,
+                expires_at, created_by, consumed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, NULL)""",
+            (selector, verifier_hash, user.user_id, username,
+             _iso(now), _iso(now + timedelta(seconds=ttl_seconds)),
+             created_by or ""),
+        )
+        conn.commit()
+    return raw
+
+
+def _load_reset(conn, raw_token: str):
+    """The reset row a token refers to, or None. See _load_invite."""
+    parts = _split(raw_token or "", _RESET_PREFIX)
+    if not parts:
+        return None
+    selector, verifier = parts
+
+    row = conn.execute(
+        "SELECT * FROM auth_password_resets WHERE selector = ?", (selector,)).fetchone()
+    if row is None:
+        return None
+    if not hmac.compare_digest(_digest(verifier), row["verifier_hash"] or ""):
+        return None
+    if row["consumed_at"]:
+        return None
+    if _now() > _parse(row["expires_at"]):
+        return None
+    return row
+
+
+def peek_password_reset(raw_token: str):
+    """
+    Which account a reset link is for, without spending it, so the page can say
+    whose password is being changed. None for anything unusable.
+    """
+    with db.connect(DB_PATH) as conn:
+        row = _load_reset(conn, raw_token)
+        if row is None:
+            return None
+        return {"username": row["username"], "expires_at": row["expires_at"]}
+
+
+def redeem_password_reset(raw_token: str, password: str) -> User:
+    """
+    Set a new password from a reset link.
+
+    There is deliberately NO username parameter. The account comes from the
+    stored record, exactly as the company does for an invitation — a reset form
+    that accepted a username would let anyone change anyone's password.
+
+    Every existing session and device token for that user is revoked. A reset
+    usually means the credential is suspected lost; leaving live sessions
+    running would let whoever prompted the reset carry on regardless.
+    """
+    if len(password or "") < 12:
+        raise AuthError("Password must be at least 12 characters.")
+
+    with db.connect(DB_PATH) as conn:
+        row = _load_reset(conn, raw_token)
+        if row is None:
+            raise AuthError("That reset link is not valid. It may have expired or "
+                            "already been used. Ask for a new one.")
+
+        conn.execute(
+            "UPDATE auth_users SET password_hash = ? WHERE user_id = ?",
+            (hash_password(password), row["user_id"]),
+        )
+        conn.execute(
+            "UPDATE auth_password_resets SET consumed_at = ? WHERE selector = ?"
+            " AND consumed_at IS NULL",
+            (_iso(_now()), row["selector"]),
+        )
+        # Sessions and device tokens are revoked rather than deleted, so the
+        # record of them having existed survives.
+        conn.execute(
+            "UPDATE auth_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            (_iso(_now()), row["user_id"]),
+        )
+        conn.execute(
+            "UPDATE auth_device_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL",
+            (_iso(_now()), row["user_id"]),
+        )
+        conn.commit()
+
+    user = get_user(row["username"])
+    if user is None:
+        raise AuthError("That account no longer exists.")
+    return user
+
+
+def list_password_resets(username: str = "") -> list:
+    """Outstanding and spent reset links, for an operator to audit."""
+    with db.connect(DB_PATH) as conn:
+        if username:
+            rows = conn.execute(
+                "SELECT * FROM auth_password_resets WHERE username = ?"
+                " ORDER BY created_at DESC", ((username or "").strip().lower(),)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM auth_password_resets ORDER BY created_at DESC").fetchall()
+
+    now = _now()
+    out = []
+    for r in rows:
+        if r["consumed_at"]:
+            state = "used"
+        elif now > _parse(r["expires_at"]):
+            state = "expired"
+        else:
+            state = "open"
+        out.append({
+            "selector": r["selector"], "username": r["username"], "state": state,
+            "created_at": r["created_at"], "expires_at": r["expires_at"],
+            "created_by": r["created_by"],
+        })
+    return out
+
+
+def revoke_password_reset(selector: str) -> bool:
+    """Burn an unused reset link. True if one was open."""
+    with db.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "UPDATE auth_password_resets SET consumed_at = ? WHERE selector = ?"
             " AND consumed_at IS NULL", (_iso(_now()), selector))
         conn.commit()
         return bool(getattr(cur, "rowcount", 0))

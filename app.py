@@ -422,6 +422,14 @@ async def serve_invite_page():
                         headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
+@app.get("/reset")
+async def serve_reset_page():
+    """The page a password-reset link opens. Unauthenticated by necessity —
+    the whole point is that the person cannot sign in."""
+    return FileResponse("static/reset.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
 @app.get("/workspace")
 async def serve_workspace_page():
     return FileResponse("static/workspace.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
