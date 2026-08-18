@@ -106,3 +106,10 @@ scipy>=1.11
 # Arrives today as a firebase-functions dependency, which is the fourth time
 # that reasoning has been wrong in this file. Named explicitly.
 google-cloud-storage>=2.14
+
+# Quotation PDF rendering (agent/quotation/quote_document.py). Installed on the
+# development machine and never declared — the FIFTH time that has been true in
+# this file, after rapidfuzz, PyMuPDF, scipy and google-cloud-storage. The
+# generator guards its import with REPORTLAB_AVAILABLE, so an absent reportlab
+# did not crash anything; it just meant no supplier could ever produce a quote.
+reportlab>=4.0

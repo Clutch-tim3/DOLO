@@ -520,6 +520,9 @@ async def api_generate_quotation(request: Request,
         evaluation_system = "80/20"
         line_items = []
         lowest_price = None
+        # Defined on every path: the multipart branch never sets it, and the
+        # renderer below reads client details and the RFQ reference from it.
+        body = {}
 
         if "multipart/form-data" in content_type:
             form = await request.form()
@@ -586,13 +589,26 @@ async def api_generate_quotation(request: Request,
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / filename
 
-        generate_quotation_pdf(
-            supplier_info=supplier_info,
-            tender_title=tender_title,
+        # The company_profile row is the authority on who this supplier is —
+        # it is what carries the VAT number, the branding and the signatory.
+        # The archive lookup above stays as a fallback for a company that has
+        # documents archived but no profile filled in yet.
+        from agent.memory.company_store import get_company_profile
+        from agent.quotation.quote_document import render_quotation
+
+        profile = get_company_profile(principal.company_id) or {}
+        company = {**supplier_info, **{k: v for k, v in profile.items() if v}}
+
+        client = body.get("client") or {}
+
+        render_quotation(
+            out_path,
+            company=company,
+            client=client,
+            reference=body.get("reference", ""),
+            subject=tender_title,
             line_items=line_items,
-            output_path=out_path,
-            lowest_competing_price=lowest_price,
-            evaluation_system=evaluation_system
+            date_text=datetime.now().strftime("%d %B %Y"),
         )
 
         return {
