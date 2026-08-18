@@ -40,7 +40,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from predict.predict import load_all_artifacts, get_feature_list, extract_features_from_tender_id, build_new_features, encode_and_impute, predict
-from models.sa_scoring import calculate_total_sa_score, adjust_probability_for_sa, get_bbbee_recommendation
+from models.sa_scoring import (calculate_total_sa_score, adjust_probability_for_sa,
+                               get_bbbee_recommendation, get_evaluation_system)
 from models.pdf_parser import parse_company_pdf, extract_text_from_pdf, classify_document_type
 from predict.eligibility_gate import check_hard_eligibility
 from models.pdf_parser import parse_tender_document
@@ -544,27 +545,50 @@ async def api_generate_quotation(request: Request,
                     if not tender_title:
                         tender_title = parsed_tender.get("tender_title") or f"Tender Quotation ({tender_file.filename.replace('.pdf', '')})"
 
-                    tender_val = parsed_tender.get("tender_value") or 798116.25
-                    evaluation_system = "90/10" if float(tender_val) >= 50000000 else "80/20"
-                    
-                    subtotal_est = float(tender_val) / 1.15
-                    line_items = [
-                        {"description": f"Primary Supply & Delivery per {tender_title[:50]} Specs", "qty": 1, "unit_price": round(subtotal_est * 0.75, 2)},
-                        {"description": "Technical Support, Deployment & Quality Assurance", "qty": 1, "unit_price": round(subtotal_est * 0.25, 2)}
-                    ]
+                    # No price is synthesised here. This block used to read
+                    #
+                    #     tender_val = parsed_tender.get("tender_value") or 798116.25
+                    #     subtotal_est = float(tender_val) / 1.15
+                    #     ... unit_price: subtotal_est * 0.75  /  * 0.25
+                    #
+                    # so a tender with no extractable price produced a quotation
+                    # for R798 116,25, split 75/25 into two line items to look
+                    # considered, typeset, and ready to send to an organ of
+                    # state. That is the exact failure price_search.py was
+                    # rewritten to remove; see its docstring.
+                    #
+                    # The invented figure also chose the statute on the next
+                    # line — 90/10 above R50m — so a number from nowhere decided
+                    # which law the bid was evaluated under.
+                    tender_val = parsed_tender.get("tender_value")
+                    evaluation_system = get_evaluation_system(tender_val) or evaluation_system
+
+                    # One line, no price. quote_document renders unit_price None
+                    # as TBC, leaves it out of the subtotal, and prints "This
+                    # quotation is incomplete." A person fills it in.
+                    line_items = [{
+                        "description": f"Supply and delivery per {tender_title[:60]} specification"
+                                       if tender_title else "Supply and delivery per tender specification",
+                        "qty": 1,
+                        "unit_price": None,
+                    }]
                 finally:
                     if temp_path.exists():
                         temp_path.unlink()
 
             if not line_items:
-                line_items = [{"description": "Professional Goods & Service Delivery", "qty": 1, "unit_price": 798116.25}]
+                # Same rule with no document at all: a placeholder line for a
+                # person to price, not a placeholder price.
+                line_items = [{"description": "Professional goods and service delivery",
+                               "qty": 1, "unit_price": None}]
             if not tender_title:
                 tender_title = "Procurement Tender Quotation"
         else:
             body = await request.json()
             supplier_name = body.get("supplier_name", "CAIROAI")
             tender_title = body.get("tender_title", "Tender Quotation")
-            line_items = body.get("line_items", [{"description": "Services", "qty": 1, "unit_price": 798116.25}])
+            line_items = body.get("line_items", [{"description": "Services",
+                                                  "qty": 1, "unit_price": None}])
             evaluation_system = body.get("evaluation_system", "80/20")
             lowest_price = body.get("lowest_price")
 

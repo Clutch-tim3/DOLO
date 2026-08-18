@@ -33,16 +33,29 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 
-def call_llm_for_proposal_summary(supplier_name: str, tender_title: str, total_price_zar: float) -> str:
+def call_llm_for_proposal_summary(supplier_name: str, tender_title: str,
+                                  total_price_zar: float = None) -> str:
     """
     Calls LLM API (x.ai / Grok -> Gemini -> Groq -> Local Fallback) to generate
     a 2-paragraph executive proposal introduction for the quotation.
+
+    `total_price_zar` is None when any line is unpriced. The summary must then
+    state no total at all: with a zero it would assert "a total evaluated bid
+    price of R 0.00", which on a bid document reads as an offer to supply for
+    nothing rather than as a blank.
     """
+    price_line = (
+        f"Total Bid Value: R {total_price_zar:,.2f} (Incl. VAT)\n"
+        if total_price_zar is not None else
+        "Total Bid Value: NOT YET PRICED. Do not state, imply or estimate any "
+        "total, amount, price or figure anywhere in the summary. Do not describe "
+        "the pricing as competitive or value-engineered — there is no price yet.\n"
+    )
     prompt = (
         f"Write a professional, 2-paragraph executive quotation proposal cover summary for South African government procurement.\n"
         f"Supplier Name: {supplier_name}\n"
         f"Tender Title/Subject: {tender_title}\n"
-        f"Total Bid Value: R {total_price_zar:,.2f} (Incl. VAT)\n"
+        f"{price_line}"
         f"Keep the tone formal, highly competent, emphasizing quality, compliance with PPPFA regulations, and timely delivery."
     )
 
@@ -79,11 +92,21 @@ def call_llm_for_proposal_summary(supplier_name: str, tender_title: str, total_p
         except Exception as e:
             print(f"Quotation LLM (Gemini) fallback: {e}")
 
-    # 3. Default fallback
-    return (
+    # 3. Default fallback. This is the path that actually runs without an LLM
+    #    key, so it is the one that reaches most documents — and it stated the
+    #    total in prose, which is how "R 0.00" appeared in a rendered PDF.
+    opening = (
         f"{supplier_name} is pleased to submit this formal quotation for '{tender_title}'. "
         f"Our team possesses full technical capacity, active compliance registrations (CSD, B-BBEE, Tax Pin), and a proven track record "
         f"in delivering high-grade public sector services within stipulated deadlines.\n\n"
+    )
+    if total_price_zar is None:
+        return opening + (
+            "Pricing for this quotation has not yet been completed. The lines marked "
+            "TBC in the schedule below must be priced before this document is "
+            "submitted, and the totals shown exclude them."
+        )
+    return opening + (
         f"The total evaluated bid price of R {total_price_zar:,.2f} (Inclusive of 15% VAT) reflects competitive, value-engineered pricing "
         f"strictly structured under standard PPPFA preferential procurement framework guidelines."
     )
@@ -111,23 +134,46 @@ def generate_quotation_pdf(
     bbbee_lvl     = supplier_info.get("bbbee_level", 1)
     cidb_grade    = supplier_info.get("cidb_grade", "N/A")
 
-    # Pricing calculations
-    subtotal = sum(float(item.get("qty", 1)) * float(item.get("unit_price", 0)) for item in line_items)
+    # Pricing calculations.
+    #
+    # A line with no unit price is EXCLUDED rather than counted as zero, which
+    # is what quote_document does when it renders it as TBC. `float(None)`
+    # would also raise here, and counting it as 0 would be worse than raising:
+    # it produces a subtotal that looks complete and is not.
+    priced_items = [i for i in line_items if i.get("unit_price") not in (None, "")]
+    any_unpriced = len(priced_items) != len(line_items)
+
+    subtotal = sum(float(i.get("qty", 1)) * float(i["unit_price"]) for i in priced_items)
     vat_amount = subtotal * 0.15
     total_zar = subtotal + vat_amount
 
-    # SA Scoring
-    lowest_price = lowest_competing_price if lowest_competing_price and lowest_competing_price > 0 else (subtotal * 0.90)
+    # SA Scoring.
+    #
+    # `subtotal * 0.90` used to stand in for a missing competitor price, which
+    # made every supplier exactly 11% above a rival who did not exist. Bids are
+    # sealed; the price of one is not knowable from your own. Passing None means
+    # calculate_total_sa_score withholds the price score and says why, rather
+    # than scoring against an invention. See models/sa_scoring.py.
+    #
+    # A quotation with unpriced lines has no meaningful supplier price either,
+    # so the score is withheld for that too.
     sa_res = calculate_total_sa_score(
-        supplier_price=subtotal,
-        lowest_competing_price=lowest_price,
+        supplier_price=None if any_unpriced else subtotal,
+        lowest_competing_price=lowest_competing_price
+                               if (lowest_competing_price and lowest_competing_price > 0)
+                               else None,
         bbbee_level=bbbee_lvl,
-        tender_value_zar=total_zar,
+        tender_value_zar=total_zar if not any_unpriced else None,
         evaluation_system_override=evaluation_system
     )
 
     # Executive Summary text
-    exec_summary = call_llm_for_proposal_summary(supplier_name, tender_title, total_zar)
+    # The summary is written by a model and states the total in prose. With an
+    # unpriced line it would assert "a total evaluated bid price of R 0.00" —
+    # the same false commitment as the totals row, in a sentence. Pass None and
+    # the summary omits the figure entirely.
+    exec_summary = call_llm_for_proposal_summary(
+        supplier_name, tender_title, None if any_unpriced else total_zar)
 
     # Build PDF with ReportLab
     doc = SimpleDocTemplate(
@@ -225,20 +271,40 @@ def generate_quotation_pdf(
     table_data = [["Item #", "Description", "Qty", "Unit Price (ZAR)", "Total Price (ZAR)"]]
     for idx, item in enumerate(line_items, 1):
         qty = float(item.get("qty", 1))
-        unit_p = float(item.get("unit_price", 0))
-        tot_p = qty * unit_p
+        unit = item.get("unit_price")
+        # TBC, not R 0.00. A zero here is a price — it says this line is free,
+        # which on a bid document is a commitment rather than a gap. The same
+        # rule quote_document.py already follows.
+        if unit in (None, ""):
+            unit_cell, total_cell = "TBC", "TBC"
+        else:
+            unit_p = float(unit)
+            unit_cell, total_cell = f"R {unit_p:,.2f}", f"R {qty * unit_p:,.2f}"
         table_data.append([
             str(idx),
             str(item.get("description", "Service Item")),
             f"{qty:g}",
-            f"R {unit_p:,.2f}",
-            f"R {tot_p:,.2f}"
+            unit_cell,
+            total_cell,
         ])
 
-    # Add Subtotal, VAT, Total
-    table_data.append(["", "", "", "Subtotal (Excl. VAT):", f"R {subtotal:,.2f}"])
-    table_data.append(["", "", "", "15% VAT:", f"R {vat_amount:,.2f}"])
-    table_data.append(["", "", "", "TOTAL EVALUATED BID:", f"R {total_zar:,.2f}"])
+    # Add Subtotal, VAT, Total.
+    #
+    # When a line has no price these read TBC, not R 0.00. On a bid document a
+    # total of R 0.00 is not a blank — it is an offer to supply for nothing,
+    # and it would be read as one. This is the trap that makes withholding a
+    # price harder than it looks: removing the invented figure without fixing
+    # the totals produces a WORSE artefact than the invention did.
+    if any_unpriced:
+        sub_cell = vat_cell = total_cell_sum = "TBC"
+    else:
+        sub_cell = f"R {subtotal:,.2f}"
+        vat_cell = f"R {vat_amount:,.2f}"
+        total_cell_sum = f"R {total_zar:,.2f}"
+
+    table_data.append(["", "", "", "Subtotal (Excl. VAT):", sub_cell])
+    table_data.append(["", "", "", "15% VAT:", vat_cell])
+    table_data.append(["", "", "", "TOTAL EVALUATED BID:", total_cell_sum])
 
     item_table = Table(table_data, colWidths=[40, 240, 40, 100, 100])
     item_table.setStyle(TableStyle([
@@ -258,14 +324,23 @@ def generate_quotation_pdf(
     # PPPFA Preferential Score Summary
     elements.append(Paragraph("PREFERENTIAL PROCUREMENT SCORECARD (PPPFA)", ParagraphStyle('SubHead', fontName='Helvetica-Bold', fontSize=11, textColor=colors.HexColor('#111111'), spaceAfter=6)))
 
+    # Any of these can be withheld: the price score without a real competing
+    # price, the B-BBEE points and the framework without a tender value. They
+    # are printed as "—" rather than a number, because this table appears on a
+    # document going to an organ of state and a 0.0 there reads as a measured
+    # zero rather than an unknown.
+    def _score(value, out_of):
+        return "—" if value is None else f"{value:.1f} / {out_of}"
+
+    eval_sys = sa_res["evaluation_system"]
     score_data = [
         ["Framework", "Price Points", "B-BBEE Points", "Total Preference Score", "Competitive Rating"],
         [
-            sa_res["evaluation_system"],
-            f"{sa_res['price_score']:.1f} / {'80' if sa_res['evaluation_system'] == '80/20' else '90'}",
-            f"{sa_res['bbbee_points']:.1f} / {'20' if sa_res['evaluation_system'] == '80/20' else '10'}",
-            f"{sa_res['total_score']:.1f} / 100",
-            sa_res["competitive_position"]
+            eval_sys or "—",
+            _score(sa_res["price_score"], "80" if eval_sys == "80/20" else "90"),
+            _score(sa_res["bbbee_points"], "20" if eval_sys == "80/20" else "10"),
+            _score(sa_res["total_score"], "100"),
+            sa_res["competitive_position"] or "—",
         ]
     ]
     score_table = Table(score_data, colWidths=[100, 100, 100, 110, 110])
@@ -281,6 +356,16 @@ def generate_quotation_pdf(
 
     # Footer notice
     elements.append(Spacer(1, 20))
+    if any_unpriced:
+        # The same notice quote_document.py prints. A reader must not have to
+        # notice the TBCs themselves to know the document is not a final offer.
+        elements.append(Paragraph(
+            "<b>This quotation is incomplete.</b> Lines marked TBC have no price, "
+            "are excluded from the total, and must be priced by a person before "
+            "this is submitted.",
+            ParagraphStyle('Incomplete', fontName='Helvetica-Bold', fontSize=8,
+                           textColor=colors.HexColor('#8A1C1C'), spaceAfter=8)))
+
     elements.append(Paragraph("<i>This quotation is generated electronically under official compliance protocols. Valid for 90 days from date of issuance.</i>", ParagraphStyle('Foot', fontName='Helvetica-Oblique', fontSize=7, textColor=colors.HexColor('#888888'), alignment=1)))
 
     doc.build(elements)
