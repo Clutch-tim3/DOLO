@@ -50,18 +50,39 @@ memory_tools = [
                 },
                 "fields": {
                     "type": "object",
+                    # The model only knows what this string tells it. Six fields
+                    # the store accepts were missing from it — standard_cell,
+                    # standard_fax, tax_compliance_pin,
+                    # authorized_signatory_capacity, brand_colour and tagline —
+                    # so asking the agent to set a cell number or a tax
+                    # compliance PIN got a refusal for a field that works. The
+                    # first three are why a filled MBD 1 still showed blanks.
+                    #
+                    # tests/test_profile_schema_matches_store.py fails if this
+                    # list and PROFILE_WRITABLE_FIELDS drift apart again.
                     "description": (
                         "Key-value pairs of fields to update. Valid keys: company_name, "
                         "registration_number, csd_number, bbbee_level, province, "
                         "registered_municipality, industry, logo_file_path, directors, "
                         "postal_address, physical_address, tax_reference_number, "
                         "vat_registration_number, standard_contact_person, standard_phone, "
-                        "standard_email, authorized_signatory_name.\n"
+                        "standard_cell, standard_fax, standard_email, "
+                        "authorized_signatory_name, authorized_signatory_capacity, "
+                        "tax_compliance_pin, brand_colour, tagline.\n"
                         "directors is an array of {name, id_number, is_state_employee}; "
                         "is_state_employee is a sworn SBD 4 declaration and must be answered "
                         "by the user, never assumed.\n"
                         "authorized_signatory_name is a NAME ONLY. It is never a signature, "
-                        "an image, or a file path, and CairoAI never signs anything."
+                        "an image, or a file path, and CairoAI never signs anything.\n"
+                        "authorized_signatory_capacity is the role printed under the "
+                        "signature line, e.g. 'Director' or 'Managing Member'.\n"
+                        "standard_cell and standard_fax are asked for on their own rows on "
+                        "MBD 1; a missing cell number leaves a blank on a submitted form.\n"
+                        "tax_compliance_pin is the SARS Tax Compliance Status PIN, asked for "
+                        "by name on MBD 1. It is a reference the buyer uses to verify status "
+                        "— never invent or guess one.\n"
+                        "brand_colour is a hex colour such as '#1A4D8F' and drives the "
+                        "quotation palette; tagline is the line printed under the wordmark."
                     )
                 },
                 "confirmed": {
