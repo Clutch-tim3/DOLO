@@ -823,6 +823,84 @@ async def api_company_profile(company_id: str = Depends(require_company_id)):
         },
     }
 
+@app.post("/api/company-profile")
+async def api_update_company_profile(request: Request,
+                                     company_id: str = Depends(require_company_id)):
+    """
+    Set up or change this company's profile from the app.
+
+    P0-2. There was no write route at all: every field the product depends on —
+    name, registration number, VAT number, addresses, contact details,
+    signatory — could only be set by running Python against the database. That
+    blocked both journeys, because autofill fills bid forms FROM the profile and
+    the quotation renderer takes its letterhead and signatory from it.
+
+    THE CONFIRMATION GATE IS PRESERVED, NOT BYPASSED
+
+    This is a two-step route, mirroring `update_company_profile` exactly:
+
+        POST {"fields": {...}}                    -> 200, the diff, nothing written
+        POST {"fields": {...}, "confirmed": true} -> 200, written
+
+    `confirmed` is read from the request and passed through. It is never
+    defaulted to true here. company_store's docstring is explicit that
+    confirmed=True asserts a human was shown these specific values and approved
+    them, and that it must not be hard-coded by a caller that has shown the
+    user nothing — so the first call returns `changes` for the page to display,
+    and only the second writes.
+
+    That is the same shape the agent already follows, so both paths obey one
+    gate rather than two implementations of it.
+    """
+    body = await request.json()
+    fields = (body or {}).get("fields")
+    confirmed = bool((body or {}).get("confirmed"))
+
+    if not isinstance(fields, dict) or not fields:
+        raise HTTPException(status_code=400,
+                            detail="Send a 'fields' object with the values to set.")
+
+    try:
+        if not confirmed:
+            # Nothing is written. The page shows this and asks.
+            preview = company_store.preview_company_profile_update(company_id, fields)
+            return {"status": "preview", "written": False, **preview}
+
+        result = company_store.update_company_profile(company_id, fields, confirmed=True)
+    except ValueError as exc:
+        # assert_no_signature_asset raises this: a signature is never a profile
+        # field, and CairoAI never signs anything.
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not result.get("written"):
+        raise HTTPException(status_code=400,
+                            detail=result.get("message") or "The profile was not written.")
+
+    logger.info("Company profile updated", extra={
+        "company_id": company_id, "endpoint": "/api/company-profile",
+        "extra_data": {"fields": sorted(fields)},
+    })
+    return result
+
+
+@app.get("/api/company-profile/fields")
+async def api_company_profile_fields(company_id: str = Depends(require_company_id)):
+    """
+    Which fields the profile form may set, and what is in them now.
+
+    Read from PROFILE_WRITABLE_FIELDS rather than duplicated in the page, so a
+    field added to the store appears in the form without anyone remembering to
+    add it — the drift that left six fields unreachable from the agent.
+    """
+    current = company_store.get_company_profile(company_id) or {}
+    return {
+        "company_id": company_id,
+        "profile_exists": bool(current),
+        "writable_fields": list(company_store.PROFILE_WRITABLE_FIELDS),
+        "values": {f: current.get(f) for f in company_store.PROFILE_WRITABLE_FIELDS},
+    }
+
+
 @app.post("/api/companies/upload")
 async def api_upload_company_file(
     file: List[UploadFile] = File(...),
