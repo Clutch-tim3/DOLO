@@ -360,7 +360,19 @@ def render_quotation(
     path.close()
     c.drawPath(path, stroke=0, fill=1)
 
-    directors = (company.get("directors") or "").strip()
+    # `directors` is a JSON field: company_store decodes it into a list of
+    # {name, id_number, is_state_employee} dicts. This read it as a string and
+    # raised AttributeError the moment a company actually had directors — which
+    # is to say, the moment a real profile was filled in rather than a test one.
+    # Only the names belong on a letterhead; ID numbers never leave the profile.
+    raw_directors = company.get("directors") or []
+    if isinstance(raw_directors, str):
+        directors = raw_directors.strip()
+    else:
+        directors = ", ".join(
+            str(d.get("name", "")).strip() for d in raw_directors
+            if isinstance(d, dict) and str(d.get("name", "")).strip()
+        )
     bits = []
     if directors:
         bits.append(f"DIRECTORS: {directors.upper()}")
