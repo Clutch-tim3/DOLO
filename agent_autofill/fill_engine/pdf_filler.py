@@ -62,9 +62,34 @@ FILL_HIGHLIGHT = (0.953, 0.914, 0.839)
 #: "look for [ ! ]" is one instruction across both formats.
 SKIP_MARKER = "[ ! ]"
 
-#: Point size for written values. Small enough to sit inside a typical ruled
-#: line without colliding with the line above.
-FONT_SIZE = 8.5
+#: Point size for written values in the handwriting face.
+#:
+#: This was 8.5, chosen when values were drawn in Helvetica. They are drawn in
+#: Patrick Hand now, which is substantially smaller at the same point size, and
+#: nobody re-measured — so switching the font silently shrank every value by a
+#: fifth, and on a printed or re-scanned form the result was close to
+#: illegible.
+#:
+#: Measured on this machine with the real face:
+#:
+#:     "CairoAI" at 8.5pt   Patrick Hand 22.74pt   Helvetica 28.34pt
+#:     ratio 0.802  ->  Patrick Hand needs 10.6pt to match Helvetica 8.5
+#:
+#: The cost is real and was checked rather than assumed. On the owner's actual
+#: 651-blank pack, refusals rise from 19.1% at 8.5pt to 25.5% at 10.6pt — and
+#: the curve is smooth, about 1.5 points of refusal per half point of type,
+#: with no cliff. Those refusals are the fit check working: the alternative is
+#: text overflowing its cell on a document submitted to an organ of state, and
+#: a field left for a person is visibly unfinished in a way illegible ink is
+#: not.
+FONT_SIZE = 10.6
+
+#: The built-in fallback, used only when the handwriting face will not load.
+#: It must NOT follow FONT_SIZE: Helvetica is wider, and 10.6 there would be a
+#: quarter larger than anything ever looked. This is the original size, which
+#: is the appearance the new value was chosen to reproduce.
+FALLBACK_FONT_SIZE = 8.5
+
 SKIP_FONT_SIZE = 7.5
 
 #: A blank narrower than this cannot hold anything meaningful.
@@ -286,7 +311,7 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
                     category="does_not_fit", location=location))
                 continue
 
-            _write_value(page, bbox, value)
+            _write_value(page, bbox, value, seed=f"{label}|{location}")
             filled.append(FilledField(
                 label=label, value=value, source="company_profile",
                 low_confidence=bool(getattr(verdict, "low_confidence", False)),
@@ -338,8 +363,71 @@ def _scanned_blanks(source: Path) -> list:
         return []
 
 
-def _write_value(page, bbox, value: str) -> None:
-    """Highlight the blank, then write the value inside it."""
+
+# --- handwriting variation ----------------------------------------------------
+#
+# P0-3. Every value sat on a perfect baseline, at a uniform size, in a uniform
+# ink. A handwriting face on a perfect grid reads as a font, not as writing.
+#
+# DETERMINISTIC, NOT RANDOM. The jitter is seeded from the field key, so the
+# same document always renders identically. A draft that changes every time it
+# is regenerated cannot be checked, diffed or trusted — and the export MAC
+# binds content that must not drift, so randomness here would invalidate a
+# reviewed export on re-render.
+#
+# Deliberately subtle. Exaggerated rotation reads as a filter, and this
+# document goes to a procurement officer.
+
+#: Maximum vertical wander, in points. A pen does not find the same baseline.
+JITTER_Y = 0.55
+#: Maximum extra horizontal inset. Nobody starts every entry at the same x.
+JITTER_X = 1.30
+#: Maximum rotation in degrees, either direction.
+JITTER_ROTATE = 0.55
+#: Fractional size variation between fields, as a hand produces.
+JITTER_SIZE = 0.035
+
+
+def _jitter(seed_text: str) -> tuple[float, float, float, float, tuple]:
+    """
+    (dx, dy, degrees, size_scale, colour) for one field, stable for its key.
+
+    Derived from a digest rather than `random`, so it depends on nothing but
+    the seed — no module state, no ordering, no time.
+    """
+    import hashlib
+
+    digest = hashlib.sha256((seed_text or "").encode("utf-8")).digest()
+
+    def unit(index: int) -> float:
+        """A value in [-1, 1] from two digest bytes."""
+        raw = (digest[index] << 8) | digest[index + 1]
+        return (raw / 65535.0) * 2.0 - 1.0
+
+    dx = abs(unit(0)) * JITTER_X          # only ever inset further, never left
+    dy = unit(2) * JITTER_Y
+    degrees = unit(4) * JITTER_ROTATE
+    size_scale = 1.0 + unit(6) * JITTER_SIZE
+
+    # Ink varies slightly around the blue-black a pen leaves. Small enough that
+    # no field looks like a different colour, large enough that no two are the
+    # identical RGB.
+    r = 0.05 + unit(8) * 0.02
+    g = 0.08 + unit(10) * 0.02
+    b = 0.25 + unit(12) * 0.03
+    colour = (max(0.0, min(1.0, r)), max(0.0, min(1.0, g)), max(0.0, min(1.0, b)))
+
+    return dx, dy, degrees, size_scale, colour
+
+
+def _write_value(page, bbox, value: str, seed: str = "") -> None:
+    """
+    Highlight the blank, then write the value inside it.
+
+    `seed` makes the handwriting variation deterministic per field. It is
+    the label and location, so the same document renders identically every
+    time — the export MAC binds content that must not drift.
+    """
     import fitz
 
     x0, y0, x1, y1 = [float(v) for v in bbox]
@@ -361,23 +449,29 @@ def _write_value(page, bbox, value: str) -> None:
     page.draw_rect(fitz.Rect(x0, y0, x1, y1), color=None,
                    fill=FILL_HIGHLIGHT, overlay=True, fill_opacity=0.45)
 
+    # Per-field variation, seeded from the field's own key so the same document
+    # always renders identically. A perfect baseline at a uniform size in a
+    # uniform ink reads as a font however handwritten the face is.
+    dx, dy, degrees, size_scale, colour = _jitter(seed or f"{x0:.1f},{y0:.1f}")
+
     # Baseline nudged up from the bottom edge so the text sits on the rule
-    # rather than under it.
-    point = fitz.Point(x0 + 2, y1 - 2.5)
-    # Dark blue-black rather than pure black, the way a pen leaves ink. Still
-    # unmistakably legible on a photocopy.
-    colour = (0.05, 0.08, 0.25)
+    # rather than under it, then wandered slightly.
+    point = fitz.Point(x0 + 2 + dx, y1 - 2.5 + dy)
 
     if _handwriting() is not None:
         try:
-            page.insert_text(point, value, fontsize=FONT_SIZE,
+            # `rotate` takes whole degrees, so a fractional angle is applied
+            # through the text matrix instead — that is what breaks the typeset
+            # feel, and rounding it to 0 would lose the effect entirely.
+            page.insert_text(point, value, fontsize=FONT_SIZE * size_scale,
                              fontname=HANDWRITING_ALIAS,
-                             fontfile=str(HANDWRITING_FILE), color=colour)
+                             fontfile=str(HANDWRITING_FILE), color=colour,
+                             morph=(point, fitz.Matrix(degrees)))
             return
         except Exception:  # noqa: BLE001 - fall through to the built-in face
             log.exception("could not draw %r in the handwriting font", value[:40])
 
-    page.insert_text(point, value, fontsize=FONT_SIZE, fontname="helv",
+    page.insert_text(point, value, fontsize=FALLBACK_FONT_SIZE, fontname="helv",
                      color=(0, 0, 0))
 
 

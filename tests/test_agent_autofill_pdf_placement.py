@@ -213,9 +213,21 @@ TIGHT_BBOX = (60.0, 300.0, 96.0, 316.0)
 
 
 def test_the_fit_check_uses_the_measured_width():
+    """
+    A cell exactly as wide as the text plus its padding fits; one point
+    narrower does not.
+
+    EPSILON, NOT PEDANTRY. `_fits` computes `width - FIT_PADDING`, so asking
+    about exactly `real + FIT_PADDING` lands on a floating-point knife edge:
+    (w + 4.0) - 4.0 is not always w. At 8.5pt the arithmetic happened to round
+    in this test's favour and at 10.6pt it does not, by 7e-15 of a point —
+    which is a fact about IEEE 754, not about whether a value fits a cell.
+    """
     value = "TCS0001234567"
     real = _text_width(value)
-    assert _fits(value, real + FIT_PADDING)
+    epsilon = 0.001
+
+    assert _fits(value, real + FIT_PADDING + epsilon)
     assert not _fits(value, real + FIT_PADDING - 1.0)
 
 
@@ -250,7 +262,8 @@ def test_width_is_measured_in_the_face_the_value_is_drawn_in():
             "width was measured in a different font from the one drawn")
 
     # And the fit check follows the measurement, whichever way it goes.
-    assert _fits(value, measured + FIT_PADDING)
+    # Epsilon for the same floating-point reason as the test above.
+    assert _fits(value, measured + FIT_PADDING + 0.001)
     assert not _fits(value, measured + FIT_PADDING - 1.0)
 
 
