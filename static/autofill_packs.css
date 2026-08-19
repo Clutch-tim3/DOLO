@@ -1,0 +1,694 @@
+/* ==========================================================================
+   Tender Autofill Packs
+   ==========================================================================
+
+   P1-5. autofill_packs.js emits 58 `ap-*` class names and there was not one
+   rule for 57 of them, so the page rendered on browser defaults: native
+   buttons and inputs drew their own operating-system chrome (the "white
+   blocks"), every string came out at the same size and weight (the wall of
+   undifferentiated text), and PREVIEW DRAFT rendered as an underlined link
+   rather than a button.
+
+   The 58th is `.ap-progress`, which WAS styled — by a rule in style.css
+   written for a different, now-dead `ap-progress-*` widget whose other six
+   classes this JS never emits. This file loads after style.css, so an equally
+   specific rule here wins on order; `.ap-progress` is redefined below rather
+   than fought with.
+
+   SCOPING. The packs UI renders inside #tab-agent, and style.css carries 68
+   rules scoped `#tab-agent .foo`. Only one of them targets an element rather
+   than a class, so bare `.ap-*` selectors are safe here — but if a rule below
+   ever stops applying, that specificity ladder is the first place to look.
+
+   Every native control is styled explicitly. That is what removes the chrome;
+   leaving one unstyled brings a white block back.
+
+   Colours follow the sign-in overlay in static/auth.js, which is the cleanest
+   reference in the codebase, with gold #c5a880 as the accent already used for
+   active nav and .btn-gold. State colour is deliberately NOT gold: a field
+   needing review must not compete with the accent for attention.
+   ========================================================================== */
+
+:root {
+  --ap-bg:        #0b0b0d;
+  --ap-card:      #141417;
+  --ap-raised:    #191920;
+  --ap-border:    #2a2a30;
+  --ap-border-lt: #35353d;
+  --ap-text:      #f5f5f7;
+  --ap-muted:     #8b8b95;
+  --ap-faint:     #6a6a74;
+  --ap-gold:      #c5a880;
+  --ap-gold-dim:  rgba(197, 168, 128, 0.14);
+
+  /* State. Separate from the accent on purpose. */
+  --ap-needs:     #d9a441;   /* needs a person */
+  --ap-blocked:   #e05c5c;   /* cannot proceed */
+  --ap-done:      #4caf50;   /* settled */
+  --ap-advisory:  #7f8ea3;   /* noted, never blocking */
+
+  --ap-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ap-sans: 'Outfit', 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+}
+
+/* --------------------------------------------------------------- containers */
+
+.ap-doc {
+  background: var(--ap-card);
+  border: 1px solid var(--ap-border);
+  border-radius: 8px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.ap-doc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--ap-raised);
+  border-bottom: 1px solid var(--ap-border);
+}
+
+.ap-doc-name {
+  font-family: var(--ap-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ap-text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Counts are data, not prose. */
+.ap-doc-count {
+  font-family: var(--ap-mono);
+  font-size: 11px;
+  color: var(--ap-muted);
+  white-space: nowrap;
+}
+
+.ap-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ap-border);
+}
+.ap-row:last-child { border-bottom: none; }
+
+/* ------------------------------------------------------------ summary first */
+
+.ap-status-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.ap-status-line {
+  font-family: var(--ap-sans);
+  font-size: 13px;
+  color: var(--ap-muted);
+  line-height: 1.5;
+}
+
+.ap-status-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Redefined, not inherited: the rule in style.css belongs to another widget. */
+.ap-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 14px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.ap-progress-count {
+  font-family: var(--ap-mono);
+  font-size: 11px;
+  color: var(--ap-muted);
+  white-space: nowrap;
+  min-width: 62px;
+  text-align: right;
+}
+
+.ap-meter {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* Width is set inline by the JS from real counts — do not constrain it here. */
+.ap-meter-fill {
+  height: 100%;
+  background: var(--ap-gold);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* State in form as well as words, so it reads at a glance. */
+.ap-chip,
+.ap-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 11px;
+  font-family: var(--ap-sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.ap-chip {
+  background: rgba(217, 164, 65, 0.13);
+  color: var(--ap-needs);
+  border-color: rgba(217, 164, 65, 0.32);
+}
+
+.ap-pill {
+  background: rgba(139, 139, 149, 0.13);
+  color: var(--ap-muted);
+  border-color: rgba(139, 139, 149, 0.28);
+}
+
+.ap-tick {
+  color: var(--ap-done);
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------- flagged fields */
+
+.ap-item {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--ap-border);
+  border-left: 2px solid var(--ap-needs);
+}
+.ap-item:last-child { border-bottom: none; }
+
+/* Settled items recede rather than disappear — the record stays visible. */
+.ap-item-done {
+  border-left-color: var(--ap-done);
+  opacity: 0.62;
+}
+
+.ap-item-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* A field key is an identifier. Mono keeps F01/F02 scannable in a column. */
+.ap-item-key {
+  font-family: var(--ap-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ap-gold);
+  flex-shrink: 0;
+}
+
+.ap-item-label {
+  font-family: var(--ap-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ap-text);
+  flex: 1;
+  min-width: 0;
+}
+
+.ap-item-meta {
+  font-family: var(--ap-mono);
+  font-size: 10px;
+  color: var(--ap-faint);
+  white-space: nowrap;
+}
+
+.ap-item-reason {
+  font-family: var(--ap-sans);
+  font-size: 12px;
+  color: var(--ap-muted);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+/* What the person wrote when they acknowledged it. This is the audit trail. */
+.ap-item-note {
+  font-family: var(--ap-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ap-muted);
+  margin-top: 5px;
+  padding-left: 9px;
+  border-left: 1px solid var(--ap-border-lt);
+  line-height: 1.45;
+}
+
+/* ------------------------------------------------------- acknowledgement */
+
+.ap-ack {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.ap-ack-note {
+  flex: 1;
+  min-width: 190px;
+}
+
+.ap-ack-hint {
+  font-family: var(--ap-sans);
+  font-size: 11px;
+  color: var(--ap-faint);
+  line-height: 1.4;
+  width: 100%;
+}
+
+/* --------------------------------------------------------- native controls
+   Every one of these is styled explicitly. An unstyled <input> or <button>
+   draws operating-system chrome, which is what the white blocks were. */
+
+.ap-input,
+input.ap-ack-note,
+input.ap-input {
+  font-family: var(--ap-sans);
+  font-size: 13px;
+  color: var(--ap-text);
+  background: #0f0f12;
+  border: 1px solid var(--ap-border);
+  border-radius: 5px;
+  padding: 7px 10px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.ap-input:focus,
+input.ap-ack-note:focus { border-color: var(--ap-gold); }
+
+.ap-input::placeholder { color: var(--ap-faint); }
+
+.ap-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tick boxes for auto-filled values. Sized up: they are the confirmation. */
+.ap-value-check,
+input[type="checkbox"].ap-value-check {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin: 0;
+  border: 1px solid var(--ap-border-lt);
+  border-radius: 3px;
+  background: #0f0f12;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.ap-value-check:checked {
+  background: var(--ap-gold);
+  border-color: var(--ap-gold);
+}
+
+.ap-value-check:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #141417;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.ap-value-check:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Buttons ------------------------------------------------------------------ */
+
+.ap-ack-btn,
+.ap-export,
+.ap-link-btn,
+.ap-preview-link,
+.ap-download,
+.ap-file-remove {
+  font-family: var(--ap-sans);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 5px;
+  padding: 7px 13px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.2;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+/* Primary: the one that releases a document. Only EXPORT is filled gold. */
+.ap-export {
+  background: var(--ap-gold);
+  color: #17171a;
+  border-color: var(--ap-gold);
+}
+.ap-export:hover:not(:disabled) { background: #d3ba97; }
+.ap-export:disabled {
+  background: rgba(197, 168, 128, 0.28);
+  color: rgba(23, 23, 26, 0.55);
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+/* Secondary. PREVIEW DRAFT lives here: it opens a draft in a new tab and is
+   NOT an export, so it must not look like one. Outlined, never filled. */
+.ap-preview-link,
+.ap-link-btn,
+.ap-ack-btn,
+.ap-download {
+  background: transparent;
+  color: var(--ap-text);
+  border-color: var(--ap-border-lt);
+}
+
+.ap-preview-link:hover,
+.ap-link-btn:hover,
+.ap-ack-btn:hover:not(:disabled),
+.ap-download:hover {
+  border-color: var(--ap-gold);
+  color: var(--ap-gold);
+}
+
+.ap-ack-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--ap-border);
+}
+
+/* Destructive, and quiet until reached for. */
+.ap-file-remove {
+  background: transparent;
+  color: var(--ap-faint);
+  border-color: transparent;
+  padding: 4px 7px;
+  font-size: 15px;
+  line-height: 1;
+}
+.ap-file-remove:hover { color: var(--ap-blocked); }
+
+/* -------------------------------------------------------- pre-filled values */
+
+.ap-values {
+  border-top: 1px solid var(--ap-border);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.ap-values-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px 6px;
+  font-family: var(--ap-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ap-muted);
+}
+
+.ap-values-note {
+  padding: 0 14px 8px;
+  font-family: var(--ap-sans);
+  font-size: 11px;
+  color: var(--ap-faint);
+  line-height: 1.45;
+}
+
+.ap-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 7px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.ap-value-label {
+  font-family: var(--ap-sans);
+  font-size: 12px;
+  color: var(--ap-muted);
+  flex: 0 0 34%;
+  min-width: 0;
+}
+
+/* The value that will be written into a government form. Mono, and the
+   brightest text in the row, because this is the thing being confirmed. */
+.ap-value-value,
+.ap-value-text {
+  font-family: var(--ap-mono);
+  font-size: 12px;
+  color: var(--ap-text);
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* ------------------------------------------------------------------- files */
+
+.ap-file {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  background: var(--ap-raised);
+  border: 1px solid var(--ap-border);
+  border-radius: 5px;
+  margin-bottom: 6px;
+}
+
+.ap-file-name {
+  font-family: var(--ap-sans);
+  font-size: 12.5px;
+  color: var(--ap-text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ap-file-size {
+  font-family: var(--ap-mono);
+  font-size: 10.5px;
+  color: var(--ap-faint);
+  white-space: nowrap;
+}
+
+.ap-file-none {
+  font-family: var(--ap-sans);
+  font-size: 12.5px;
+  color: var(--ap-faint);
+  font-style: italic;
+  padding: 9px 0;
+}
+
+/* ------------------------------------------------------------------ export */
+
+.ap-export-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.ap-export-list li {
+  font-family: var(--ap-sans);
+  font-size: 12px;
+  color: var(--ap-muted);
+  padding: 4px 0 4px 15px;
+  position: relative;
+  line-height: 1.45;
+}
+
+.ap-export-list li::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 10px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--ap-needs);
+}
+
+.ap-export-result {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 5px;
+  background: rgba(76, 175, 80, 0.09);
+  border: 1px solid rgba(76, 175, 80, 0.26);
+  font-family: var(--ap-sans);
+  font-size: 12.5px;
+  color: var(--ap-text);
+  line-height: 1.5;
+}
+
+/* Why export is refused. Specific, never compressed to "something went wrong". */
+.ap-export-why {
+  margin-top: 8px;
+  padding: 9px 12px;
+  border-radius: 5px;
+  background: rgba(224, 92, 92, 0.08);
+  border-left: 2px solid var(--ap-blocked);
+  font-family: var(--ap-sans);
+  font-size: 12px;
+  color: #efb4b4;
+  line-height: 1.5;
+}
+
+/* Drafts-only. This is the safeguard the product rests on — it stays legible
+   without shouting, because a banner people learn to skip protects nobody. */
+.ap-draft-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  border-radius: 5px;
+  background: var(--ap-gold-dim);
+  border-left: 2px solid var(--ap-gold);
+  font-family: var(--ap-sans);
+  font-size: 12px;
+  color: #e8dcc8;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------ table */
+
+.ap-table-wrap {
+  /* Wide content scrolls inside its own box rather than the page. */
+  overflow-x: auto;
+  border: 1px solid var(--ap-border);
+  border-radius: 8px;
+  background: var(--ap-card);
+}
+
+.ap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--ap-sans);
+  font-size: 13px;
+  min-width: 560px;
+}
+
+.ap-table thead th {
+  text-align: left;
+  padding: 10px 13px;
+  background: var(--ap-raised);
+  border-bottom: 1px solid var(--ap-border);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ap-muted);
+  white-space: nowrap;
+}
+
+.ap-table tbody td {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--ap-border);
+  vertical-align: middle;
+  color: var(--ap-text);
+}
+
+.ap-table tbody tr:last-child td { border-bottom: none; }
+.ap-table tbody tr:hover { background: rgba(255, 255, 255, 0.022); }
+
+.ap-cell-name {
+  font-weight: 600;
+  color: var(--ap-text);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ap-cell-sub {
+  display: block;
+  font-family: var(--ap-mono);
+  font-size: 10.5px;
+  color: var(--ap-faint);
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+.ap-cell-status { white-space: nowrap; }
+
+.ap-cell-count,
+.ap-cell-date {
+  font-family: var(--ap-mono);
+  font-size: 11.5px;
+  color: var(--ap-muted);
+  white-space: nowrap;
+}
+
+.ap-cell-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------- messages */
+
+.ap-msg {
+  font-family: var(--ap-sans);
+  font-size: 12.5px;
+  color: var(--ap-muted);
+  line-height: 1.5;
+  padding: 8px 0;
+}
+
+/* ------------------------------------------------------------------ mobile
+   880px is the app's breakpoint. Below it the two-column rows stack rather
+   than crushing the value, which is the thing being confirmed. */
+
+@media (max-width: 880px) {
+  .ap-value-row { flex-direction: column; gap: 3px; }
+  .ap-value-label { flex: none; }
+  .ap-ack { flex-direction: column; align-items: stretch; }
+  .ap-ack-btn { width: 100%; justify-content: center; }
+  .ap-status-head { flex-direction: column; align-items: flex-start; }
+  .ap-cell-actions { justify-content: flex-start; }
+  .ap-doc-head { flex-wrap: wrap; }
+}
