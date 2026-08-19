@@ -106,24 +106,38 @@ def matches(candidate: str | None, payload: dict) -> bool:
 
 
 def ack_payload(review_id: str, item_key: str, acknowledged_at: str,
-                note: str) -> dict:
+                note: str, acknowledged_by: str = "") -> dict:
     """
     One acknowledgement. `acknowledged_at` and the note are both covered, so
     neither backdating an acknowledgement nor rewriting what the person said
     they checked survives verification.
+
+    `acknowledged_by` is the user_id of the person who did it, and it is inside
+    the MAC rather than beside it. A name in an unsigned column is a label
+    anyone with database access can change; the point of this record is to be
+    the evidence that a specific person reviewed a document going to an organ
+    of state, and evidence that can be rewritten is not evidence.
+
+    v2: adding the actor changes the payload, so acknowledgements signed under
+    v1 no longer verify and their fields must be acknowledged again. That is
+    the same call this file already made when acknowledgements first became
+    tamper-evident — an unattributed acknowledgement is exactly what this is
+    meant to stop.
     """
     return {
-        "v": 1,
+        "v": 2,
         "kind": "ack",
         "review_id": review_id or "",
         "item_key": item_key or "",
         "acknowledged_at": acknowledged_at or "",
         "note": note or "",
+        "acknowledged_by": acknowledged_by or "",
     }
 
 
-def ack_mac(review_id: str, item_key: str, acknowledged_at: str, note: str) -> str:
-    return sign(ack_payload(review_id, item_key, acknowledged_at, note))
+def ack_mac(review_id: str, item_key: str, acknowledged_at: str, note: str,
+            acknowledged_by: str = "") -> str:
+    return sign(ack_payload(review_id, item_key, acknowledged_at, note, acknowledged_by))
 
 
 def stamp_payload(company_id: str, review_id: str, source_sha256: str,
@@ -152,7 +166,8 @@ def stamp_payload(company_id: str, review_id: str, source_sha256: str,
     }
 
 
-def values_payload(company_id: str, review_id: str, pairs, confirmed_at: str) -> dict:
+def values_payload(company_id: str, review_id: str, pairs, confirmed_at: str,
+                   confirmed_by: str = "") -> dict:
     """
     The bulk confirmation of auto-filled values.
 
@@ -160,14 +175,19 @@ def values_payload(company_id: str, review_id: str, pairs, confirmed_at: str) ->
     covers *what they saw*, not merely that they clicked. Changing a value
     afterwards — in the document or the record — leaves a confirmation that no
     longer matches the thing it confirmed.
+
+    `confirmed_by` is the user_id, covered for the same reason as in
+    `ack_payload`: company_id says which tenant, which is not the same as which
+    person. See that docstring for why v2 invalidates existing confirmations.
     """
     return {
-        "v": 1,
+        "v": 2,
         "kind": "values",
         "company_id": company_id or "",
         "review_id": review_id or "",
         "pairs": sorted([str(k), str(l), str(v)] for k, l, v in (pairs or [])),
         "confirmed_at": confirmed_at or "",
+        "confirmed_by": confirmed_by or "",
     }
 
 

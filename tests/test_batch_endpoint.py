@@ -27,7 +27,7 @@ async def test_batch_three_different_tenders_produce_different_results(fixtures_
         files.append(dest)
     filenames = ["alfred_duma.pdf", "lv_cabling_tender.pdf", "rfb_001_comms.docx"]
     
-    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models)
+    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models, "pro_corp")
     
     results = BATCH_JOBS[job_id]["results"]
     assert len(results) == 3
@@ -46,13 +46,30 @@ async def test_batch_three_different_tenders_produce_different_results(fixtures_
     print("\n--- BATCH RESULTS ---")
     for r in results:
         prob = f"{r['sa_adjusted_probability']*100:.1f}%" if r.get('sa_adjusted_probability') else "N/A"
-        print(f"File: {r['filename']:<25} | Rec: {r['recommendation']:<12} | Prob: {prob:<6} | Pos: {str(r.get('competitive_position')):<8} | Err: {r.get('processing_error')}")
+        # `recommendation` is None when no competing price was found, so it is
+        # coerced before formatting rather than assumed to be a string.
+        rec = str(r.get('recommendation') or "N/A")
+        print(f"File: {r['filename']:<25} | Rec: {rec:<12} | Prob: {prob:<6} | Pos: {str(r.get('competitive_position')):<8} | Err: {r.get('processing_error')}")
     print("---------------------\n")
     
     # The true model variance for document-level features is around 0.0014. The previous
     # variance was artificially injected by a tie-breaker hack.
-    diff = abs(lv["sa_adjusted_probability"] - comms["sa_adjusted_probability"])
+    #
+    # Measured on `win_probability`, which the batch path sets to the raw model
+    # output. It used to be measured on `sa_adjusted_probability`, which is now
+    # withheld whenever the document states no competing price — i.e. almost
+    # always. The raw output is the better target anyway: the tie-breaker hack
+    # this guard was written to catch acted on the model score, and the PPPFA
+    # adjustment sat downstream of it.
+    assert lv["win_probability"] is not None, "raw model output missing"
+    assert comms["win_probability"] is not None, "raw model output missing"
+    diff = abs(lv["win_probability"] - comms["win_probability"])
     assert 0.0005 < diff < 0.02, f"Expected organic variance between 0.0005 and 0.02, got {diff}"
+
+    # And the adjusted probability is withheld rather than invented, for both.
+    for r in (lv, comms):
+        assert r["sa_adjusted_probability"] is None
+        assert r["price_score_available"] is False
     
     for r in results:
         assert r["extraction_completeness"] >= 0.8
@@ -76,7 +93,7 @@ async def test_batch_no_shared_state_between_files(fixtures_dir, tmp_path, loade
         files.append(dest)
     filenames = ["alfred_duma.pdf", "lv_cabling_tender.pdf"]
     
-    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models)
+    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models, "pro_corp")
     
     results = BATCH_JOBS[job_id]["results"]
     assert len(results) == 2
@@ -107,7 +124,7 @@ async def test_batch_partial_failure_does_not_kill_other_results(fixtures_dir, t
         files.append(dest)
     filenames = ["lv_cabling_tender.pdf", "malformed.pdf", "rfb_001_comms.docx"]
     
-    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models)
+    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models, "pro_corp")
     
     results = BATCH_JOBS[job_id]["results"]
     assert len(results) == 3
@@ -138,7 +155,7 @@ async def test_batch_docx_pdf_mixed_no_crash(fixtures_dir, tmp_path, loaded_mode
     filenames = ["lv_cabling_tender.pdf", "rfb_001_comms.docx"]
     
     # Should not raise exception
-    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models)
+    await process_batch_job(job_id, files, filenames, "TEST SUPPLIER", 1, loaded_models, "pro_corp")
     results = BATCH_JOBS[job_id]["results"]
     assert len(results) == 2
     assert results[0]["win_probability"] is not None
@@ -178,7 +195,7 @@ async def test_batch_result_matches_single_prediction_result(fixtures_dir, tmp_p
     dest = tmp_path / "lv_cabling_tender.pdf"
     shutil.copy(file_path, dest)
     
-    await process_batch_job(job_id, [dest], ["lv_cabling_tender.pdf"], "TEST SUPPLIER", 1, loaded_models)
+    await process_batch_job(job_id, [dest], ["lv_cabling_tender.pdf"], "TEST SUPPLIER", 1, loaded_models, "pro_corp")
     
     batch_res = BATCH_JOBS[job_id]["results"][0]
     

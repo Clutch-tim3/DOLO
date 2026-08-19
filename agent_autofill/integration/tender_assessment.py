@@ -194,7 +194,14 @@ def assess_tender(
     price = supplier_price if supplier_price is not None else parsed.get("bid_price")
     if price is None:
         price = DEFAULT_SUPPLIER_PRICE
-    lowest_price = parsed.get("lowest_price") or price * 0.88
+
+    # None when the document does not state a competing price, which is the
+    # normal case for a sealed-bid tender. It used to fall back to
+    # `price * 0.88`, and `pdf_parser` handed up `bid_price * 0.9` before that,
+    # so the PPPFA price score was almost always computed against a number
+    # derived from the bidder's own price. `calculate_total_sa_score` withholds
+    # the score when this is None.
+    lowest_price = parsed.get("lowest_price")
 
     base = {
         "status": "success",
@@ -318,19 +325,29 @@ def assess_tender(
         )
         final_probability = sa_adj["final_probability"]
         threshold = artifacts["threshold"]
-        recommendation = "PURSUE" if final_probability >= threshold else "PASS"
 
-        if final_probability > threshold + 0.15:
-            confidence = "HIGH"
-        elif final_probability > threshold + 0.05:
-            confidence = "MEDIUM"
-        elif final_probability > threshold:
-            confidence = "LOW"
+        # No PPPFA score means no adjusted probability, and a recommendation
+        # derived from a probability we do not have is the fabrication in a
+        # different costume. The eligibility verdict, the evaluation system and
+        # the B-BBEE points below are unaffected — they never depended on it.
+        if final_probability is None:
+            recommendation = None
+            confidence = None
         else:
-            confidence = "PASS"
+            recommendation = "PURSUE" if final_probability >= threshold else "PASS"
+
+            if final_probability > threshold + 0.15:
+                confidence = "HIGH"
+            elif final_probability > threshold + 0.05:
+                confidence = "MEDIUM"
+            elif final_probability > threshold:
+                confidence = "LOW"
+            else:
+                confidence = "PASS"
 
         base.update({
-            "prediction_available": True,
+            "prediction_available": final_probability is not None,
+            "prediction_unavailable_reason": sa_adj.get("unavailable_reason"),
             "tender_identifier": tender_id,
             "win_probability": final_probability,
             "base_probability": base_prob,
@@ -341,7 +358,10 @@ def assess_tender(
             "sa_analysis": {
                 "evaluation_system": sa_score["evaluation_system"],
                 "price_score": sa_score["price_score"],
+                "price_score_available": sa_score["price_score_available"],
+                "price_score_unavailable_reason": sa_score["price_score_unavailable_reason"],
                 "bbbee_points": sa_score["bbbee_points"],
+                "max_bbbee_points": sa_score["max_bbbee_points"],
                 "total_score": sa_score["total_score"],
                 "competitive_position": sa_score["competitive_position"],
                 "base_probability": base_prob,

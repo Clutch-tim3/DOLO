@@ -41,10 +41,11 @@ async def test_high_concurrency_state_isolation(tmp_path, loaded_models):
             [f"tender_{job_index}.pdf"],
             supplier_name,
             1,
-            loaded_models
+            loaded_models,
+            "pro_corp",
         )
         
-        return job_id, supplier_name
+        return job_id, supplier_name, f"tender_{job_index}.pdf"
         
     # Execute 100 jobs simultaneously
     tasks = [submit_job(i) for i in range(NUM_CONCURRENT_JOBS)]
@@ -53,21 +54,35 @@ async def test_high_concurrency_state_isolation(tmp_path, loaded_models):
     # Verify strict isolation
     assert len(BATCH_JOBS) >= NUM_CONCURRENT_JOBS
     
-    for job_id, expected_supplier in results:
+    for job_id, expected_supplier, expected_filename in results:
         job_data = BATCH_JOBS[job_id]
-        
+
         # Ensure completion
         assert job_data["status"] == "complete"
         assert job_data["processed"] == 1
         assert len(job_data["results"]) == 1
-        
+
         res = job_data["results"][0]
-        
-        # Very critical: Ensure the supplier_name wasn't overwritten by another thread!
-        # predict.py adds pit_ features for the supplier if they exist, but at minimum
-        # the model should be using the context of this specific supplier.
-        # We know probability calculation works properly.
-        assert res["win_probability"] is not None
-        assert res["sa_adjusted_probability"] is not None
-        # It must not have failed due to concurrency collision
-        assert "ERROR" not in res.get("recommendation", "")
+
+        # Very critical: ensure this job's result was not overwritten by another
+        # thread. The filename is unique per job, so a mismatch here IS the
+        # collision this test exists to catch.
+        #
+        # This used to be asserted as `win_probability is not None`, which was
+        # never a test of isolation — it only ever showed that the pipeline
+        # returned a number, and it returned one for every input because the
+        # number was fabricated. `expected_supplier` was captured and never
+        # compared to anything at all.
+        assert res["filename"] == expected_filename, (
+            f"job for {expected_filename} carries {res['filename']} — results crossed between jobs"
+        )
+        assert job_data["filename"].startswith("batch_"), "job metadata was overwritten"
+
+        # The pipeline ran to completion rather than falling into the error path.
+        assert res["processing_error"] is None, res["processing_error"]
+        assert "ERROR" not in (res.get("recommendation") or "")
+
+        # Per-job output that does not depend on a competing price being present,
+        # so this stays a concurrency test rather than a scoring one.
+        assert res["preferential_framework"] in ("80/20", "90/10")
+        assert res["bbbee_points"] is not None

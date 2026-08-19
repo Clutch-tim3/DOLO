@@ -206,11 +206,21 @@ def parse_company_pdf(file_path: Path) -> dict:
             results["bid_price"] = sorted_prices[0]
         if "tender_value" not in results:
             # Assume the largest value is the tender value
-            results["tender_value"] = sorted_prices[-1] if sorted_prices[-1] > results["bid_price"] else results["bid_price"] * 1.2
-            
-        # Guess lowest competitor price: 90% of your bid price
-        results["lowest_price"] = results["bid_price"] * 0.9
-        
+            # Only when a larger figure was actually found. The fallback here was
+            # `bid_price * 1.2`, and tender_value selects 80/20 vs 90/10 at the
+            # R50m threshold — so a bid just over R41.7m crossed that line on a
+            # guess and was told the wrong statute governed it.
+            if sorted_prices[-1] > results["bid_price"]:
+                results["tender_value"] = sorted_prices[-1]
+
+        # No `lowest_price` is set here. It used to be `bid_price * 0.9` — a
+        # competitor's price guessed from your own, then fed to the PPPFA price
+        # formula and surfaced as `parsed_lowest_price`, which reads as
+        # something read off the document. Bids are sealed; a tender being bid
+        # on does not contain what anyone else charged. Absent is the truthful
+        # answer, and `calculate_total_sa_score` withholds the price score
+        # rather than scoring against an invention.
+
     return results
 
 def parse_tender_document(file_path: Path) -> dict:
@@ -357,10 +367,17 @@ def parse_tender_document(file_path: Path) -> dict:
         if "bid_price" not in results and len(sorted_prices) > 0:
             results["bid_price"] = sorted_prices[0]
         if "tender_value" not in results and len(sorted_prices) > 0:
-            results["tender_value"] = sorted_prices[-1] if sorted_prices[-1] > results["bid_price"] else results["bid_price"] * 1.2
+            # Only when a larger figure was actually found. The fallback here was
+            # `bid_price * 1.2`, and tender_value selects 80/20 vs 90/10 at the
+            # R50m threshold — so a bid just over R41.7m crossed that line on a
+            # guess and was told the wrong statute governed it.
+            if sorted_prices[-1] > results["bid_price"]:
+                results["tender_value"] = sorted_prices[-1]
             
     if "bid_price" in results:
-        results["lowest_price"] = results["bid_price"] * 0.9
+        # See the note in the other price block: no `lowest_price` is invented
+        # from `bid_price`. This assignment was also unconditional, so it
+        # overwrote a genuinely extracted competing price when there was one.
         extracted_fields.append('bid_price')
     if "tender_value" in results:
         extracted_fields.append('tender_value')

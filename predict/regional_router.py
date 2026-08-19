@@ -1,90 +1,117 @@
 #!/usr/bin/env python3
 """
-regional_router.py — Multi-region auto-routing prediction engine for Conquest-ZA and Conquest-UK
+regional_router.py — which procurement regime a tender falls under.
+
+WHAT THIS RETURNS, AND WHAT IT DELIBERATELY DOES NOT
+----------------------------------------------------
+This module routes a tender to a regime: South Africa (PPPFA 80/20 or 90/10)
+or the United Kingdom (MEAT, PCR 2015). That routing is real — it is read from
+currency and document text, and it decides which compliance rules apply.
+
+It does **not** return a win probability, and it does not return an AUC.
+
+It used to return both. The ZA branch loaded the CatBoost model and then never
+called it:
+
+    model.load_model(str(ZA_MODEL_PATH))
+    prob = 0.785 # Calibrated probability for ZA test
+
+ZA is the default region, so every South African tender — the whole product —
+was answered with the constant 0.785 presented as a win probability. The
+alongside `model_auc` of 0.857833 came from `metrics_conquest_za.json`, whose
+`auc_val` and `auc_test` are the identical number on 1,079 rows, which is what
+a file with no held-out split looks like.
+
+Probabilities have exactly one home: `predict.predict.predict()`, whose
+held-out performance is stated by `predict.model_validation` and travels with
+the number. A second source that invents one is how the constant survived — it
+looked like a model result because it was returned from a function that had a
+model loaded in it.
+
+The model loads were removed with the constant. A load whose result is
+discarded is not a safety net; it is the disguise.
 """
 
-import sys
+from __future__ import annotations
+
 import json
-import re
 from pathlib import Path
-import pandas as pd
-import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
-ZA_MODEL_PATH = PROJECT_ROOT / "models" / "saved" / "conquest_za" / "model_cb_za.cbm"
-UK_MODEL_PATH = PROJECT_ROOT / "models" / "saved" / "conquest_uk" / "model_xgb_uk.json"
+ZA = "ZA"
+UK = "UK"
 
-ZA_METRICS_PATH = PROJECT_ROOT / "models" / "metrics_conquest_za.json"
-UK_METRICS_PATH = PROJECT_ROOT / "models" / "metrics_conquest_uk.json"
+#: The regime each region is evaluated under. Both are statute, not estimates.
+FRAMEWORKS = {
+    ZA: "PPPFA 80/20 & 90/10",
+    UK: "MEAT PCR 2015",
+}
 
-# Import models
-from catboost import CatBoostClassifier
-import xgboost as xgb
+ENGINES = {
+    ZA: "Conquest-ZA (South Africa PPPFA)",
+    UK: "Conquest-UK (United Kingdom MEAT)",
+}
+
+RECOMMENDATIONS = {
+    ZA: [
+        "Verify Tax Clearance Pin",
+        "Attach BBBEE Sworn Affidavit / SANAS Certificate",
+    ],
+    UK: [
+        "Ensure CPV code alignment",
+        "Verify social value statement compliance",
+    ],
+}
+
 
 def detect_region(text: str = "", currency: str = "") -> str:
-    """Auto-detect procurement region based on text context and currency."""
+    """Which procurement regime a tender falls under, from its own text."""
     text_upper = text.upper()
     curr_upper = currency.upper()
 
-    if "GBP" in curr_upper or "£" in text or "CONTRACTS FINDER" in text_upper or "UNITED KINGDOM" in text_upper:
-        return "UK"
-    if "ZAR" in curr_upper or "RANDS" in text_upper or "BBBEE" in text_upper or "PPPFA" in text_upper or "SOUTH AFRICA" in text_upper:
-        return "ZA"
-    
-    # Default to ZA for eTenders compatibility
-    return "ZA"
+    if ("GBP" in curr_upper or "£" in text
+            or "CONTRACTS FINDER" in text_upper
+            or "UNITED KINGDOM" in text_upper):
+        return UK
+    if ("ZAR" in curr_upper or "RANDS" in text_upper
+            or "BBBEE" in text_upper or "PPPFA" in text_upper
+            or "SOUTH AFRICA" in text_upper):
+        return ZA
 
-def predict_tender_region(features_dict: dict, text_context: str = "", override_region: str = None) -> dict:
-    """Route prediction to specialized regional model engine."""
-    region = override_region if override_region in ["ZA", "UK"] else detect_region(text_context, features_dict.get("currency", ""))
+    # Default to ZA for eTenders compatibility.
+    return ZA
 
-    if region == "UK" and UK_MODEL_PATH.exists():
-        model = xgb.XGBClassifier()
-        model.load_model(str(UK_MODEL_PATH))
-        
-        # Build features for UK
-        X_df = pd.DataFrame([{
-            'bid_priceUsd': float(features_dict.get('bid_priceUsd', 0.0)),
-            'tender_estimatedpriceUsd': float(features_dict.get('tender_estimatedpriceUsd', 0.0)),
-            'tender_description_length': float(features_dict.get('tender_description_length', 100)),
-            'lot_description_length': float(features_dict.get('lot_description_length', 100)),
-            'publish_year': float(features_dict.get('publish_year', 2024))
-        }])
-        
-        prob = float(model.predict_proba(X_df)[0, 1])
-        engine_name = "Conquest-UK (United Kingdom MEAT)"
-        model_auc = 0.694060
-        compliance_type = "MEAT PCR 2015"
-        recommendations = ["Ensure CPV code alignment", "Verify social value statement compliance"]
-    else:
-        # ZA Engine
-        model = CatBoostClassifier()
-        if ZA_MODEL_PATH.exists():
-            model.load_model(str(ZA_MODEL_PATH))
-        else:
-            model.load_model(str(PROJECT_ROOT / "models" / "saved" / "model_cb_conquest.cbm"))
 
-        prob = 0.785 # Calibrated probability for ZA test
-        engine_name = "Conquest-ZA (South Africa PPPFA)"
-        model_auc = 0.857833
-        compliance_type = "PPPFA 80/20 & 90/10"
-        recommendations = ["Verify Tax Clearance Pin", "Attach BBBEE Sworn Affidavit / SANAS Certificate"]
+def predict_tender_region(features_dict: dict = None,
+                          text_context: str = "",
+                          override_region: str = None) -> dict:
+    """
+    The regime a tender is evaluated under, and what that regime requires.
+
+    Carries no probability. See the module docstring: the caller that wants a
+    win probability calls the prediction pipeline, which states what its number
+    is worth. `features_dict` is accepted for the currency hint only.
+    """
+    features_dict = features_dict or {}
+    region = (override_region if override_region in (ZA, UK)
+              else detect_region(text_context, features_dict.get("currency", "")))
 
     return {
         "region": region,
-        "engine": engine_name,
-        "model_auc": model_auc,
-        "win_probability": round(prob, 4),
-        "compliance_framework": compliance_type,
-        "recommendations": recommendations
+        "engine": ENGINES[region],
+        "compliance_framework": FRAMEWORKS[region],
+        "recommendations": list(RECOMMENDATIONS[region]),
     }
+
 
 if __name__ == "__main__":
     print("=== Regional Auto-Router Diagnostic Test ===")
-    test_za = predict_tender_region({"currency": "ZAR"}, text_context="Supply and delivery of trucks under PPPFA rules")
-    print("\nSA Tender Routing Result:", json.dumps(test_za, indent=2))
-
-    test_uk = predict_tender_region({"currency": "GBP"}, text_context="NHS Trust Legionella Control Services £400,000")
-    print("\nUK Tender Routing Result:", json.dumps(test_uk, indent=2))
+    print("\nSA Tender Routing Result:", json.dumps(predict_tender_region(
+        {"currency": "ZAR"},
+        text_context="Supply and delivery of trucks under PPPFA rules",
+    ), indent=2))
+    print("\nUK Tender Routing Result:", json.dumps(predict_tender_region(
+        {"currency": "GBP"},
+        text_context="NHS Trust Legionella Control Services £400,000",
+    ), indent=2))

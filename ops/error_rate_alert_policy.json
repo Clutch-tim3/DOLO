@@ -1,0 +1,24 @@
+{
+  "displayName": "CairoAI — API errors",
+  "documentation": {
+    "content": "One or more ERROR-severity lines were logged by the CairoAI API.\n\nEvery unhandled exception is logged by app.py's exception handler as a single structured line carrying `error_type` and `stack_trace`. To see what broke:\n\n  gcloud logging read 'resource.type=\"cloud_run_revision\" AND severity>=ERROR' --limit=20 --project cairoai --format='value(jsonPayload.error_type, jsonPayload.endpoint, jsonPayload.message)'\n\nGroup by jsonPayload.error_type to tell one repeated fault from several different ones.\n\nBefore this existed, errors reached nothing: the only log handler wrote to /tmp/logs/api.log, which is per-instance and wiped on cold start, and Python's last-resort stderr handler never fired because that handler had already taken the record. A TypeError in the prediction path survived in production until it happened to be narrated on screen.",
+    "mimeType": "text/markdown"
+  },
+  "conditions": [
+    {
+      "displayName": "ERROR-severity log lines from the API",
+      "conditionMatchedLog": {
+        "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"api\" AND severity>=ERROR"
+      }
+    }
+  ],
+  "alertStrategy": {
+    "notificationRateLimit": {
+      "period": "300s"
+    },
+    "autoClose": "86400s"
+  },
+  "combiner": "OR",
+  "enabled": true,
+  "severity": "ERROR"
+}
