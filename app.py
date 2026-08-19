@@ -1019,6 +1019,99 @@ async def api_upload_company_logo(logo: UploadFile = File(...),
     }
 
 
+# --- the Vault is the source of company identity ------------------------------
+#
+# P0-1. The Compliance Vault and the autofill profile were two tables with
+# nothing between them. The user uploaded their CIPC documents to the Vault,
+# which wrote `company_archive`; the fill engine read `company_profile`, which
+# held whatever was there before; and a bid form went out carrying another
+# company's name and registration number.
+#
+# From the outside that looked like the system inventing details. What it did
+# was read the wrong table with complete confidence, which is worse — an
+# invented value has no provenance, and this one had all the appearance of it.
+#
+# One store wins. `company_profile` stays the single source of truth its own
+# docstring already claims to be, and the Vault becomes an input to it: a
+# document uploaded to the Vault writes the facts it actually contains through
+# to the profile the fill engine reads.
+
+#: Vault-extracted key -> the company_profile column it populates. Only fields
+#: a CIPC or CSD document genuinely states. Nothing is inferred.
+_VAULT_TO_PROFILE = {
+    "company_name": "company_name",
+    "registration_number": "registration_number",
+    "supplier_number": "csd_number",
+    "bbbee_level": "bbbee_level",
+}
+
+
+def _vault_facts(parsed: dict) -> dict:
+    """
+    The facts a Vault document states, with placeholders dropped.
+
+    "Pending" is what app.py stores when extraction fails, and 9 is the
+    bbbee_level equivalent. Writing either through would replace a real profile
+    value with a placeholder — the failure this whole change is about, running
+    in the other direction.
+    """
+    from agent_autofill.fill_engine.safe_fill_fields import (
+        BBBEE_SENTINEL_LEVELS, is_sentinel)
+
+    facts = {}
+    for source_key, column in _VAULT_TO_PROFILE.items():
+        value = (parsed or {}).get(source_key)
+        if value is None or is_sentinel(value):
+            continue
+        if column == "bbbee_level":
+            try:
+                if int(str(value).strip()) in BBBEE_SENTINEL_LEVELS:
+                    continue
+            except (TypeError, ValueError):
+                continue
+        facts[column] = value
+    return facts
+
+
+def sync_vault_to_profile(company_id: str, parsed: dict) -> dict:
+    """
+    Write what a Vault document says into the company profile.
+
+    Returns {"updated": [...], "skipped_placeholders": bool}.
+
+    WHY confirmed=True IS CORRECT HERE, AND NOT A BYPASS
+
+    The gate exists to stop a model committing a half-remembered value. These
+    values are read out of a document the user just chose and uploaded as their
+    own company's registration certificate — that upload IS the confirmation,
+    and it carries better provenance than anything the gate was written to
+    catch. Only the four identity fields above are touched.
+
+    A failure here must not fail the upload: the document is stored either way,
+    and the profile can be corrected from the form. It is logged instead.
+    """
+    facts = _vault_facts(parsed)
+    if not facts:
+        return {"updated": [], "skipped_placeholders": bool(parsed)}
+
+    try:
+        result = company_store.update_company_profile(company_id, facts, confirmed=True)
+    except Exception as exc:  # noqa: BLE001 - an upload must not fail over this
+        logger.exception("Could not sync Vault document to company profile",
+                         extra={"company_id": company_id})
+        return {"updated": [], "error": str(exc)}
+
+    if not result.get("written"):
+        return {"updated": [], "error": result.get("message")}
+
+    logger.info("Vault document updated company profile", extra={
+        "company_id": company_id,
+        "endpoint": "/api/companies/upload",
+        "extra_data": {"fields": sorted(facts)},
+    })
+    return {"updated": sorted(facts), "skipped_placeholders": len(facts) != len(_VAULT_TO_PROFILE)}
+
+
 @app.post("/api/companies/upload")
 async def api_upload_company_file(
     file: List[UploadFile] = File(...),
@@ -1035,6 +1128,7 @@ async def api_upload_company_file(
     
     companies = get_archived_companies(principal.company_id)
     uploaded_companies = []
+    profile_updates = []
     
     for f in file:
         if f.filename == "":
@@ -1122,11 +1216,21 @@ async def api_upload_company_file(
             companies.append(company_data)
             
         uploaded_companies.append(company_data)
-        
+
+        # P0-1: the Vault is the source of company identity, so what this
+        # document says goes through to the profile the fill engine reads.
+        # Without this the two tables drift and a form is filled from whichever
+        # one the user never edited.
+        synced = sync_vault_to_profile(principal.company_id, parsed_info)
+        profile_updates.extend(synced.get("updated", []))
+
     save_archived_companies(companies, principal.company_id)
     
     return {
         "success": True,
+        # Named so the page can say which company facts the upload established,
+        # rather than leaving the user to discover it on a filled form.
+        "profile_fields_updated": sorted(set(profile_updates)),
         "message": f"Successfully processed {len(uploaded_companies)} documents",
         "companies": uploaded_companies
     }

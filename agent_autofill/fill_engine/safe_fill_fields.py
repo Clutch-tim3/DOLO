@@ -99,6 +99,39 @@ def _format_bbbee(value) -> str | None:
     return s
 
 
+#: Values that mean "we do not know this", stored as though they were answers.
+#:
+#: The Vault writes "Pending" into registration_number when it cannot extract
+#: one, and that string reached a bid form as the company's registration
+#: number. A placeholder is not a value; it is the absence of one wearing a
+#: label, and on a document submitted to an organ of state it is worse than a
+#: blank, because a blank is visibly unfinished and "Pending" reads as an
+#: answer.
+#:
+#: Compared case-insensitively after trimming.
+SENTINEL_VALUES = frozenset({
+    "pending", "n/a", "na", "n.a.", "tbc", "tba", "unknown", "none",
+    "not applicable", "not available", "nil", "-", "--", "0",
+    "null", "undefined", "to be confirmed", "to be advised",
+})
+
+#: bbbee_level 9 is this codebase's sentinel for "non-compliant or unknown" —
+#: the recognised scale is 1-8, and get_bbbee_points returns 0.0 for anything
+#: outside it. app.py writes 9 when the Vault extracts nothing, so 9 conflates
+#: "we could not read it" with "they are non-compliant". Neither belongs on a
+#: form as a level.
+BBBEE_SENTINEL_LEVELS = frozenset({0, 9})
+
+
+def is_sentinel(value) -> bool:
+    """Whether a stored value is a placeholder rather than a fact."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in SENTINEL_VALUES or not value.strip()
+    return False
+
+
 def resolve_value(canonical_field: str, profile: dict) -> tuple[str | None, str | None]:
     """
     Return (value, source) for a canonical field, or (None, None).
@@ -107,6 +140,11 @@ def resolve_value(canonical_field: str, profile: dict) -> tuple[str | None, str 
     tender document are never written back into it — a tender is a counterparty
     document and must not be able to change what we believe about our own
     company.
+
+    A sentinel is treated as absent. This is the last gate before a value is
+    drawn onto a form, so it holds regardless of how the placeholder got into
+    the profile — and the field then appears in the review list as something
+    left for a person, which is the truthful description.
     """
     column = SAFE_FILL_FIELDS.get(canonical_field)
     if not column:
@@ -116,10 +154,19 @@ def resolve_value(canonical_field: str, profile: dict) -> tuple[str | None, str 
 
     if column == "directors":
         return _format_directors(raw), "company profile (directors)"
+
     if canonical_field == "bbbee_level":
+        # 9 and 0 mean "not established", however they are spelled.
+        try:
+            if int(str(raw).strip()) in BBBEE_SENTINEL_LEVELS:
+                return None, None
+        except (TypeError, ValueError):
+            pass
+        if is_sentinel(raw):
+            return None, None
         return _format_bbbee(raw), "company profile"
 
-    if raw in (None, ""):
+    if is_sentinel(raw):
         return None, None
     return str(raw).strip(), "company profile"
 
