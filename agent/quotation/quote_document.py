@@ -44,6 +44,39 @@ FOOTER_H = 34.0
 PANEL_TOP_GAP = 18.0
 
 
+
+def _resolve_logo(stored):
+    """
+    The logo on THIS instance, or None.
+
+    `logo_file_path` holds a bare filename, not an absolute path: a path
+    recorded on one instance means nothing on the next, and on Cloud Run the
+    directory is wiped on cold start. This restores it from the bucket when the
+    local copy is gone, the same way generated documents are served.
+
+    An absolute path is still honoured, because profiles written before logo
+    upload existed contain one, and a quotation must not lose its letterhead to
+    a migration.
+    """
+    name = (stored or "").strip()
+    if not name:
+        return None
+
+    direct = Path(name)
+    if direct.is_absolute():
+        return direct if direct.exists() else None
+
+    try:
+        from agent import file_paths, object_store
+    except Exception:  # noqa: BLE001 - a quotation must not fail over a logo
+        return None
+
+    local = file_paths.generated_dir() / name
+    if local.exists():
+        return local
+    return local if object_store.ensure_local(name, local) else None
+
+
 def _hex(colour: str):
     from reportlab.lib.colors import HexColor
 
@@ -118,15 +151,15 @@ def render_quotation(
 
     # --------------------------------------------------------------- header
     top = PAGE_H - MARGIN
-    logo = (company.get("logo_file_path") or "").strip()
+    logo_path = _resolve_logo(company.get("logo_file_path"))
     text_x = MARGIN
-    if logo and Path(logo).exists():
+    if logo_path is not None:
         try:
-            c.drawImage(logo, MARGIN, top - 46, width=54, height=54,
+            c.drawImage(str(logo_path), MARGIN, top - 46, width=54, height=54,
                         preserveAspectRatio=True, mask="auto")
             text_x = MARGIN + 66
         except Exception:  # noqa: BLE001 - a bad logo must not stop a quotation
-            log.warning("could not draw logo %s", logo)
+            log.warning("could not draw logo %s", logo_path)
 
     c.setFillColor(_hex("#1a1a1a"))
     c.setFont("Helvetica-Bold", 23)
