@@ -40,7 +40,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from predict.predict import load_all_artifacts, get_feature_list, extract_features_from_tender_id, build_new_features, encode_and_impute, predict
-from models.sa_scoring import calculate_total_sa_score, adjust_probability_for_sa, get_bbbee_recommendation
+from models.sa_scoring import (calculate_total_sa_score, adjust_probability_for_sa,
+                               get_bbbee_recommendation, get_evaluation_system)
 from models.pdf_parser import parse_company_pdf, extract_text_from_pdf, classify_document_type
 from predict.eligibility_gate import check_hard_eligibility
 from models.pdf_parser import parse_tender_document
@@ -207,6 +208,7 @@ DB_PATH = DATA_DIR / "procurement.db"
 # start. Tracked outcomes, calendar events and predictions were being written
 # to a disk that disappears.
 from agent import db as _state_db
+from agent import file_paths, object_store
 
 #: PIDs whose schema has been ensured, so a forked child re-runs it against its
 #: own connection. Same guard as agent/db.py's connector and the rate limiter:
@@ -410,6 +412,26 @@ async def api_model_status():
         "model_validation": model_validation.validation_status(),
     }
 
+@app.get("/invite")
+async def serve_invite_page():
+    """
+    The page an invitation link opens. Unauthenticated by necessity — the person
+    opening it does not have an account yet, which is the point. It carries no
+    secrets: the token is in the URL the recipient already holds, and the page
+    cannot learn anything without it.
+    """
+    return FileResponse("static/invite.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/reset")
+async def serve_reset_page():
+    """The page a password-reset link opens. Unauthenticated by necessity —
+    the whole point is that the person cannot sign in."""
+    return FileResponse("static/reset.html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
 @app.get("/workspace")
 async def serve_workspace_page():
     return FileResponse("static/workspace.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
@@ -500,6 +522,9 @@ async def api_generate_quotation(request: Request,
         evaluation_system = "80/20"
         line_items = []
         lowest_price = None
+        # Defined on every path: the multipart branch never sets it, and the
+        # renderer below reads client details and the RFQ reference from it.
+        body = {}
 
         if "multipart/form-data" in content_type:
             form = await request.form()
@@ -521,27 +546,50 @@ async def api_generate_quotation(request: Request,
                     if not tender_title:
                         tender_title = parsed_tender.get("tender_title") or f"Tender Quotation ({tender_file.filename.replace('.pdf', '')})"
 
-                    tender_val = parsed_tender.get("tender_value") or 798116.25
-                    evaluation_system = "90/10" if float(tender_val) >= 50000000 else "80/20"
-                    
-                    subtotal_est = float(tender_val) / 1.15
-                    line_items = [
-                        {"description": f"Primary Supply & Delivery per {tender_title[:50]} Specs", "qty": 1, "unit_price": round(subtotal_est * 0.75, 2)},
-                        {"description": "Technical Support, Deployment & Quality Assurance", "qty": 1, "unit_price": round(subtotal_est * 0.25, 2)}
-                    ]
+                    # No price is synthesised here. This block used to read
+                    #
+                    #     tender_val = parsed_tender.get("tender_value") or 798116.25
+                    #     subtotal_est = float(tender_val) / 1.15
+                    #     ... unit_price: subtotal_est * 0.75  /  * 0.25
+                    #
+                    # so a tender with no extractable price produced a quotation
+                    # for R798 116,25, split 75/25 into two line items to look
+                    # considered, typeset, and ready to send to an organ of
+                    # state. That is the exact failure price_search.py was
+                    # rewritten to remove; see its docstring.
+                    #
+                    # The invented figure also chose the statute on the next
+                    # line — 90/10 above R50m — so a number from nowhere decided
+                    # which law the bid was evaluated under.
+                    tender_val = parsed_tender.get("tender_value")
+                    evaluation_system = get_evaluation_system(tender_val) or evaluation_system
+
+                    # One line, no price. quote_document renders unit_price None
+                    # as TBC, leaves it out of the subtotal, and prints "This
+                    # quotation is incomplete." A person fills it in.
+                    line_items = [{
+                        "description": f"Supply and delivery per {tender_title[:60]} specification"
+                                       if tender_title else "Supply and delivery per tender specification",
+                        "qty": 1,
+                        "unit_price": None,
+                    }]
                 finally:
                     if temp_path.exists():
                         temp_path.unlink()
 
             if not line_items:
-                line_items = [{"description": "Professional Goods & Service Delivery", "qty": 1, "unit_price": 798116.25}]
+                # Same rule with no document at all: a placeholder line for a
+                # person to price, not a placeholder price.
+                line_items = [{"description": "Professional goods and service delivery",
+                               "qty": 1, "unit_price": None}]
             if not tender_title:
                 tender_title = "Procurement Tender Quotation"
         else:
             body = await request.json()
             supplier_name = body.get("supplier_name", "CAIROAI")
             tender_title = body.get("tender_title", "Tender Quotation")
-            line_items = body.get("line_items", [{"description": "Services", "qty": 1, "unit_price": 798116.25}])
+            line_items = body.get("line_items", [{"description": "Services",
+                                                  "qty": 1, "unit_price": None}])
             evaluation_system = body.get("evaluation_system", "80/20")
             lowest_price = body.get("lowest_price")
 
@@ -566,13 +614,26 @@ async def api_generate_quotation(request: Request,
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / filename
 
-        generate_quotation_pdf(
-            supplier_info=supplier_info,
-            tender_title=tender_title,
+        # The company_profile row is the authority on who this supplier is —
+        # it is what carries the VAT number, the branding and the signatory.
+        # The archive lookup above stays as a fallback for a company that has
+        # documents archived but no profile filled in yet.
+        from agent.memory.company_store import get_company_profile
+        from agent.quotation.quote_document import render_quotation
+
+        profile = get_company_profile(principal.company_id) or {}
+        company = {**supplier_info, **{k: v for k, v in profile.items() if v}}
+
+        client = body.get("client") or {}
+
+        render_quotation(
+            out_path,
+            company=company,
+            client=client,
+            reference=body.get("reference", ""),
+            subject=tender_title,
             line_items=line_items,
-            output_path=out_path,
-            lowest_competing_price=lowest_price,
-            evaluation_system=evaluation_system
+            date_text=datetime.now().strftime("%d %B %Y"),
         )
 
         return {
@@ -762,6 +823,201 @@ async def api_company_profile(company_id: str = Depends(require_company_id)):
             "tracked_outcomes": len(outcomes),
         },
     }
+
+@app.post("/api/company-profile")
+async def api_update_company_profile(request: Request,
+                                     company_id: str = Depends(require_company_id)):
+    """
+    Set up or change this company's profile from the app.
+
+    P0-2. There was no write route at all: every field the product depends on —
+    name, registration number, VAT number, addresses, contact details,
+    signatory — could only be set by running Python against the database. That
+    blocked both journeys, because autofill fills bid forms FROM the profile and
+    the quotation renderer takes its letterhead and signatory from it.
+
+    THE CONFIRMATION GATE IS PRESERVED, NOT BYPASSED
+
+    This is a two-step route, mirroring `update_company_profile` exactly:
+
+        POST {"fields": {...}}                    -> 200, the diff, nothing written
+        POST {"fields": {...}, "confirmed": true} -> 200, written
+
+    `confirmed` is read from the request and passed through. It is never
+    defaulted to true here. company_store's docstring is explicit that
+    confirmed=True asserts a human was shown these specific values and approved
+    them, and that it must not be hard-coded by a caller that has shown the
+    user nothing — so the first call returns `changes` for the page to display,
+    and only the second writes.
+
+    That is the same shape the agent already follows, so both paths obey one
+    gate rather than two implementations of it.
+    """
+    body = await request.json()
+    fields = (body or {}).get("fields")
+    confirmed = bool((body or {}).get("confirmed"))
+
+    if not isinstance(fields, dict) or not fields:
+        raise HTTPException(status_code=400,
+                            detail="Send a 'fields' object with the values to set.")
+
+    try:
+        if not confirmed:
+            # Nothing is written. The page shows this and asks.
+            preview = company_store.preview_company_profile_update(company_id, fields)
+            return {"status": "preview", "written": False, **preview}
+
+        result = company_store.update_company_profile(company_id, fields, confirmed=True)
+    except ValueError as exc:
+        # assert_no_signature_asset raises this: a signature is never a profile
+        # field, and CairoAI never signs anything.
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not result.get("written"):
+        raise HTTPException(status_code=400,
+                            detail=result.get("message") or "The profile was not written.")
+
+    logger.info("Company profile updated", extra={
+        "company_id": company_id, "endpoint": "/api/company-profile",
+        "extra_data": {"fields": sorted(fields)},
+    })
+    return result
+
+
+@app.get("/api/company-profile/fields")
+async def api_company_profile_fields(company_id: str = Depends(require_company_id)):
+    """
+    Which fields the profile form may set, and what is in them now.
+
+    Read from PROFILE_WRITABLE_FIELDS rather than duplicated in the page, so a
+    field added to the store appears in the form without anyone remembering to
+    add it — the drift that left six fields unreachable from the agent.
+    """
+    current = company_store.get_company_profile(company_id) or {}
+    return {
+        "company_id": company_id,
+        "profile_exists": bool(current),
+        "writable_fields": list(company_store.PROFILE_WRITABLE_FIELDS),
+        "values": {f: current.get(f) for f in company_store.PROFILE_WRITABLE_FIELDS},
+    }
+
+
+# --- company logo -------------------------------------------------------------
+#
+# P1-4. `logo_file_path` existed on the profile and quote_document.py drew it,
+# but nothing anywhere set it. The only way to get a logo onto a quotation was
+# to write a filesystem path into the database by hand — and on Cloud Run that
+# path is per-instance and vanishes on the next cold start.
+
+#: Magic bytes, not extensions. The codebase already learned this lesson with
+#: the seven fixtures named .docx that are actually OLE2 .doc: a name is a
+#: claim, and this one is made by whoever is uploading.
+_IMAGE_MAGIC = {
+    b"\x89PNG\r\n\x1a\n": "png",
+    b"\xff\xd8\xff": "jpg",
+    b"GIF87a": "gif",
+    b"GIF89a": "gif",
+}
+
+#: A logo is drawn at 54x54 points. Anything approaching this is already far
+#: more than that needs, and the cap is what stops an upload route becoming a
+#: way to fill the disk.
+MAX_LOGO_BYTES = 2 * 1024 * 1024
+
+
+def _image_kind(head: bytes) -> str | None:
+    """The format these bytes actually are, or None if they are not an image."""
+    for magic, kind in _IMAGE_MAGIC.items():
+        if head.startswith(magic):
+            return kind
+    # WEBP is RIFF....WEBP, so the marker is not at offset 0.
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def company_logo_path(company_id: str, filename: str):
+    """
+    Where this company's logo is on THIS instance, restoring it if needed.
+
+    The profile stores a bare filename rather than an absolute path, because an
+    absolute path recorded on one instance means nothing on the next. This
+    resolves it, pulling from the bucket when the local copy is missing — the
+    same pattern generated documents already use.
+    """
+    local = file_paths.generated_dir() / filename
+    if local.exists():
+        return local
+    if object_store.ensure_local(filename, local):
+        return local
+    return None
+
+
+@app.post("/api/company-profile/logo")
+async def api_upload_company_logo(logo: UploadFile = File(...),
+                                  company_id: str = Depends(require_company_id)):
+    """
+    Upload the logo that appears on this company's quotations.
+
+    Stored in Cloud Storage via object_store, not on the instance disk, so it
+    survives a cold start. The profile records the stored FILENAME; the renderer
+    resolves it through `company_logo_path`.
+
+    Writing logo_file_path goes through update_company_profile with
+    confirmed=True, and that is legitimate here rather than a bypass of the
+    gate: the person has just chosen this exact file in a file picker, which is
+    the confirmation. The gate exists to stop a model writing a half-remembered
+    VAT number, not to make a user confirm a file they just selected. No other
+    field is written.
+    """
+    raw = await logo.read()
+
+    if not raw:
+        raise HTTPException(status_code=400, detail="That file is empty.")
+    if len(raw) > MAX_LOGO_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"That logo is {len(raw) // 1024} KB. The limit is "
+                   f"{MAX_LOGO_BYTES // 1024} KB.")
+
+    kind = _image_kind(raw[:16])
+    if kind is None:
+        # Deliberately checked by content. A .png that is actually a PDF, or a
+        # script, would otherwise be stored and handed to the PDF renderer.
+        raise HTTPException(
+            status_code=400,
+            detail="That file is not an image. PNG, JPEG, GIF or WEBP only.")
+
+    stored_name = f"logo_{company_id}_{uuid.uuid4().hex[:8]}.{kind}"
+    local = file_paths.generated_dir() / stored_name
+    local.parent.mkdir(parents=True, exist_ok=True)
+    local.write_bytes(raw)
+
+    durable = object_store.upload(local, stored_name)
+    if not durable:
+        # object_store.upload never raises and returns False when the bucket is
+        # not configured. Locally that is normal; on Cloud Run it means the
+        # logo is on one instance and will vanish, so say so rather than
+        # reporting a success that decays.
+        logger.warning("Logo stored only on this instance", extra={
+            "company_id": company_id, "endpoint": "/api/company-profile/logo",
+            "extra_data": {"filename": stored_name},
+        })
+
+    result = company_store.update_company_profile(
+        company_id, {"logo_file_path": stored_name}, confirmed=True)
+    if not result.get("written"):
+        raise HTTPException(status_code=400,
+                            detail=result.get("message") or "Could not record the logo.")
+
+    return {
+        "status": "success",
+        "filename": stored_name,
+        "kind": kind,
+        "bytes": len(raw),
+        "durable": durable,
+    }
+
 
 @app.post("/api/companies/upload")
 async def api_upload_company_file(

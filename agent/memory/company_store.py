@@ -34,6 +34,9 @@ PROFILE_WRITABLE_FIELDS = [
     "registered_municipality",
     "industry",
     "logo_file_path",
+    # Branding for generated documents. No legal weight; never on a bid form.
+    "brand_colour",
+    "tagline",
     # --- Agent Autofill ---
     "directors",
     "postal_address",
@@ -56,6 +59,8 @@ PROFILE_WRITABLE_FIELDS = [
 # DROP. That is what makes this migration non-destructive by construction rather
 # than by testing.
 _PROFILE_MIGRATIONS = [
+    ("brand_colour", "TEXT"),
+    ("tagline", "TEXT"),
     ("directors", "TEXT"),
     ("postal_address", "TEXT"),
     ("physical_address", "TEXT"),

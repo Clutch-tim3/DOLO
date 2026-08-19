@@ -18,6 +18,18 @@ CREATE TABLE IF NOT EXISTS company_profile (
     industry TEXT,
     logo_file_path TEXT,
 
+    -- --- Branding, used only to render documents -----------------------------
+    -- These two carry no legal weight and go nowhere near a bid form. They
+    -- exist so a generated quotation looks like it came from the supplier
+    -- rather than from a template: brand_colour drives the whole document
+    -- palette (see agent/quotation/quote_theme.py) and tagline is the line
+    -- under the wordmark, e.g. "AI SOLUTIONS & VENTURE HOLDINGS".
+    --
+    -- brand_colour is a #rrggbb string. Anything unparseable falls back to the
+    -- olive default rather than failing, because a quotation must always render.
+    brand_colour TEXT,
+    tagline TEXT,
+
     -- --- Agent Autofill additions -------------------------------------------
     -- Everything below feeds the DRAFT auto-fill of real South African
     -- government bid forms (SBD 1, SBD 4, SBD 6.1 and friends). A wrong value

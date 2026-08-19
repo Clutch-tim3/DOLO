@@ -37,6 +37,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
+
+from conftest import clear_company, set_company_tier
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -119,12 +121,16 @@ def tiers(monkeypatch):
     # Enterprise rather than Pro for the two working companies: Pro allows 3
     # autofills a day and several of these tests submit multi-file packs, so a
     # Pro limit would make them fail for a reason none of them is about.
-    monkeypatch.setitem(subscription.MOCK_CLIENT_REGISTRY, CO_A, "enterprise")
-    monkeypatch.setitem(subscription.MOCK_CLIENT_REGISTRY, CO_B, "enterprise")
-    monkeypatch.setitem(subscription.MOCK_CLIENT_REGISTRY, CO_STARTER, "starter")
+    set_company_tier(CO_A, "enterprise")
+    set_company_tier(CO_B, "enterprise")
+    set_company_tier(CO_STARTER, "starter")
     _purge_usage_logs()
     yield
     _purge_usage_logs()
+    # Companies are rows now, not dict entries a monkeypatch reverts. A test
+    # that leaves one behind changes the tier of that id for every later run.
+    for company_id in (CO_A, CO_B, CO_STARTER):
+        clear_company(company_id)
 
 
 @pytest.fixture

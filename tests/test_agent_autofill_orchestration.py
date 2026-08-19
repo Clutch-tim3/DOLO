@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import clear_company, set_company_tier
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent import claude_client, subscription
@@ -66,12 +68,15 @@ def _purge_usage_logs():
 
 @pytest.fixture
 def tiers(monkeypatch):
-    monkeypatch.setitem(subscription.MOCK_CLIENT_REGISTRY, PRO, "pro")
-    monkeypatch.setitem(subscription.MOCK_CLIENT_REGISTRY, STARTER, "starter")
-    monkeypatch.setitem(subscription.MOCK_CLIENT_REGISTRY, ENTERPRISE, "enterprise")
+    set_company_tier(PRO, "pro")
+    set_company_tier(STARTER, "starter")
+    set_company_tier(ENTERPRISE, "enterprise")
     _purge_usage_logs()
     yield
     _purge_usage_logs()
+    # See the note in test_autofill_packs: these are rows, so they must go.
+    for company_id in (PRO, STARTER, ENTERPRISE):
+        clear_company(company_id)
 
 
 @pytest.fixture
