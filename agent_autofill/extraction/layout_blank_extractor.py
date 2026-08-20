@@ -684,7 +684,10 @@ def extract_pdf_blanks(
                 )
 
     results.sort(key=lambda b: (b.page_number, b.bbox[1] if b.bbox else 0, b.bbox[0] if b.bbox else 0))
-    return results
+    # P0-4: drop what is not a field before anything downstream sees it.
+    # Every one of these was already being refused, so no fill changes — what
+    # goes is 534 [ ! ] markers on the page and 534 lines in the flag list.
+    return [b for b in results if is_fillable_candidate(b)]
 
 
 def _looks_like_toc(
@@ -855,3 +858,123 @@ def extract_docx_blanks(path: str | Path) -> list[Blank]:
             )
 
     return blanks
+
+
+# --- rejecting things that are not fields -------------------------------------
+#
+# P0-4. On the owner's 145-page pack the extractor proposed 651 blanks. Eight
+# of them fill. 534 are refused as unreadable or unrecognised — and every one
+# of those draws a red [ ! ] on the page, so the document came back with 534
+# markers on it and a flag list nobody could work through.
+#
+# They are not fields. They are the points-allocation table an organ of state
+# completes before issuing the tender (80, 20, 100), fragments of the
+# surrounding instructions ("of this tender", "the tenderer)"), and blanks with
+# no readable label at all.
+#
+# NOTHING HERE CHANGES WHAT GETS FILLED. Every blank rejected below was already
+# being skipped — measured, not assumed: the same 8 fields fill before and
+# after. What goes is the noise: the markers on the page and the flags in the
+# list.
+#
+# CONSERVATIVE ON PURPOSE. "Name of Bidder (tenderer)" fills successfully and
+# ends in a bracket; "Value of work inclusive of VAT (Rand)" is a real column
+# header. So a rule as crude as "ends with )" would drop real fields, and the
+# rules below are written to reject only what is unambiguously prose or
+# pre-printed data.
+
+#: Words that are a whole label only when something has been mis-split. A blank
+#: labelled "of" is a fragment of a sentence, not a question.
+_FUNCTION_WORDS = frozenset({
+    "of", "and", "or", "the", "a", "an", "to", "in", "on", "at", "by", "for",
+    "with", "as", "is", "are", "be", "been", "that", "this", "these", "those",
+    "i", "we", "it", "if", "no", "yes", "not", "from", "per",
+})
+
+#: Openings that only occur mid-declaration. These are the sworn-statement
+#: preambles on SBD 4 and SBD 6.1, not field labels.
+_PROSE_OPENINGS = (
+    "i, the undersigned", "do hereby", "i hereby", "we hereby",
+    "in my capacity", "representative of", "on behalf of",
+    "it is a condition", "failure to", "note:", "please note",
+    "kindly note", "the tenderer", "each tenderer", "bidders are",
+    "tenderers are", "in terms of", "subject to", "provided that",
+)
+
+#: An instruction that has been cut off. A real label does not end mid-clause.
+_FRAGMENT_ENDINGS = (",", ";", ".]", ".)", " -", "–", "—", ":-")
+
+
+def _is_prose_fragment(label: str) -> bool:
+    """Whether a label is a piece of the form's prose rather than a question."""
+    text = (label or "").strip()
+    if not text:
+        return False
+
+    lowered = text.lower()
+
+    # A bare function word is always a mis-split.
+    if lowered.strip(".:,)") in _FUNCTION_WORDS:
+        return True
+
+    # Declaration preambles.
+    if lowered.startswith(_PROSE_OPENINGS):
+        return True
+
+    # Cut off mid-clause. Checked before the length rule because some of these
+    # are long.
+    if text.endswith(_FRAGMENT_ENDINGS):
+        return True
+
+    # Starts mid-sentence: a lower-case opening that is not a known field
+    # phrasing. Real labels on these forms are either capitalised or title
+    # case; "of this tender" is not.
+    if text[0].islower() and " " in text:
+        return True
+
+    return False
+
+
+def _is_preprinted_value(label: str) -> bool:
+    """
+    Whether a label is the form's own pre-printed data rather than a prompt.
+
+    On SBD 6.1 the points-allocation table carries 80, 20 and 100 — the
+    preference split, filled in by the organ of state before the tender is
+    issued. Offering those as blanks invites a supplier to overwrite the
+    evaluation criteria.
+    """
+    text = (label or "").strip()
+    if not text:
+        return False
+
+    stripped = text.replace(" ", "").replace(".", "").replace(",", "")
+    stripped = stripped.replace("%", "").replace("R", "").replace("-", "")
+    if stripped.isdigit():
+        return True
+
+    return False
+
+
+def is_fillable_candidate(blank) -> bool:
+    """
+    Whether this detected blank should be offered as a field at all.
+
+    A blank that is not a candidate is dropped before it reaches the fill
+    engine, so it never becomes a [ ! ] on the page or a line in the flag list.
+    """
+    label = (getattr(blank, "label_text", "") or "").strip()
+
+    # No label, nowhere to go. 164 of the owner's 651 were these, and the fill
+    # engine could only ever refuse them with "could not read what this field
+    # is for" — which is true and useless.
+    if not label:
+        return False
+
+    if _is_prose_fragment(label):
+        return False
+
+    if _is_preprinted_value(label):
+        return False
+
+    return True
