@@ -36,6 +36,11 @@ PROFILE_WRITABLE_FIELDS = [
     "logo_file_path",
     # Branding for generated documents. No legal weight; never on a bid form.
     "brand_colour",
+    # SBD 6.1 specific goals. Facts the user states; never inferred.
+    "owned_51pc_black",
+    "owned_51pc_black_women",
+    "owned_51pc_black_youth",
+    "owned_51pc_black_disability",
     "tagline",
     # --- Agent Autofill ---
     "directors",
@@ -59,6 +64,10 @@ PROFILE_WRITABLE_FIELDS = [
 # DROP. That is what makes this migration non-destructive by construction rather
 # than by testing.
 _PROFILE_MIGRATIONS = [
+    ("owned_51pc_black", "INTEGER"),
+    ("owned_51pc_black_women", "INTEGER"),
+    ("owned_51pc_black_youth", "INTEGER"),
+    ("owned_51pc_black_disability", "INTEGER"),
     ("brand_colour", "TEXT"),
     ("tagline", "TEXT"),
     ("directors", "TEXT"),

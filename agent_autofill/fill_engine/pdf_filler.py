@@ -50,6 +50,7 @@ from agent_autofill.fill_engine.document_filler import (
     SkippedField,
 )
 from agent_autofill.fill_engine.never_fill_fields import is_blocked
+from agent_autofill.fill_engine.ambiguity_resolver import resolve as resolve_ambiguous
 from agent_autofill.fill_engine.refusal_reasons import classify_unfilled
 from agent_autofill.fill_engine.safe_fill_fields import decide
 
@@ -272,6 +273,20 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
             match = match_label_fn(label) if label else None
             canonical = getattr(match, "canonical", None) if match else None
             score = getattr(match, "score", 0.0) if match else 0.0
+
+            # A label the dictionary refuses as too general may still have only
+            # one possible answer for THIS company. "ADDRESS" is ambiguous
+            # between postal and physical in the abstract; when a company has
+            # recorded the same string for both, it is not ambiguous at all,
+            # and refusing it leaves an empty line on a bid for no reason.
+            #
+            # Only resolves BETWEEN fields that are already safe to fill.
+            # `is_blocked` has already run above and still governs.
+            if not canonical and label:
+                resolved, _ = resolve_ambiguous(label, profile)
+                if resolved:
+                    canonical, score = resolved, 100.0
+
             if not canonical:
                 # Deliberately NOT marked on the page. `[ ! ]` means "a field
                 # was refused on purpose"; an unmatched cell is usually not a

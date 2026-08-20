@@ -28,6 +28,22 @@ CREATE TABLE IF NOT EXISTS company_profile (
     -- brand_colour is a #rrggbb string. Anything unparseable falls back to the
     -- olive default rather than failing, because a quotation must always render.
     brand_colour TEXT,
+
+    -- --- Preference points, SBD 6.1 -----------------------------------------
+    -- The specific goals a tenderer claims points for. Each is a plain fact
+    -- about ownership that the company either meets or does not, and each is
+    -- claimed on the form in a "points claimed" column beside the points the
+    -- organ of state allocated.
+    --
+    -- These exist so that column can be drafted instead of left blank. They are
+    -- NEVER inferred: claiming a preference point the company does not qualify
+    -- for is a misrepresentation on a bid, so every one is answered by the user
+    -- and written through the confirmed path like any other profile fact.
+    -- NULL means unanswered, which fills nothing.
+    owned_51pc_black INTEGER,
+    owned_51pc_black_women INTEGER,
+    owned_51pc_black_youth INTEGER,
+    owned_51pc_black_disability INTEGER,
     tagline TEXT,
 
     -- --- Agent Autofill additions -------------------------------------------
