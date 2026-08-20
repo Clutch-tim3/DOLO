@@ -82,7 +82,16 @@ memory_tools = [
                         "by name on MBD 1. It is a reference the buyer uses to verify status "
                         "— never invent or guess one.\n"
                         "brand_colour is a hex colour such as '#1A4D8F' and drives the "
-                        "quotation palette; tagline is the line printed under the wordmark."
+                        "quotation palette; tagline is the line printed under the wordmark.\n"
+                        "owned_51pc_black, owned_51pc_black_women, owned_51pc_black_youth "
+                        "and owned_51pc_black_disability are the SBD 6.1 specific-goals "
+                        "flags. Each is true ONLY if the company is at least 51% owned by "
+                        "that group. NEVER infer one: take it from the B-BBEE certificate "
+                        "or EME affidavit, or from the user directly. These decide "
+                        "preference points on a real bid, so claiming one the company does "
+                        "not qualify for is a false claim on a government tender. A "
+                        "certificate reading '0% BLACK FEMALE OWNERSHIP' means that flag is "
+                        "FALSE, not unknown."
                     )
                 },
                 "confirmed": {
