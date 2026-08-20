@@ -1053,3 +1053,178 @@ def delete_review(company_id: str, review_id: str) -> dict:
                 "DELETE FROM autofill_review_item WHERE review_id = ?", (review_id,)
             )
     return {"status": "success", "deleted": bool(cur.rowcount), "review_id": review_id}
+
+
+# --- grouping outstanding flags -----------------------------------------------
+#
+# P0-3. The owner's 28-page pack produced 646 outstanding items across SEVEN
+# distinct reasons — 34 of them the identical pricing refusal, each demanding
+# its own note. Presenting one decision as thirty-four guarantees the person
+# stops reading, and a review nobody reads is not a review.
+#
+# WHAT IS AND IS NOT BEING RELAXED
+#
+# The per-field acknowledgement exists so nobody rubber-stamps a page of real
+# decisions, and it stays: every field still gets its own row, its own
+# timestamp, its own actor and its own MAC. What changes is the INTERACTION —
+# one note covers the fields that share a structural reason, and that note is
+# recorded against each of them individually.
+#
+# A blanket acknowledge-everything is still refused. Grouping by identical
+# structural reason is a different thing: "these 34 are all pricing" is one
+# decision about one policy, whereas "acknowledge all 646" spans signatures,
+# missing data and fields nobody could read.
+
+#: Reasons where the decision is about a POLICY, not about the field. Every
+#: member gets the same answer for the same cause, so one note is honest.
+#: Keyed by a stable token so the wording can change without breaking clients.
+STRUCTURAL_REASONS = {
+    "pricing": "Pricing must come from the quotation system",
+    "signature": "Requires your signature",
+    "not_whitelisted": "Not on the auto-fill whitelist",
+    "unreadable": "Could not read what this field is for",
+    "unrecognised": "I could not tell what this field is asking for",
+}
+
+#: Reasons that stay one-by-one. "Nothing on file for this field yet" is a
+#: DIFFERENT missing value each time — a single note cannot describe supplying
+#: eight different facts, and P0-2 turns these into questions the agent asks.
+FIELD_SPECIFIC_PREFIXES = ("Nothing on file",)
+
+
+def _reason_key(reason: str) -> str | None:
+    """The structural group a reason belongs to, or None if field-specific."""
+    text = (reason or "").strip()
+    if not text:
+        return None
+    for prefix in FIELD_SPECIFIC_PREFIXES:
+        if text.startswith(prefix):
+            return None
+    for key, marker in STRUCTURAL_REASONS.items():
+        if text.startswith(marker):
+            return key
+    return None
+
+
+def _page_of(location: str) -> str:
+    """"page 7" out of a location string, for the summary line."""
+    text = (location or "").strip()
+    return text or "unknown"
+
+
+def outstanding_groups(company_id: str, review_id: str) -> dict:
+    """
+    Outstanding flags collapsed to the decisions a person actually has to make.
+
+    Returns {"groups": [...], "individual": [...]} where a group is one
+    structural reason across many fields — "Pricing — 34 fields across pages 1,
+    7, 8" — and `individual` is everything that genuinely needs its own answer.
+
+    The counts are what make the list usable; the item keys are kept so the
+    caller can still show, and acknowledge, any single field.
+    """
+    _load_review(company_id, review_id)  # tenant pin
+
+    grouped: dict = {}
+    individual = []
+
+    for row in _outstanding_rows(review_id):
+        key = _reason_key(row.get("reason"))
+        if key is None:
+            individual.append(row)
+            continue
+        entry = grouped.setdefault(key, {
+            "reason_key": key,
+            "reason": row.get("reason"),
+            "item_keys": [],
+            "pages": set(),
+            "labels": [],
+        })
+        entry["item_keys"].append(row["item_key"])
+        entry["pages"].add(_page_of(row.get("location")))
+        if len(entry["labels"]) < 6:
+            entry["labels"].append(row.get("label"))
+
+    groups = []
+    for entry in grouped.values():
+        pages = sorted(entry["pages"])
+        groups.append({
+            "reason_key": entry["reason_key"],
+            "reason": entry["reason"],
+            "count": len(entry["item_keys"]),
+            "item_keys": entry["item_keys"],
+            "pages": pages,
+            "example_labels": entry["labels"],
+            "summary": (f"{len(entry['item_keys'])} field(s) across "
+                        f"{', '.join(pages) if pages else 'this document'}"),
+        })
+
+    groups.sort(key=lambda g: -g["count"])
+    return {
+        "groups": groups,
+        "individual": individual,
+        "outstanding_total": sum(g["count"] for g in groups) + len(individual),
+        "decisions_required": len(groups) + len(individual),
+    }
+
+
+def acknowledge_group(company_id: str, review_id: str, reason_key: str,
+                      note: str, user_id: str = "", username: str = "") -> dict:
+    """
+    Acknowledge every outstanding field sharing one structural reason.
+
+    One note, recorded against each field individually — same row, same
+    timestamp, same actor, same MAC as if each had been acknowledged by hand.
+    The audit trail is unchanged; only the number of times a person types the
+    same sentence is.
+
+    Refuses:
+      * a reason_key that is not structural, including anything meaning "all"
+      * a note that would not pass for a single field
+
+    `acknowledge_field` is still the only thing that writes an acknowledgement,
+    so the note rules, the signing and the blanket-token refusal are enforced
+    in exactly one place.
+    """
+    # Argument validation BEFORE the tenant lookup. The group names are public
+    # constants, so refusing an invalid one leaks nothing, and it means
+    # "there is no acknowledge-everything" is answered as itself rather than as
+    # "no such review".
+    key = (reason_key or "").strip().lower()
+    if key in BLANKET_TOKENS or key in {"all", "everything", "*"}:
+        raise ReviewGateError(
+            "There is no acknowledge-everything. Acknowledge one group of "
+            "identical refusals, or one field.")
+    if key not in STRUCTURAL_REASONS:
+        raise ReviewGateError(
+            f"{reason_key!r} is not a group of identical refusals. Groups are: "
+            f"{', '.join(sorted(STRUCTURAL_REASONS))}.")
+
+    _load_review(company_id, review_id)  # tenant pin, before any read
+
+    members = [r for r in _outstanding_rows(review_id)
+               if _reason_key(r.get("reason")) == key]
+    if not members:
+        return {"status": "no_op", "reason_key": key, "acknowledged": 0,
+                "message": "Nothing outstanding with that reason."}
+
+    acknowledged = []
+    for row in members:
+        # Through the single-field path, so the note validation, the MAC and
+        # the actor are identical to acknowledging it by hand.
+        acknowledge_field(company_id, review_id, row["item_key"], note,
+                          user_id=user_id, username=username)
+        acknowledged.append(row["item_key"])
+
+    outstanding = _outstanding_rows(review_id)
+    return {
+        "status": "success",
+        "reason_key": key,
+        "acknowledged": len(acknowledged),
+        "item_keys": acknowledged,
+        "outstanding_count": len(outstanding),
+        "message": (f"{len(acknowledged)} field(s) acknowledged together — they "
+                    f"were refused for the same reason. "
+                    + (f"{len(outstanding)} still to go."
+                       if outstanding else "Nothing else outstanding.")),
+    }
