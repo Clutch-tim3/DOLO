@@ -1228,3 +1228,62 @@ def acknowledge_group(company_id: str, review_id: str, reason_key: str,
                     + (f"{len(outstanding)} still to go."
                        if outstanding else "Nothing else outstanding.")),
     }
+
+
+def refill_review(company_id: str, review_id: str) -> dict:
+    """
+    Fill the same document again, from the profile as it now stands.
+
+    P0-2. A user who answers a question should not have to upload the pack
+    again — the source is still on record, so it is filled afresh.
+
+    A NEW REVIEW, NOT A MUTATED ONE. Re-filling can change what is written into
+    the document, and an acknowledgement is a statement that a person looked at
+    a SPECIFIC value. Editing the existing review in place would leave
+    acknowledgements describing values nobody saw — the same fault the MAC over
+    the confirmed values exists to prevent. So the old review is left exactly as
+    it stands, as the record of what was reviewed then, and this returns a new
+    review_id for the new draft.
+
+    Refuses once a document has been exported: that file is out in the world,
+    and its review has to keep describing it.
+    """
+    row = _load_review(company_id, review_id)
+
+    if row["export_path"]:
+        raise ReviewGateError(
+            "This document has already been exported. Start a new autofill run "
+            "rather than re-filling it — the exported file's review has to keep "
+            "describing the file.")
+
+    source = Path(row["source_path"] or "")
+    if not source.exists():
+        raise ReviewGateError(
+            "The original document is no longer on file, so it cannot be "
+            "re-filled. Upload it again.")
+
+    from agent.memory.company_store import get_company_profile
+    from agent_autofill.extraction import match_label
+    from agent_autofill.fill_engine.document_filler import fill_docx
+    from agent_autofill.fill_engine.pdf_filler import fill_pdf
+
+    profile = get_company_profile(company_id) or {}
+    draft = Path(row["draft_path"]) if row["draft_path"] else source
+    draft = draft.with_name(f"refill_{uuid.uuid4().hex[:8]}_{draft.name}")
+
+    if source.suffix.lower() == ".pdf":
+        fill_result = fill_pdf(source, draft, profile, match_label)
+    else:
+        fill_result = fill_docx(source, draft, profile, match_label)
+
+    opened = open_review(company_id, fill_result,
+                         company_name=row["company_name"] or "")
+
+    opened["refilled_from"] = review_id
+    opened["message"] = (
+        f"Re-filled from your updated profile: {opened['filled_count']} value(s) "
+        f"written, {opened['flagged_count']} still flagged. This is a new draft, "
+        f"so it needs reviewing from the start — the previous one is kept as the "
+        f"record of what you reviewed before."
+    )
+    return opened
