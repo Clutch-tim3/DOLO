@@ -314,3 +314,44 @@ def test_summary_counts_are_consistent(mbd_docx):
     summary = report.summary()
     assert summary["blanks_detected"] == len(report.fields)
     assert summary["matched"] + summary["unmatched"] == summary["blanks_detected"]
+
+
+# --- labels real SA tender forms actually use --------------------------------
+#
+# From the owner's RFQ, where 41 of 52 flags were "I could not tell what this
+# field is asking for" — for fields the profile had. They scored 86 on WRatio
+# against a near neighbour and were then correctly refused by corroboration,
+# because "supplier" is not "bidder". The fix is the alias, never a lower floor.
+
+import pytest as _pytest
+from agent_autofill.extraction.field_alias_dictionary import match_label as _match
+
+
+@_pytest.mark.parametrize("label,expected", [
+    ("Address of Supplier", "physical_address"),
+    ("Supplier Address", "physical_address"),
+    ("Company Address", "physical_address"),
+    ("Valid Compliant Tax pin", "tax_compliance_pin"),
+    ("Tax Compliance PIN", "tax_compliance_pin"),
+    ("Tel No", "telephone_number"),
+    ("Contact No", "telephone_number"),
+    ("Cell No", "cell_phone_number"),
+    ("Mobile No", "cell_phone_number"),
+])
+def test_real_form_wording_is_recognised(label, expected):
+    match = _match(label)
+    assert match.canonical == expected, (
+        f"{label!r} matched {match.canonical!r} at {match.score}")
+
+
+def test_a_bare_ambiguous_label_is_still_refused():
+    """ADDRESS alone must not be guessed at.
+
+    It sits on the unsafe list with NAME, AMOUNT, CODE and LEVEL. Postal and
+    physical are different answers and only one is right, so this is a question
+    for the user rather than something to resolve by coin flip. Adding it to
+    the alias index would be dead code — the unsafe check runs first — which is
+    worse than absent, because it reads like a decision that was made.
+    """
+    for bare in ("ADDRESS", "NAME", "AMOUNT", "CODE"):
+        assert _match(bare).canonical is None, f"{bare} should not auto-match"

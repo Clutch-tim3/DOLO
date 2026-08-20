@@ -140,6 +140,15 @@ ALIAS_SEEDS: dict[str, tuple[str, ...]] = {
         "TCS PIN",
         "SUPPLIER TAX COMPLIANCE STATUS PIN",
         "TAX COMPLIANCE STATUS TCS PIN",
+        # Forms word this loosely. "Valid Compliant Tax pin" is verbatim from a
+        # real RFQ and scored 86 — near-miss, then correctly refused by
+        # corroboration.
+        "VALID COMPLIANT TAX PIN",
+        "COMPLIANT TAX PIN",
+        "TAX COMPLIANCE PIN",
+        "TAX PIN",
+        "VALID TAX COMPLIANCE PIN",
+        "TCS PIN NUMBER",
     ),
     "vat_registration_number": (
         "VAT Registration Number",                           # (spec)
@@ -176,10 +185,28 @@ ALIAS_SEEDS: dict[str, tuple[str, ...]] = {
         "BUSINESS ADDRESS",
         "PHYSICAL BUSINESS ADDRESS",
         "ADDRESS OF BIDDER",
+        # Real forms say "supplier" at least as often as "bidder". These scored
+        # 86 on WRatio against ADDRESS OF BIDDER and then failed corroboration,
+        # because supplier and bidder are not the same word — the second
+        # opinion was doing its job. The answer is the alias, not a lower floor.
+        "ADDRESS OF SUPPLIER",
+        "SUPPLIER ADDRESS",
+        "COMPANY ADDRESS",
+        "ADDRESS OF THE BIDDER",
+        "ADDRESS OF THE SUPPLIER",
+        # A bare "ADDRESS" is deliberately NOT here. It sits on the unsafe
+        # list with NAME, AMOUNT, CODE and LEVEL — single words that could mean
+        # anything on a form, and that check runs before this index, so adding
+        # it here would be dead code that reads like a decision. A form asking
+        # only "ADDRESS" has to be asked about, not guessed at: postal and
+        # physical are different answers and only one of them is right.
     ),
     "postal_address": (
         "POSTAL ADDRESS",
         "POST ADDRESS",
+        "POSTAL ADDRESS OF BIDDER",
+        "POSTAL ADDRESS OF SUPPLIER",
+        "POSTAL CODE ADDRESS",
     ),
     "contact_person": (
         "CONTACT PERSON",
@@ -196,6 +223,11 @@ ALIAS_SEEDS: dict[str, tuple[str, ...]] = {
         "LANDLINE NUMBER",
         "CONTACT NUMBER",
         "TELEPHONE",
+        "TEL NO",
+        "TEL",
+        "CONTACT NO",
+        "TELEPHONE NUMBER OF SUPPLIER",
+        "BUSINESS TELEPHONE NUMBER",
     ),
     "cell_phone_number": (
         "CELL PHONE NUMBER",
@@ -203,6 +235,11 @@ ALIAS_SEEDS: dict[str, tuple[str, ...]] = {
         "CELL NUMBER",
         "MOBILE NUMBER",
         "CELL PHONE NO",
+        "CELL NO",
+        "CELLPHONE NO",
+        "MOBILE NO",
+        "CELL",
+        "CELLULAR NUMBER",
     ),
     "fax_number": (
         "FACSIMILE NUMBER",
