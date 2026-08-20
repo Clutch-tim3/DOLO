@@ -229,6 +229,54 @@ def _autofill_export_document(company_id: str, review_id: str,
     return result
 
 
+def _autofill_missing_details(company_id: str, review_id: str):
+    """
+    What this pack still needs from the user, as questions rather than flags.
+
+    P0-2. Reported per PROFILE FIELD, not per blank: on the owner's pack 24
+    outstanding fields collapse to 11 questions, because "Designation" and
+    "Capacity" appear fourteen times between them and are one fact.
+    """
+    from agent.memory.company_store import get_company_profile
+    from agent_autofill.integration.missing_fields import missing_profile_fields
+    from agent_autofill.integration.review_gate import _load_review, _outstanding_rows
+
+    def _collect(cid, rid):
+        _load_review(cid, rid)  # tenant pin
+        rows = _outstanding_rows(rid)
+        missing = missing_profile_fields(rows, get_company_profile(cid) or {})
+        return {
+            "status": "success",
+            "review_id": rid,
+            "questions": missing,
+            "question_count": len(missing),
+            "fields_waiting": sum(m["count"] for m in missing),
+            "message": (
+                f"{len(missing)} thing(s) to ask about, covering "
+                f"{sum(m['count'] for m in missing)} blank(s)."
+                if missing else
+                "Nothing outstanding that the user can answer."
+            ),
+        }
+
+    return _guard(_collect, company_id, review_id)
+
+
+def _autofill_refill(company_id: str, review_id: str):
+    """
+    Re-run the fill for a review after the profile has been updated.
+
+    So a user who answers a question does not upload the pack again. The
+    document is re-filled from the SAME source and the review is rebuilt, which
+    means every acknowledgement is made afresh — a value that changed has not
+    been reviewed yet, and carrying old acknowledgements across would be
+    acknowledging something nobody saw.
+    """
+    from agent_autofill.integration.review_gate import refill_review
+
+    return _guard(refill_review, company_id, review_id)
+
+
 AUTOFILL_TOOL_HANDLERS = {
     "autofill_prepare_tender": _autofill_prepare_tender,
     "autofill_review_status": _autofill_review_status,
@@ -236,6 +284,8 @@ AUTOFILL_TOOL_HANDLERS = {
     "autofill_confirm_filled_values": _autofill_confirm_filled_values,
     "autofill_acknowledge_field": _autofill_acknowledge_field,
     "autofill_export_document": _autofill_export_document,
+    "autofill_missing_details": _autofill_missing_details,
+    "autofill_refill": _autofill_refill,
 }
 
 
@@ -332,6 +382,48 @@ autofill_tools = [
                 },
             },
             "required": ["company_id", "review_id", "confirmed_keys"],
+        },
+    },
+    {
+        "name": "autofill_missing_details",
+        "description": (
+            "What this pack still needs from the user, as questions. Call it after "
+            "processing a pack and ASK the user for what it returns, in your own "
+            "words, rather than telling them to go and acknowledge flags. Each "
+            "entry is one profile field with a `prompt` saying what to ask for, a "
+            "`count` of how many blanks it would fill, and the `asked_by` labels "
+            "showing where the form asks for it. Fields marked `personal` are "
+            "someone's own details — ask for them plainly and never guess. "
+            "When the user answers, write it with update_company_profile using "
+            "confirmed=true ONLY after showing them the exact value you are about "
+            "to save, then call autofill_refill."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_id": {"type": "string"},
+                "review_id": {"type": "string"},
+            },
+            "required": ["company_id", "review_id"],
+        },
+    },
+    {
+        "name": "autofill_refill",
+        "description": (
+            "Fill the same document again from the updated company profile, so the "
+            "user does not upload it a second time. Returns a NEW review_id: the "
+            "draft has changed, so it must be reviewed from the start, and the "
+            "previous review is kept as the record of what was reviewed before. "
+            "Use the new review_id for everything afterwards. Refused once a "
+            "document has been exported."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_id": {"type": "string"},
+                "review_id": {"type": "string"},
+            },
+            "required": ["company_id", "review_id"],
         },
     },
     {
