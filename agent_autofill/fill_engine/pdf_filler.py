@@ -299,7 +299,11 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
                 continue
 
             value = str(verdict.value)
-            if width < MIN_BLANK_WIDTH or not _fits(value, width):
+            # Measure at the size this blank will actually be written at. The
+            # fit check and the drawing must agree, or a value passes the check
+            # at one size and overflows its cell at another.
+            fill_size = _fill_size_for(page, bbox)
+            if width < MIN_BLANK_WIDTH or not _fits(value, width, fill_size):
                 # Refused rather than truncated. A half-written registration
                 # number is worse than an empty line: it looks like an answer.
                 _mark_skipped(page, bbox)
@@ -311,7 +315,8 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
                     category="does_not_fit", location=location))
                 continue
 
-            _write_value(page, bbox, value, seed=f"{label}|{location}")
+            _write_value(page, bbox, value, seed=f"{label}|{location}",
+                         size=fill_size)
             filled.append(FilledField(
                 label=label, value=value, source="company_profile",
                 low_confidence=bool(getattr(verdict, "low_confidence", False)),
@@ -420,7 +425,109 @@ def _jitter(seed_text: str) -> tuple[float, float, float, float, tuple]:
     return dx, dy, degrees, size_scale, colour
 
 
-def _write_value(page, bbox, value: str, seed: str = "") -> None:
+
+# --- sizing the writing to the form -------------------------------------------
+#
+# A person writes to the size of the form in front of them. On the owner's
+# hand-filled SBD 6.1 the handwriting sits at the same height as the printed
+# body text, and that is what makes it read as belonging to the page.
+#
+# A single constant cannot do that, because forms are not printed at one size.
+# The real pack measures 10.0pt and 11.0pt across 57,000 characters, with 9,
+# 12, 14 and 16pt elsewhere. So the size is taken from the printed text beside
+# each blank.
+#
+# WHY THE PREVIOUS FIX WAS NOT ENOUGH. Raising the constant from 8.5 to 10.6
+# restored parity with how values looked BEFORE the face changed to Patrick
+# Hand. But that earlier appearance was itself too small against the form: at
+# 10.6 the effective size is 10.6 x 0.80 = 8.5pt beside body text printed at
+# 10-11pt. The right reference is the form, not the product's own history.
+
+#: Patrick Hand renders about 80% the width of Helvetica at the same point
+#: size, measured on this machine: "CairoAI" is 22.74pt against 28.34pt.
+#: A point size is divided by this to reach the same apparent size.
+HAND_WIDTH_RATIO = 0.802
+
+#: Never smaller than this, whatever the form says. Below it a value does not
+#: survive being printed and rescanned, which is how these are submitted.
+MIN_FILL_SIZE = 10.0
+
+#: Nor larger, so an oversized heading beside a blank cannot drive the writing
+#: to a size no cell can hold.
+MAX_FILL_SIZE = 15.0
+
+#: Used when a page has no text layer and no OCR heights: the commonest body
+#: size on South African tender forms.
+ASSUMED_PRINT_SIZE = 10.5
+
+#: How far from a blank a printed span may be and still be "beside" it.
+_NEAR_POINTS = 26.0
+
+_page_size_cache: dict = {}
+
+
+def _printed_sizes(page) -> list:
+    """
+    (y_centre, size) for every printed span on the page, cached.
+
+    Read from the page itself rather than passed in, so this works wherever
+    _write_value is called from and needs no change to the extractor.
+    """
+    key = (id(page.parent), page.number)
+    if key in _page_size_cache:
+        return _page_size_cache[key]
+
+    spans = []
+    try:
+        for block in page.get_text("dict").get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    size = float(span.get("size") or 0)
+                    text = (span.get("text") or "").strip()
+                    # Whitespace-only spans carry a size but no ink, and a
+                    # single character is too weak a sample to size from.
+                    if size <= 0 or len(text) < 2:
+                        continue
+                    y0, y1 = span["bbox"][1], span["bbox"][3]
+                    spans.append(((y0 + y1) / 2.0, size))
+    except Exception:  # noqa: BLE001 - sizing must never fail a fill
+        log.exception("could not read printed sizes on page %s", page.number)
+
+    _page_size_cache[key] = spans
+    return spans
+
+
+def _fill_size_for(page, bbox) -> float:
+    """
+    The point size to write this blank at, derived from the form around it.
+
+    Falls back through: printed text beside the blank -> anything printed on
+    the page -> ASSUMED_PRINT_SIZE. A scanned page has no text layer at all,
+    and lands on the assumption, which is still above the floor.
+    """
+    try:
+        y_centre = (float(bbox[1]) + float(bbox[3])) / 2.0
+        spans = _printed_sizes(page)
+
+        near = [s for y, s in spans if abs(y - y_centre) <= _NEAR_POINTS]
+        if not near:
+            near = [s for _, s in spans]
+
+        if near:
+            # Median rather than mean: one heading beside a blank should not
+            # drag the size of everything in that row.
+            near.sort()
+            printed = near[len(near) // 2]
+        else:
+            printed = ASSUMED_PRINT_SIZE
+    except Exception:  # noqa: BLE001
+        printed = ASSUMED_PRINT_SIZE
+
+    target = printed / HAND_WIDTH_RATIO
+    return max(MIN_FILL_SIZE, min(MAX_FILL_SIZE, target))
+
+
+def _write_value(page, bbox, value: str, seed: str = "", size: float = None) -> None:
     """
     Highlight the blank, then write the value inside it.
 
@@ -453,6 +560,7 @@ def _write_value(page, bbox, value: str, seed: str = "") -> None:
     # always renders identically. A perfect baseline at a uniform size in a
     # uniform ink reads as a font however handwritten the face is.
     dx, dy, degrees, size_scale, colour = _jitter(seed or f"{x0:.1f},{y0:.1f}")
+    base_size = _fill_size_for(page, bbox) if size is None else size
 
     # Baseline nudged up from the bottom edge so the text sits on the rule
     # rather than under it, then wandered slightly.
@@ -463,7 +571,7 @@ def _write_value(page, bbox, value: str, seed: str = "") -> None:
             # `rotate` takes whole degrees, so a fractional angle is applied
             # through the text matrix instead — that is what breaks the typeset
             # feel, and rounding it to 0 would lose the effect entirely.
-            page.insert_text(point, value, fontsize=FONT_SIZE * size_scale,
+            page.insert_text(point, value, fontsize=base_size * size_scale,
                              fontname=HANDWRITING_ALIAS,
                              fontfile=str(HANDWRITING_FILE), color=colour,
                              morph=(point, fitz.Matrix(degrees)))
