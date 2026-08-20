@@ -426,6 +426,81 @@ def _jitter(seed_text: str) -> tuple[float, float, float, float, tuple]:
 
 
 
+#: How far a single letter may depart from the value's own size. A hand does
+#: not draw two characters identically, and a line where every glyph is the
+#: same height reads as a font no matter how handwritten the face is.
+GLYPH_SIZE_RANGE = 0.07
+
+#: Occasionally a letter is noticeably bigger or smaller than its neighbours —
+#: the owner asked for outliers, not uniform wobble. This is how often, and how
+#: far, one is allowed to depart.
+GLYPH_OUTLIER_RATE = 0.14
+GLYPH_OUTLIER_RANGE = 0.17
+
+#: Vertical wander per letter, in points. Small: a hand keeps the baseline
+#: roughly, it does not scatter letters.
+GLYPH_BASELINE_JITTER = 0.5
+
+
+def _glyph_variation(seed_text: str, count: int):
+    """
+    Per-letter (size_scale, dy) pairs, stable for a given seed.
+
+    Derived from a digest that is extended as needed rather than from `random`,
+    for the same reason `_jitter` is: the same document must render identically
+    every time. The export MAC binds the bytes of the file, so writing that
+    drifts between renders would break verification on a document nobody
+    changed.
+    """
+    import hashlib
+
+    out = []
+    block = b""
+    for i in range(count):
+        if i * 4 + 4 > len(block):
+            block += hashlib.sha256(
+                (seed_text or "").encode("utf-8") + b"|glyph|" + str(i).encode()
+            ).digest()
+        a = ((block[i * 4] << 8) | block[i * 4 + 1]) / 65535.0
+        b = ((block[i * 4 + 2] << 8) | block[i * 4 + 3]) / 65535.0
+
+        if a < GLYPH_OUTLIER_RATE:
+            # An outlier. Rescaled from the low slice of `a` so the decision and
+            # the magnitude do not correlate into a visible pattern.
+            spread = GLYPH_OUTLIER_RANGE
+            unit = (a / GLYPH_OUTLIER_RATE) * 2.0 - 1.0
+        else:
+            spread = GLYPH_SIZE_RANGE
+            unit = ((a - GLYPH_OUTLIER_RATE) / (1.0 - GLYPH_OUTLIER_RATE)) * 2.0 - 1.0
+
+        out.append((1.0 + unit * spread, (b * 2.0 - 1.0) * GLYPH_BASELINE_JITTER))
+    return out
+
+
+def _draw_handwritten(page, point, text: str, size: float, colour,
+                      degrees: float, seed: str) -> None:
+    """
+    Draw `text` one letter at a time so no two are the same size.
+
+    Each glyph is advanced by ITS OWN measured width at ITS OWN size, so the
+    line stays correctly spaced — advancing by the nominal width would make the
+    letters creep apart or collide as the sizes drift.
+    """
+    import fitz
+
+    face = _handwriting()
+    variation = _glyph_variation(seed, len(text))
+    x = point.x
+    for ch, (scale, dy) in zip(text, variation):
+        glyph_size = size * scale
+        if ch.strip():
+            page.insert_text(fitz.Point(x, point.y + dy), ch,
+                             fontsize=glyph_size, fontname=HANDWRITING_ALIAS,
+                             fontfile=str(HANDWRITING_FILE), color=colour,
+                             morph=(fitz.Point(x, point.y), fitz.Matrix(degrees)))
+        x += face.text_length(ch, fontsize=glyph_size)
+
+
 # --- sizing the writing to the form -------------------------------------------
 #
 # A person writes to the size of the form in front of them. On the owner's
@@ -571,10 +646,8 @@ def _write_value(page, bbox, value: str, seed: str = "", size: float = None) -> 
             # `rotate` takes whole degrees, so a fractional angle is applied
             # through the text matrix instead — that is what breaks the typeset
             # feel, and rounding it to 0 would lose the effect entirely.
-            page.insert_text(point, value, fontsize=base_size * size_scale,
-                             fontname=HANDWRITING_ALIAS,
-                             fontfile=str(HANDWRITING_FILE), color=colour,
-                             morph=(point, fitz.Matrix(degrees)))
+            _draw_handwritten(page, point, value, base_size * size_scale,
+                              colour, degrees, seed or f"{x0:.1f},{y0:.1f}")
             return
         except Exception:  # noqa: BLE001 - fall through to the built-in face
             log.exception("could not draw %r in the handwriting font", value[:40])
