@@ -50,6 +50,7 @@ from agent_autofill.fill_engine.document_filler import (
     SkippedField,
 )
 from agent_autofill.fill_engine.never_fill_fields import is_blocked
+from agent_autofill.fill_engine.refusal_reasons import classify_unfilled
 from agent_autofill.fill_engine.safe_fill_fields import decide
 
 log = logging.getLogger("agent_autofill.pdf_filler")
@@ -283,10 +284,16 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
                 # same category was dropped from the confirmation list for the
                 # same reason: it is a note about extraction, not a decision
                 # about the form.
+                # One sentence for every refusal taught the user to distrust
+                # all of them: on a real RFQ this fired 41 times, and 38 were
+                # the system working correctly — SBD 4 declaration fields,
+                # price cells, and commercial terms for that bid. Saying "I
+                # could not tell" about a sworn declaration is not humility,
+                # it is a wrong description of a right decision.
+                category, reason = classify_unfilled(label, match)
                 skipped.append(SkippedField(
                     label=label or "(unlabelled)",
-                    reason="I could not tell what this field is asking for.",
-                    category="unmatched", location=location))
+                    reason=reason, category=category, location=location))
                 continue
 
             verdict = decide(canonical, label, profile, match_score=score)

@@ -92,7 +92,25 @@ BLANKET_TOKENS = {
 #:
 #: Everything else still requires a person: blocked (signature, declaration,
 #: pricing), no_data, low confidence, and every value actually written.
-ADVISORY_CATEGORIES = {"unmatched", "unplaceable"}
+ADVISORY_CATEGORIES = {
+    "unmatched",
+    "unplaceable",
+    # `unmatched` was split into five honest categories because one sentence —
+    # "I could not tell what this field is asking for" — was describing a sworn
+    # declaration, a price cell and a genuine miss identically, and taught the
+    # user to distrust all three.
+    #
+    # Every one of these WAS "unmatched" and therefore advisory. They stay
+    # advisory, because renaming a thing must not quietly change what blocks an
+    # export. Whether `declaration` should start blocking is a real question —
+    # SBD 4 is the most consequential page in a pack — but it is a decision
+    # about the gate, and it belongs to the owner, not to a rename.
+    "declaration",
+    "pricing_cell",
+    "tender_terms",
+    "ambiguous_label",
+    "prose",
+}
 
 #: Minimum characters in an acknowledgement note. Short enough not to be busy
 #: work, long enough that "ok" does not clear a state-employee declaration.
