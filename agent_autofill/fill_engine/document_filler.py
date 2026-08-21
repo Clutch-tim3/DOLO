@@ -186,7 +186,7 @@ def fill_docx(source: str | Path, output: str | Path, profile: dict,
             ))
             continue
 
-        # Not filled. Mark it visibly so nothing is skipped without a trace.
+        # Not filled. Recorded in `result.skipped` — and ONLY there.
         block: BlockDecision | None = decision.block
         if block is not None:
             category = "blocked"
@@ -197,7 +197,12 @@ def fill_docx(source: str | Path, output: str | Path, profile: dict,
         else:
             category = "unmatched"
 
-        value_cell.text = SKIP_MARKER
+        # The cell is left exactly as the form's author wrote it. This used to
+        # be `value_cell.text = SKIP_MARKER`, which put a red `[ ! ]` in every
+        # refused cell — including the whole Identity Number column of an SBD 4
+        # table that is correctly empty. It survives printing, so the owner was
+        # handing organs of state a statutory form covered in marks. The
+        # refusal belongs in the review, not on the document.
         result.skipped.append(SkippedField(
             label=label,
             reason=decision.reason or "Left for you to complete.",

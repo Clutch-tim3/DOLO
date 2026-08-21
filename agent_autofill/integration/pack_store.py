@@ -927,7 +927,7 @@ def pack_detail(company_id: str, pack_id: str) -> dict:
         # the pack is finished.
         "drafts_only": (
             "Everything in this pack is a draft. No signature was applied, no price "
-            "was written, and no declaration was answered. Fields marked [ ! ] must "
+            "was written, and no declaration was answered. The fields it left must "
             "still be completed by hand before anything is submitted."
         ),
     }

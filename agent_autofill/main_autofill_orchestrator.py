@@ -197,6 +197,69 @@ def _legacy_doc_report(path: Path) -> tuple[str, dict | None]:
     return instruction, analysis
 
 
+def _document_text(path, doc_type: str) -> str:
+    """The document's words, for reading facts the tender states about itself."""
+    try:
+        if doc_type == "pdf":
+            import fitz
+
+            with fitz.open(str(path)) as doc:
+                return "\n".join(page.get_text() for page in doc)
+        if doc_type == "docx":
+            import docx
+
+            document = docx.Document(str(path))
+            parts = [p.text for p in document.paragraphs]
+            for table in document.tables:
+                for row in table.rows:
+                    parts.extend(c.text for c in row.cells)
+            return "\n".join(parts)
+    except Exception as exc:  # noqa: BLE001 - reading is best effort
+        log.warning("could not read text from %s: %s", path, exc)
+    return ""
+
+
+def _with_preference_claim(profile: dict, report) -> tuple[dict, dict]:
+    """
+    Add SBD 6.1's points claim to the profile for THIS document only.
+
+    `SBD_COMPLIANCE.md` P0-2: Level 1 under 80/20 is a claim of 20 points, and
+    "leaving it blank costs points for no reason".
+
+    It is not stored. The claim is true of one tender, not of the company — the
+    same Level 1 company claims 20 points on an 80/20 tender and 10 on a 90/10
+    one — so it goes onto the dict handed to the fill engine and nowhere else.
+    Writing it to the profile would carry one tender's answer onto the next.
+
+    Both inputs must be known or nothing is added, and `preference` records why
+    so the user can be asked. A blank claim costs points; a wrong one is a
+    misrepresentation to an organ of state.
+    """
+    from agent_autofill.fill_engine.preference_points import (
+        detect_preference_system,
+        goal_claims,
+        points_claim,
+    )
+
+    profile = dict(profile or {})
+    text = _document_text(report.path, report.doc_type)
+    system, evidence = detect_preference_system(text)
+    claim = points_claim(profile.get("bbbee_level"), system)
+
+    if claim is not None:
+        # Whole numbers on the form: SBD 6.1's table is 20, 18, 14 — never 20.0.
+        profile["bbbee_points_claim"] = (
+            str(int(claim)) if float(claim).is_integer() else str(claim))
+
+    return profile, {
+        "system": system,
+        "evidence": evidence,
+        "bbbee_level": profile.get("bbbee_level"),
+        "points_claim": claim,
+        "goals": goal_claims(profile),
+    }
+
+
 def _pdf_analysis(report) -> dict:
     """Extraction counts for a tender PDF, which the fill engine cannot write."""
     counts = report.summary()
@@ -320,6 +383,7 @@ def run_autofill(
     # have one. A .doc stays analysis-only: there is no pure-Python writer for
     # binary OLE2, and that is a real limit rather than a missing feature.
     profile = get_company_profile(company_id)
+    profile, preference = _with_preference_claim(profile, report)
     out_root = Path(output_dir) if output_dir else file_paths.generated_dir()
     out_root.mkdir(parents=True, exist_ok=True)
 
@@ -343,7 +407,8 @@ def run_autofill(
         if is_pdf:
             from agent_autofill.fill_engine.pdf_filler import fill_pdf
 
-            fill_result = fill_pdf(source, draft_path, profile, match_label)
+            fill_result = fill_pdf(source, draft_path, profile, match_label,
+                                   company_id=company_id)
         else:
             fill_result = fill_docx(source, draft_path, profile, match_label)
 

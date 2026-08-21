@@ -239,11 +239,14 @@ def _autofill_missing_details(company_id: str, review_id: str):
     """
     from agent.memory.company_store import get_company_profile
     from agent_autofill.integration.missing_fields import missing_profile_fields
-    from agent_autofill.integration.review_gate import _load_review, _outstanding_rows
+    # `_askable_rows`, not `_outstanding_rows`: the second filters out advisory
+    # items, and "ADDRESS — too general to answer safely" is advisory. It must
+    # not block an export, and it absolutely must be asked about.
+    from agent_autofill.integration.review_gate import _askable_rows, _load_review
 
     def _collect(cid, rid):
         _load_review(cid, rid)  # tenant pin
-        rows = _outstanding_rows(rid)
+        rows = _askable_rows(rid)
         missing = missing_profile_fields(rows, get_company_profile(cid) or {})
         return {
             "status": "success",
@@ -260,6 +263,123 @@ def _autofill_missing_details(company_id: str, review_id: str):
         }
 
     return _guard(_collect, company_id, review_id)
+
+
+def _autofill_resolve_label(company_id: str, label: str, field: str):
+    """
+    Record which field a too-general label means, after the USER has said so.
+
+    The other half of a "which_one" question. When the answer to "page 3 just
+    says ADDRESS — physical or postal?" is "physical", there is nothing to write
+    to the profile: both addresses are already on file. What was missing is the
+    MAPPING, and without somewhere to put it the same question gets asked on the
+    next pack, and the one after that.
+
+    This writes it to `learned_labels`, scoped to this company, which is where
+    the fill engine already looks when the dictionary cannot place a label. So
+    the answer fills this pack on the next refill and every pack after it.
+
+    IT CANNOT UNBLOCK ANYTHING. The field goes through `never_fill_fields.
+    is_blocked` and `SAFE_FILL_FIELDS` in the fill engine exactly as a
+    dictionary match does. Teaching that "Signature" means company_name records
+    a lesson that is then never consulted, because the blocklist runs on the
+    label first. A wrong answer here costs a wrong value in a fillable field,
+    visible in the review and correctable with the same tool.
+    """
+    from agent_autofill.extraction import learned_labels
+    from agent_autofill.fill_engine.safe_fill_fields import SAFE_FILL_FIELDS
+
+    def _teach(cid, lbl, fld):
+        if fld not in SAFE_FILL_FIELDS:
+            return {
+                "status": "error",
+                "message": (
+                    f"'{fld}' is not a field CairoAI fills. Valid fields: "
+                    + ", ".join(sorted(SAFE_FILL_FIELDS)) + "."
+                ),
+            }
+        learned_labels.teach(cid, lbl, canonical_field=fld, taught_by="user")
+        return {
+            "status": "success",
+            "label": lbl,
+            "field": fld,
+            "message": (
+                f"Noted: on this company's forms, '{lbl}' means {fld}. It will "
+                f"fill from now on. Call autofill_refill to apply it to this pack."
+            ),
+        }
+
+    return _guard(_teach, company_id, label, field)
+
+
+def _autofill_compliance_check(company_id: str, review_id: str):
+    """
+    What would get this bid thrown out, before anyone reads the proposal.
+
+    `SBD_COMPLIANCE.md`: administrative mistakes disqualify more South African
+    submissions than weak pricing does, and CairoAI is the only party that sees
+    the whole pack, the profile and the vault at once.
+
+    It reports. `export_reviewed` remains the only thing that refuses an export.
+    """
+    from agent.memory.company_store import get_company_documents, get_company_profile
+    from agent_autofill.fill_engine.preference_goals import (
+        find_goals_table, goal_rows, propose_claims,
+    )
+    from agent_autofill.integration.compliance_checks import (
+        disqualification_summary, find_closing_date,
+    )
+    from agent_autofill.integration.review_gate import _load_review
+
+    def _check(cid, rid):
+        review = _load_review(cid, rid)  # tenant pin
+        source = Path(review["source_path"]) if review["source_path"] else None
+        profile = get_company_profile(cid) or {}
+
+        closing, proposals = None, []
+        if source and source.exists() and source.suffix.lower() == ".pdf":
+            import fitz
+            import pdfplumber
+
+            with fitz.open(str(source)) as doc:
+                closing = find_closing_date(
+                    "\n".join(page.get_text() for page in doc))
+
+            with pdfplumber.open(str(source)) as pdf:
+                for page in pdf.pages:
+                    found = find_goals_table(page)
+                    if found:
+                        proposals = propose_claims(goal_rows(found), profile)
+                        break
+
+        # The stored draft's own record of what it filled and refused. Rebuilt
+        # from the review rather than re-filling: re-filling would produce a
+        # different document from the one the user is looking at.
+        from agent_autofill.integration.review_gate import _askable_rows
+
+        class _Row:
+            def __init__(self, row):
+                self.label = row.get("label") or ""
+                self.reason = row.get("reason") or ""
+                self.location = row.get("location") or ""
+                self.value = None
+                self.canonical_field = None
+
+        result = type("R", (), {
+            "filled": [],
+            "skipped": [_Row(r) for r in _askable_rows(rid)],
+        })()
+
+        summary = disqualification_summary(
+            result, profile, closing=closing,
+            documents=get_company_documents(cid) or [],
+            goal_proposals=proposals)
+        summary["status"] = "success"
+        summary["review_id"] = rid
+        summary["preference_goals"] = proposals
+        return summary
+
+    return _guard(_check, company_id, review_id)
 
 
 def _autofill_refill(company_id: str, review_id: str):
@@ -285,6 +405,8 @@ AUTOFILL_TOOL_HANDLERS = {
     "autofill_acknowledge_field": _autofill_acknowledge_field,
     "autofill_export_document": _autofill_export_document,
     "autofill_missing_details": _autofill_missing_details,
+    "autofill_resolve_label": _autofill_resolve_label,
+    "autofill_compliance_check": _autofill_compliance_check,
     "autofill_refill": _autofill_refill,
 }
 
@@ -397,6 +519,66 @@ autofill_tools = [
             "When the user answers, write it with update_company_profile using "
             "confirmed=true ONLY after showing them the exact value you are about "
             "to save, then call autofill_refill."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_id": {"type": "string"},
+                "review_id": {"type": "string"},
+            },
+            "required": ["company_id", "review_id"],
+        },
+    },
+    {
+        "name": "autofill_resolve_label",
+        "description": (
+            "Record which profile field a too-general form label means, AFTER the "
+            "user has told you. This is how you answer a `which_one` question from "
+            "autofill_missing_details: a blank labelled only 'ADDRESS' could be "
+            "postal or physical, so you ask, and then you call this with what they "
+            "said. Do NOT call it on your own judgement, on a guess, or because the "
+            "profile only holds one of the two — the user's answer is the only "
+            "input. The lesson is remembered for this company, so the question is "
+            "asked once and never again. Call autofill_refill afterwards to apply "
+            "it. It cannot make CairoAI fill a signature, a price or a declaration: "
+            "those are refused on the label before any lesson is consulted."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_id": {"type": "string"},
+                "label": {
+                    "type": "string",
+                    "description": "The form label exactly as it appears, e.g. 'ADDRESS'.",
+                },
+                "field": {
+                    "type": "string",
+                    "description": (
+                        "The profile field the user said it means, e.g. "
+                        "'physical_address' or 'postal_address'."
+                    ),
+                },
+            },
+            "required": ["company_id", "label", "field"],
+        },
+    },
+    {
+        "name": "autofill_compliance_check",
+        "description": (
+            "What would get this bid thrown out on administrative grounds — run "
+            "it after a pack is filled and BEFORE offering an export, and lead "
+            "your reply with what it returns. Administrative mistakes disqualify "
+            "more South African submissions than weak pricing does, and CairoAI "
+            "is the only party that sees the whole pack, the profile and the "
+            "vault at once. It reports: signature lines still to sign and their "
+            "pages, the same detail written two different ways across forms, "
+            "certificates that expire before the tender closes, and the SBD 6.1 "
+            "specific goals with what this tender allocates for each. It does "
+            "NOT block anything — only autofill_export_document refuses. Read "
+            "`would_disqualify` out plainly; a user who reads nothing else "
+            "should still learn which signatures they have to add. For each "
+            "entry in `preference_goals` with action 'ask', ask the user that "
+            "question — never claim a goal they have not confirmed."
         ),
         "input_schema": {
             "type": "object",

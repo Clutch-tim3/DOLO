@@ -66,6 +66,12 @@ import pdfplumber
 MIN_UNDERSCORE_RUN = 3      # "___" is the shortest run that is reliably a blank
 MIN_DOT_RUN = 5             # "...." is punctuation; 5+ is a leader
 LEADER_CHAR_GAP = 2.5       # max x-gap between consecutive leader chars
+
+#: A blank drawn as a rectangle rather than typed. See `_find_rule_runs`.
+MAX_RULE_THICKNESS = 1.8    # above this it is a filled bar, not a rule
+MIN_RULE_WIDTH = 28.0       # narrower than this holds nothing worth writing
+RULE_TEXT_HEIGHT = 9.5      # the writing band sits above the rule
+MAX_REPEATED_RULES = 3      # same x-range this often down a page = a column
 LINE_TOLERANCE = 2.0        # vertical slack when clustering chars into a line
 LINE_OVERLAP_RATIO = 0.45   # min vertical overlap to call two words same-line
 
@@ -156,7 +162,11 @@ def _clean_label(text: str | None) -> str | None:
     if text is None:
         return None
     cleaned = " ".join(text.replace("\n", " ").split())
-    cleaned = cleaned.strip(" \t:;-–—_.")
+    # The comma is stripped from BOTH ends. A blank in the middle of a sentence
+    # picks up the comma that closed the previous clause: MBD 3.1's second blank
+    # arrived as ", in my capacity as", which matches no alias because of one
+    # leading character.
+    cleaned = cleaned.strip(" \t:;,-–—_.")
     cleaned = " ".join(cleaned.split())
     if not cleaned:
         return None
@@ -267,6 +277,151 @@ def _is_leader_word(word: dict[str, Any]) -> bool:
     return bool(text) and all(ch in _LEADER_CHARS for ch in text)
 
 
+def _split_words_at_leaders(
+    words: Sequence[dict[str, Any]],
+    runs: Sequence[dict[str, Any]],
+    page: pdfplumber.page.Page,
+) -> list[dict[str, Any]]:
+    """
+    Cut a word where a leader run starts inside it.
+
+    THE BUG THIS FIXES, on the owner's Johannesburg Water RFQ, MBD 3.1:
+
+        Name of Bidder……………………………     Bid
+
+    pdfplumber returns that as ONE word, "Bidder………………………", spanning
+    x=116.8 to x=317.5 — the noun fused to fourteen U+2026 glyphs. The blank
+    starts at x=149.5, so `_label_left` discards the word for overrunning the
+    blank it labels, and the field arrives at the fill engine labelled
+
+        "Name of"
+
+    which matches nothing, so a form asking for the bidder's name came back
+    blank while the company name sat in the profile. The owner: "the system
+    leaves out too much info it shouldnt leave out."
+
+    ONLY runs `_find_leader_runs` already accepted are cut at. That matters:
+    "." is a leader character, so cutting at any leader char would split "No.",
+    "2.1.1" and "Ltd." apart. The run thresholds — five dots, a contiguity gap —
+    are what separate a leader from punctuation, and they are applied once,
+    there, rather than reimplemented here.
+    """
+    boxes = [r["bbox"] for r in runs]
+    if not boxes:
+        return list(words)
+
+    chars = page.chars
+    out: list[dict[str, Any]] = []
+    for word in words:
+        text = word.get("text", "")
+        starts = [
+            b[0] for b in boxes
+            if b[0] > word["x0"] + 0.5 and b[0] < word["x1"] - 0.5
+            and _vertical_overlap_ratio(
+                word["top"], word["bottom"], b[1], b[3]) > 0.3
+        ]
+        if not text or not starts:
+            out.append(word)
+            continue
+
+        cut = min(starts)
+        kept = [
+            c for c in chars
+            if c["x0"] >= word["x0"] - 0.6 and c["x1"] <= cut + 0.6
+            and _vertical_overlap_ratio(
+                word["top"], word["bottom"], c["top"], c["bottom"]) > 0.5
+        ]
+        kept = [c for c in kept if c["text"] not in _LEADER_CHARS]
+        if not kept:
+            # The whole word was leader. It is the blank, not a label.
+            continue
+
+        kept.sort(key=lambda c: c["x0"])
+        trimmed = dict(word)
+        trimmed["text"] = "".join(c["text"] for c in kept).strip()
+        trimmed["x1"] = max(c["x1"] for c in kept)
+        if trimmed["text"]:
+            out.append(trimmed)
+
+    return out
+
+
+def _find_rule_runs(page: pdfplumber.page.Page) -> list[dict[str, Any]]:
+    """
+    Blanks drawn as a thin rectangle rather than typed as underscores.
+
+    THE SECOND HALF of the same missing MBD 3.1 line:
+
+        I (full name) ______________, in my capacity as ________, the duly
+        authorized representative of ____________(company name)
+
+    Not one of those blanks was extracted. They look like underscores and are
+    not: `page.chars` holds a space and then nothing between x=111.8 and
+    x=299.0. The rule is a filled rectangle 0.72pt high. `_find_leader_runs`
+    reads characters, so it cannot see them, and three fields CairoAI holds
+    values for — signatory name, signatory capacity, company name — were left
+    blank on a page the owner then had to complete by hand.
+
+    WHY THIS IS NARROW ON PURPOSE
+
+    Every table border on the page is also a thin rectangle. Four filters keep
+    those out, and a fifth lives at the call site:
+
+      * thickness — a rule, not a filled bar;
+      * width — wide enough to write in, and under 85% of the text width, since
+        a rule spanning the page is a divider or a table edge;
+      * not already inside a detected table cell (checked by the caller, which
+        has the cell boxes);
+      * A LABEL TO THE LEFT ON THE SAME LINE is required by the caller. This is
+        the filter that does the work: a table border has prose above or below
+        it, not a caption beside it.
+
+    The returned box is the writing space ABOVE the rule, not the rule itself —
+    a 0.72pt-high box has nowhere to put a value and no text line to pair with.
+    """
+    text_x0, text_x1 = page.bbox[0], page.bbox[2]
+    max_width = (text_x1 - text_x0) * 0.85
+
+    candidates: list[tuple[float, float, float]] = []
+    for rect in page.rects:
+        height = float(rect.get("height") or 0.0)
+        if height > MAX_RULE_THICKNESS:
+            continue
+        candidates.append((float(rect["x0"]), float(rect["x1"]),
+                           float(rect["top"])))
+    for line in page.lines:
+        if abs(float(line["top"]) - float(line["bottom"])) > MAX_RULE_THICKNESS:
+            continue
+        candidates.append((float(line["x0"]), float(line["x1"]),
+                           float(line["top"])))
+
+    kept = [(x0, x1, top) for x0, x1, top in candidates
+            if MIN_RULE_WIDTH <= (x1 - x0) <= max_width]
+
+    # A rule repeated at the same x-range down the page is a TABLE COLUMN, not
+    # a field. Measured on the owner's Johannesburg Water RFQ: without this,
+    # 30 of the 37 new blanks were rate cells in the Bill of Quantities —
+    # "Disposal Per Ton", "(6m3) as specified" — stacked five and six deep at
+    # identical widths. They are priced from the quotation and refused anyway,
+    # so all they add is noise on the review screen, which is the failure the
+    # extraction filter exists to prevent.
+    columns: dict[tuple[int, int], int] = {}
+    for x0, x1, _top in kept:
+        columns[(round(x0), round(x1))] = columns.get((round(x0), round(x1)), 0) + 1
+
+    runs: list[dict[str, Any]] = []
+    for x0, x1, top in kept:
+        if columns.get((round(x0), round(x1)), 0) >= MAX_REPEATED_RULES:
+            continue
+        runs.append({
+            "kind": "rule",
+            # The line sits under where a person writes, so the field is the
+            # band above it.
+            "bbox": (x0, top - RULE_TEXT_HEIGHT, x1, top + MAX_RULE_THICKNESS),
+        })
+    return runs
+
+
 # --------------------------------------------------------------------------
 # PDF: the association rule
 # --------------------------------------------------------------------------
@@ -360,6 +515,83 @@ def _label_above(
     return text, lbox, best_gap
 
 
+#: Words a label ending in them is not a label — it is the middle of a sentence
+#: that runs THROUGH the blank. The real caption is on the other side.
+_CONNECTIVES = frozenset({
+    "of", "as", "at", "by", "for", "to", "in", "on", "the", "a", "an", "and",
+    "with", "from",
+})
+
+
+def _label_right_hint(
+    blank_bbox: tuple[float, float, float, float],
+    lines: Sequence[dict[str, Any]],
+) -> tuple[str | None, tuple[float, float, float, float] | None]:
+    """
+    The parenthetical immediately after a blank, when the words before it are
+    the middle of a sentence.
+
+    THE CASE, from the owner's Johannesburg Water RFQ, MBD 3.1:
+
+        ...the duly authorized representative of ______________(company name)
+
+    Everything to the left of that blank is "representative of", which is not a
+    caption — it is prose broken by the space you write in. The form's author
+    knew that, which is why they put the answer's name on the RIGHT, in
+    brackets, where a person reading the page will find it.
+
+    So the label becomes "company name", which matches, and the field fills from
+    the profile. Left as "representative of" it was discarded as a prose
+    fragment and the owner completed his own company's name by hand.
+
+    ONLY when the left-hand words end in a connective, and ONLY a parenthetical.
+    "Signature of" plus "(Bidder)" would resolve to "Bidder" — still refused, by
+    `never_fill_fields`, on a label the caller checks separately. Nothing here
+    decides whether a field may be filled.
+    """
+    bx0, btop, bx1, bbottom = blank_bbox
+
+    for line in lines:
+        if _vertical_overlap_ratio(
+                btop, bbottom, line["top"], line["bottom"]) < LINE_OVERLAP_RATIO:
+            continue
+        right = sorted(
+            (w for w in line["words"]
+             if w["x0"] >= bx1 - 1.0 and not _is_leader_word(w)),
+            key=lambda w: w["x0"],
+        )
+        if not right:
+            continue
+
+        text = " ".join(w["text"] for w in right).strip()
+        if not text.startswith("("):
+            continue
+        close = text.find(")")
+        if close <= 1:
+            continue
+
+        inner = _clean_label(text[1:close])
+        if inner is None:
+            return None, None
+
+        used = []
+        for word in right:
+            used.append(word)
+            if ")" in word["text"]:
+                break
+        return inner, (
+            min(w["x0"] for w in used), min(w["top"] for w in used),
+            max(w["x1"] for w in used), max(w["bottom"] for w in used),
+        )
+
+    return None, None
+
+
+def _ends_in_connective(label: str | None) -> bool:
+    words = (label or "").strip().rstrip(":").split()
+    return bool(words) and words[-1].lower() in _CONNECTIVES
+
+
 def _score(
     strategy: str,
     origin: str,
@@ -375,6 +607,10 @@ def _score(
     base = {
         "underscore_run": 0.90,
         "dot_leader": 0.86,
+        # A drawn rule is the same evidence as a typed underscore run, minus a
+        # little: a table border can look like one, which is why the caller
+        # requires a caption to its left before accepting it at all.
+        "drawn_rule": 0.84,
         "ruled_cell": 0.88,
         "trailing_gap": 0.62,
         "docx_table_cell": 0.88,
@@ -626,12 +862,17 @@ def extract_pdf_blanks(
                 words = page.extract_words(keep_blank_chars=False, use_text_flow=False)
             except Exception:
                 continue
+            # Leader runs are found BEFORE the lines are built, because a word
+            # fused to a leader ("Bidder…………") has to be cut at the run before
+            # it can serve as a label. See `_split_words_at_leaders`.
+            leader_runs = _find_leader_runs(page)
+            words = _split_words_at_leaders(words, leader_runs, page)
             lines = _build_lines(words)
 
             cell_blanks = _extract_ruled_cells(page, page_number)
             cell_boxes = [b.bbox for b in cell_blanks if b.bbox]
 
-            runs = _find_leader_runs(page)
+            runs = leader_runs + _find_rule_runs(page)
             run_boxes = [r["bbox"] for r in runs]
 
             leader_blanks: list[Blank] = []
@@ -648,15 +889,37 @@ def extract_pdf_blanks(
 
                 label, lbox, gap = _label_left(bbox, lines, run_boxes)
                 origin = "left"
+
+                # "...representative of ______(company name)". The words to the
+                # left are the middle of a sentence; the form names the answer
+                # on the right, in brackets. Prefer that.
+                from_parenthetical = False
+                if label is not None and _ends_in_connective(label):
+                    hint, hbox = _label_right_hint(bbox, lines)
+                    if hint:
+                        label, lbox, gap = hint, hbox, 2.0
+                        from_parenthetical = True
+
                 if label is None:
+                    if run["kind"] == "rule":
+                        # A drawn rule with nothing beside it is almost always a
+                        # table border or a divider, not a field. Requiring a
+                        # same-line caption is what makes this strategy safe to
+                        # turn on at all — see `_find_rule_runs`.
+                        continue
                     label, lbox, gap = _label_above(bbox, lines)
                     origin = "above" if label else "none"
 
                 notes: list[str] = []
+                if from_parenthetical:
+                    notes.append("label_from_parenthetical")
                 if run["kind"] == "dot" and _looks_like_toc(bbox, lines):
                     notes.append("possible_toc_leader")
 
-                strategy = "underscore_run" if run["kind"] == "underscore" else "dot_leader"
+                strategy = {
+                    "underscore": "underscore_run",
+                    "rule": "drawn_rule",
+                }.get(run["kind"], "dot_leader")
                 leader_blanks.append(
                     Blank(
                         source="pdf",
@@ -895,7 +1158,12 @@ _FUNCTION_WORDS = frozenset({
 #: preambles on SBD 4 and SBD 6.1, not field labels.
 _PROSE_OPENINGS = (
     "i, the undersigned", "do hereby", "i hereby", "we hereby",
-    "in my capacity", "representative of", "on behalf of",
+    # "in my capacity" was here. It is prose, and it is also the only thing
+    # printed beside the blank where the signatory's capacity goes — the SBD
+    # signature block runs its question through the blank rather than in front
+    # of it. It now maps to `capacity` in the alias dictionary, so rejecting it
+    # here dropped a field the profile can fill.
+    "representative of", "on behalf of",
     "it is a condition", "failure to", "note:", "please note",
     "kindly note", "the tenderer", "each tenderer", "bidders are",
     "tenderers are", "in terms of", "subject to", "provided that",
@@ -971,10 +1239,61 @@ def is_fillable_candidate(blank) -> bool:
     if not label:
         return False
 
-    if _is_prose_fragment(label):
+    # A label the form's author put in brackets beside the blank — "(company
+    # name)", "(full name)" — is not prose that happens to be lower case. It is
+    # the author naming the answer, which is stronger evidence than any rule
+    # below. Without this exemption the prose test rejected "company name" on
+    # MBD 3.1 and the owner wrote his own company's name in by hand.
+    if "label_from_parenthetical" in (getattr(blank, "notes", None) or ()):
+        return True
+
+    if _is_prose_fragment(label) and not _is_known_field_label(label):
         return False
 
     if _is_preprinted_value(label):
         return False
 
     return True
+
+
+def _is_known_field_label(label: str) -> bool:
+    """
+    Whether the alias dictionary recognises this label as a named field.
+
+    The prose test rejects any label that starts lower-case and has a space in
+    it — a good rule, because "of this tender" and "the tenderer)" are sentence
+    fragments the extractor picks up off busy pages.
+
+    It is also wrong about the SBD signature block, which runs its question
+    THROUGH the blank rather than in front of it:
+
+        I (full name) ______, in my capacity as ______, the duly authorized
+        representative of ______(company name)
+
+    "in my capacity as" starts lower-case and has spaces, so it was discarded
+    as prose — and it is the only thing printed beside the blank where the
+    signatory's capacity goes. The owner filled his own job title in by hand.
+
+    The dictionary is the authority on what is a field label. If it names one,
+    a heuristic about capitalisation should not overrule it. This cannot widen
+    what gets FILLED beyond what the dictionary already maps, and every label
+    that survives still goes through `is_blocked` and `decide` in the fill
+    engine — a recognised label is not permission to write anything.
+
+    AN EXACT ALIAS ONLY, never a fuzzy one. The first version accepted any
+    match and a test caught it immediately: "representative of (tenderer)" is a
+    declaration preamble, and the fuzzy matcher scores it 95 against
+    contact_person on the strength of the word "representative". So prose that
+    resembles a field would have been readmitted as a field — the exact failure
+    the prose test exists to prevent. An exact hit means the label IS an entry
+    in the dictionary, which somebody wrote down on purpose.
+    """
+    try:
+        from agent_autofill.extraction import match_label
+
+        match = match_label(label)
+    except Exception:  # noqa: BLE001 - a heuristic must never break extraction
+        return False
+
+    return (getattr(match, "status", None) == "exact"
+            and bool(getattr(match, "canonical", None)))

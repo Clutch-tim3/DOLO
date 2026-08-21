@@ -39,11 +39,13 @@ the requirement: per-item confirmation, not a single "I agree".
 What "reviewed" means here, precisely: a person has looked at every field the
 agent refused to fill FOR A REASON — a signature, a declaration, a price, a
 field it knows but has no value for — and said so, one at a time. Blanks it
-could not identify at all are recorded and marked in the document but do not
-require a tick; see ADVISORY_CATEGORIES for why. It does NOT mean the document
-is complete — the `[ ! ]` markers are still in it, because a signature, a
-declaration and a price are never ours to write. The export banner says exactly
-that.
+could not identify at all are recorded but do not require a tick; see
+ADVISORY_CATEGORIES for why. It does NOT mean the document is complete — a
+signature, a declaration and a price are never ours to write, so those fields
+are still empty. The export banner says exactly that.
+
+Nothing is written onto the document to indicate a refusal. That used to be a
+red `[ ! ]` and it is gone; see `pdf_filler._mark_skipped` for why.
 """
 
 from __future__ import annotations
@@ -84,8 +86,8 @@ BLANKET_TOKENS = {
 
 #: Categories recorded but NOT requiring an acknowledgement.
 #:
-#: `unmatched` is a blank whose label we could not identify. We did not fill it,
-#: could not have filled it, and left it visibly marked in the document. Asking
+#: `unmatched` is a blank whose label we could not identify. We did not fill it
+#: and could not have filled it. Asking
 #: a person to tick it is not a safety property — it is noise, and on a real
 #: 145-page tender it was 370 of 651 items, which makes the whole gate unusable
 #: and trains people to click through the ones that matter.
@@ -110,6 +112,11 @@ ADVISORY_CATEGORIES = {
     "tender_terms",
     "ambiguous_label",
     "prose",
+    # Also formerly `unmatched`: a label Claude identified as a question about
+    # this tender rather than about the company. Identifying it changed what
+    # the user is told, not what CairoAI is willing to fill — so it stays
+    # exactly as advisory as it was when nobody knew what it said.
+    "per_tender",
 }
 
 #: Minimum characters in an acknowledgement note. Short enough not to be busy
@@ -344,6 +351,45 @@ def _outstanding_rows(review_id: str) -> list[dict]:
                   AND advisory = 0
                 ORDER BY item_key""",
             (review_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+#: Advisory categories that are nonetheless worth ASKING about. Being unsure
+#: which field a label means is the best possible reason to ask a person.
+ASKABLE_ADVISORY = {"ambiguous_label"}
+
+
+def _askable_rows(review_id: str) -> list[dict]:
+    """
+    Rows the user could answer a question about — which is not the same set as
+    the rows that block an export.
+
+    `_outstanding_rows` filters `advisory = 0`, because advisory items do not
+    require an acknowledgement. `ambiguous_label` is advisory and always should
+    be: a bare "ADDRESS" that CairoAI declined to guess at must not stop a
+    document being exported.
+
+    But it was also therefore invisible to the question builder, so the owner
+    got a blank line on a bid where a one-word answer would have filled it:
+
+        "i keep telling you the agent needs to ask me if its not certain,
+         postal address or physical address ill answer all that needs to be
+         answered"
+
+    Two different questions were being answered by one flag. `advisory` governs
+    the export gate — does a person have to tick this? This governs the
+    conversation — is this worth asking about? A label we could not resolve is
+    a no to the first and a yes to the second.
+    """
+    with _connect() as conn:
+        rows = conn.execute(
+            """SELECT item_key, label, location, category, reason
+                 FROM autofill_review_item
+                WHERE review_id = ? AND acknowledged_at IS NULL
+                  AND (advisory = 0 OR category = ?)
+                ORDER BY item_key""",
+            (review_id, "ambiguous_label"),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -777,7 +823,7 @@ def export_reviewed(company_id: str, review_id: str) -> dict:
         "message": (
             f"Exported as a reviewed draft. All {row['flagged_count']} flagged "
             "field(s) were acknowledged individually and each acknowledgement is "
-            "recorded in the file's properties. Fields marked [ ! ] still need "
+            "recorded in the file's properties. The fields it left still need "
             "completing by hand — this is not a submission."
         ),
     }
@@ -1290,7 +1336,8 @@ def refill_review(company_id: str, review_id: str) -> dict:
     draft = draft.with_name(f"refill_{uuid.uuid4().hex[:8]}_{draft.name}")
 
     if source.suffix.lower() == ".pdf":
-        fill_result = fill_pdf(source, draft, profile, match_label)
+        fill_result = fill_pdf(source, draft, profile, match_label,
+                               company_id=company_id)
     else:
         fill_result = fill_docx(source, draft, profile, match_label)
 

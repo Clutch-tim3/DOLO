@@ -375,10 +375,14 @@ def test_column_header_cells_are_all_marked_not_silently_skipped(tmp_path):
     assert r.fillable_total == 6
     assert len(r.filled) == 0, "nothing in a declaration table may be filled"
     assert all(s.category == "blocked" for s in r.skipped)
+    # INVERTED with the PDF path, for the same reason: a declaration table
+    # that is correctly empty must come back empty, not full of red marks the
+    # owner then prints and signs.
     d = _docx.Document(str(out))
     marks = sum(1 for row in d.tables[0].rows for c in row.cells
                 if c.text.strip() == SKIP_MARKER)
-    assert marks == 6, f"expected every entry cell marked, got {marks}"
+    assert marks == 0, f"{marks} cell(s) written on; the form must be left alone"
+    assert len(r.skipped) == 6, "every refusal is still recorded"
 
 
 def test_label_value_path_still_fills(tmp_path):

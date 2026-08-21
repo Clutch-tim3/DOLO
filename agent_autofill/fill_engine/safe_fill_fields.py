@@ -46,6 +46,16 @@ SAFE_FILL_FIELDS: dict[str, str] = {
     # Who signs, not the signature. "Director", "Managing Member".
     "capacity": "authorized_signatory_capacity",
     "director_names_and_id_numbers": "directors",
+    # SBD 6.1's points claim. NOT a stored fact — a derived one, computed by
+    # `preference_points` from the B-BBEE level on the certificate and the
+    # preference system the tender itself states, and put on the profile dict
+    # by the orchestrator for this document only. It is never written to the
+    # database, because it is true of one tender rather than of the company.
+    #
+    # It is absent unless BOTH inputs are known, so this fills or it does not:
+    # a Level 1 bidder claims 20 points under 80/20 and 10 under 90/10, and
+    # there is no halfway answer worth writing onto a bid.
+    "bbbee_points_claim": "bbbee_points_claim",
 }
 
 #: Fields that are safe in principle but frequently ambiguous on SA forms, so

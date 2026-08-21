@@ -162,7 +162,18 @@ def test_the_highlight_was_not_faded_to_sell_the_effect():
     assert opacity >= 0.4, f"highlight faded to {opacity}"
 
 
-def test_refusals_are_still_marked_in_place():
-    """A blank left on purpose must stay visibly different from one missed."""
-    source = Path(pdf_filler.__file__).read_text(encoding="utf-8")
-    assert "SKIP_MARKER" in source and "[ ! ]" in source
+def test_nothing_is_drawn_where_a_field_is_refused():
+    """
+    INVERTED on the owner's instruction: "i dont like the exclamation marks
+    that it puts on fields it cant answer it ends up staying on the hard copy".
+
+    `_mark_skipped` is kept as a no-op so the reason lives where someone would
+    go to put the marker back. This asserts it draws nothing.
+    """
+    import ast
+
+    tree = ast.parse(Path(pdf_filler.__file__).read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(tree)
+              if isinstance(n, ast.FunctionDef) and n.name == "_mark_skipped")
+    calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)]
+    assert not calls, f"_mark_skipped draws again: {ast.dump(calls[0])[:120]}"
