@@ -109,8 +109,18 @@ def _get_bridge():
 # timeout_sec raised from 60: one agent turn can run several
 # request -> execute tools -> request round trips, which does not reliably
 # fit inside 60 seconds.
+# memory raised from 1024. Submitting a pack killed the container: every 503 in
+# the logs is /api/autofill-packs/<id>/submit, each paired seconds later with
+# "Memory limit of 1024 MiB exceeded with 1101 MiB used". The real fault was
+# pdfplumber caching every page of a long document — one 145-page pack peaked at
+# 573 MB on its own, and a pack holds several — and that is fixed at the source
+# in `layout_blank_extractor`, which now measures 64 MB for the same document.
+#
+# This is headroom on top of that fix, not instead of it. A pack of large scans
+# is still the heaviest thing this service does, and being killed mid-pack costs
+# the user the whole submission with a 503 and no explanation.
 @https_fn.on_request(
-    memory=1024,
+    memory=2048,
     max_instances=20,
     timeout_sec=300,
     # Only secrets that EXIST may be listed. The CLI validates every binding

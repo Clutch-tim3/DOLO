@@ -350,7 +350,13 @@ def _autofill_compliance_check(company_id: str, review_id: str):
                     found = find_goals_table(page)
                     if found:
                         proposals = propose_claims(goal_rows(found), profile)
+                        page.flush_cache()
                         break
+                    # Table detection caches heavily and this walks the pack
+                    # until it finds the goals table — page 53 of 145 on the
+                    # owner's. Measured without this: +198 MB, on a function
+                    # with 1024 MiB that was already being killed mid-pack.
+                    page.flush_cache()
 
         # The stored draft's own record of what it filled and refused. Rebuilt
         # from the review rather than re-filling: re-filling would produce a

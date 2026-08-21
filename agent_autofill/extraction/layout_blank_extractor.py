@@ -946,6 +946,26 @@ def extract_pdf_blanks(
                     _extract_trailing_gaps(lines, page_number, right_margin, covered)
                 )
 
+            # THE PAGE IS DONE. RELEASE IT.
+            #
+            # pdfplumber caches every derived object on the page — chars, words,
+            # edges, the table finder's output — and holds them for the life of
+            # the PDF object. Nothing here needs a page after its blanks are
+            # collected, so on a long document the cache is pure growth.
+            #
+            # Measured on the owner's 145-page pack: extracting ONE document
+            # peaked at 573 MB and settled at 195 MB. The Cloud Run function has
+            # 1024 MiB, and a pack holds several documents, so submitting one
+            # killed the container and the browser saw a 503. Every 503 in the
+            # logs is /api/autofill-packs/<id>/submit, each paired with a
+            # "Memory limit of 1024 MiB exceeded" seconds later.
+            #
+            # `flush_cache` is pdfplumber's own remedy for exactly this.
+            try:
+                page.flush_cache()
+            except Exception:  # noqa: BLE001 - freeing memory must never fail a fill
+                pass
+
     results.sort(key=lambda b: (b.page_number, b.bbox[1] if b.bbox else 0, b.bbox[0] if b.bbox else 0))
     # P0-4: drop what is not a field before anything downstream sees it.
     # Every one of these was already being refused, so no fill changes — what
