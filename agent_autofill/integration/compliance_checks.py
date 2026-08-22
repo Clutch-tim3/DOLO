@@ -320,6 +320,16 @@ def disqualification_summary(fill_result, profile: dict, *,
     for note in (pack_forms or {}).get("notes", []):
         blocking.append(note)
 
+    # Whose rules apply. A tender from outside South Africa gets its own rules
+    # said first, because the SA habits are the ones a user carries across —
+    # above all putting a price in a technical proposal, which is a
+    # disqualification under both the UN and World Bank two-envelope systems
+    # and completely normal on an SBD pack.
+    system = (pack_forms or {}).get("procurement_system") or {}
+    if system.get("system") and system.get("support") != "full":
+        blocking.extend(system.get("notes", []))
+        blocking.extend(system.get("rules", []))
+
     # Documents that lapse by rule rather than by a printed date. A COIDA
     # Letter of Good Standing expires on 31 March whatever it says, so a
     # December letter is good for three months, not twelve.

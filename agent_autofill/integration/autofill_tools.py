@@ -365,6 +365,7 @@ def _autofill_compliance_check(company_id: str, review_id: str):
             import pdfplumber
 
             from agent_autofill.classification.form_versions import describe_pack
+            from agent_autofill.classification.procurement_system import detect
 
             with fitz.open(str(source)) as doc:
                 # Form feeds separate pages, so `describe_pack` can report the
@@ -372,6 +373,9 @@ def _autofill_compliance_check(company_id: str, review_id: str):
                 text = "\f".join(page.get_text() for page in doc)
             closing = find_closing_date(text)
             pack_forms = describe_pack(text)
+            # Whose rules apply. CairoAI assumes South African ones everywhere
+            # and they are actively wrong on a UN or World Bank tender.
+            pack_forms["procurement_system"] = detect(text)
             del text
 
             with pdfplumber.open(str(source)) as pdf:
