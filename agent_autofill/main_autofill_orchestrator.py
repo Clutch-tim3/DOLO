@@ -219,7 +219,7 @@ def _document_text(path, doc_type: str) -> str:
     return ""
 
 
-def _with_preference_claim(profile: dict, report) -> tuple[dict, dict]:
+def _with_preference_claim(profile: dict, report, company_id: str = "") -> tuple[dict, dict]:
     """
     Add SBD 6.1's points claim to the profile for THIS document only.
 
@@ -243,6 +243,18 @@ def _with_preference_claim(profile: dict, report) -> tuple[dict, dict]:
 
     profile = dict(profile or {})
     text = _document_text(report.path, report.doc_type)
+
+    # Fields the user has DECLARED do not apply, so the form reads "N/A"
+    # instead of carrying a blank line. Nothing is inferred from an empty
+    # column — see `not_applicable` for why that distinction is the point.
+    from agent_autofill.fill_engine.not_applicable import declared_for
+    from agent_autofill.fill_engine.safe_fill_fields import DECLARED_NA_KEY
+
+    try:
+        profile[DECLARED_NA_KEY] = declared_for(company_id)
+    except Exception as exc:  # noqa: BLE001 - a fill must not depend on this
+        log.warning("could not read not-applicable declarations: %s", exc)
+        profile[DECLARED_NA_KEY] = set()
     system, evidence = detect_preference_system(text)
     claim = points_claim(profile.get("bbbee_level"), system)
 
@@ -383,7 +395,7 @@ def run_autofill(
     # have one. A .doc stays analysis-only: there is no pure-Python writer for
     # binary OLE2, and that is a real limit rather than a missing feature.
     profile = get_company_profile(company_id)
-    profile, preference = _with_preference_claim(profile, report)
+    profile, preference = _with_preference_claim(profile, report, company_id)
     out_root = Path(output_dir) if output_dir else file_paths.generated_dir()
     out_root.mkdir(parents=True, exist_ok=True)
 

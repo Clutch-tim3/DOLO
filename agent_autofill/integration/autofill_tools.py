@@ -312,6 +312,29 @@ def _autofill_resolve_label(company_id: str, label: str, field: str):
     return _guard(_teach, company_id, label, field)
 
 
+def _autofill_mark_not_applicable(company_id: str, field: str):
+    """
+    Record that a field does not apply, so the form says "N/A" not nothing.
+
+    Golden rule 1 of the training guide's four: "Complete every field — use
+    'N/A' if not applicable." A blank is a named disqualification cause; SBD 1
+    lists "Leaving blank instead of 'N/A'" against its VAT row by name.
+
+    ONLY after the user has said so. An empty profile column means "nobody told
+    us", not "it does not exist", and writing N/A for the first is a false
+    statement on a government bid.
+    """
+    from agent_autofill.fill_engine.not_applicable import NotDeclarable, declare
+
+    def _mark(cid, fld):
+        try:
+            return declare(cid, fld, declared_by="user")
+        except NotDeclarable as exc:
+            return {"status": "error", "message": str(exc)}
+
+    return _guard(_mark, company_id, field)
+
+
 def _autofill_compliance_check(company_id: str, review_id: str):
     """
     What would get this bid thrown out, before anyone reads the proposal.
@@ -336,14 +359,20 @@ def _autofill_compliance_check(company_id: str, review_id: str):
         source = Path(review["source_path"]) if review["source_path"] else None
         profile = get_company_profile(cid) or {}
 
-        closing, proposals = None, []
+        closing, proposals, pack_forms = None, [], {}
         if source and source.exists() and source.suffix.lower() == ".pdf":
             import fitz
             import pdfplumber
 
+            from agent_autofill.classification.form_versions import describe_pack
+
             with fitz.open(str(source)) as doc:
-                closing = find_closing_date(
-                    "\n".join(page.get_text() for page in doc))
+                # Form feeds separate pages, so `describe_pack` can report the
+                # page a form starts on.
+                text = "\f".join(page.get_text() for page in doc)
+            closing = find_closing_date(text)
+            pack_forms = describe_pack(text)
+            del text
 
             with pdfplumber.open(str(source)) as pdf:
                 for page in pdf.pages:
@@ -379,7 +408,7 @@ def _autofill_compliance_check(company_id: str, review_id: str):
         summary = disqualification_summary(
             result, profile, closing=closing,
             documents=get_company_documents(cid) or [],
-            goal_proposals=proposals)
+            goal_proposals=proposals, pack_forms=pack_forms)
         summary["status"] = "success"
         summary["review_id"] = rid
         summary["preference_goals"] = proposals
@@ -413,6 +442,7 @@ AUTOFILL_TOOL_HANDLERS = {
     "autofill_missing_details": _autofill_missing_details,
     "autofill_resolve_label": _autofill_resolve_label,
     "autofill_compliance_check": _autofill_compliance_check,
+    "autofill_mark_not_applicable": _autofill_mark_not_applicable,
     "autofill_refill": _autofill_refill,
 }
 
@@ -566,6 +596,39 @@ autofill_tools = [
                 },
             },
             "required": ["company_id", "label", "field"],
+        },
+    },
+    {
+        "name": "autofill_mark_not_applicable",
+        "description": (
+            "Record that a field genuinely does not apply to this company, so "
+            "every form writes 'N/A' there instead of leaving a blank line. A "
+            "blank is a named disqualification cause — National Treasury's own "
+            "guidance is 'complete every field, use N/A if not applicable', and "
+            "SBD 1 lists 'leaving blank instead of N/A' against its VAT row. "
+            "CALL THIS ONLY AFTER THE USER HAS TOLD YOU. An empty profile field "
+            "means nobody has supplied it, which is NOT the same as it not "
+            "existing — writing N/A for a VAT number they simply have not given "
+            "you is a false statement on a government bid. So ask first: 'Is "
+            "your company VAT registered? If not I will put N/A wherever this "
+            "pack asks.' "
+            "Fields that can be marked: vat_registration_number, fax_number, "
+            "csd_number, telephone_number, director_names_and_id_numbers. "
+            "Anything else is refused, because every bidder has one and 'N/A' "
+            "there would be a false claim rather than an honest blank. This "
+            "cannot put N/A on a signature, a price or a sworn declaration: "
+            "those are refused before this is ever consulted."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "company_id": {"type": "string"},
+                "field": {
+                    "type": "string",
+                    "description": "The canonical field, e.g. 'vat_registration_number'.",
+                },
+            },
+            "required": ["company_id", "field"],
         },
     },
     {
