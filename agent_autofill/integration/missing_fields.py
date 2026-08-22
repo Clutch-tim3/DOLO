@@ -49,6 +49,16 @@ FIELD_PROMPTS: dict[str, str] = {
         "the capacity of the person who signs bids — for example Director or "
         "Managing Member",
     "directors": "the full name and ID number of each director",
+    # Derived, not stored — `preference_points` computes it from the B-BBEE
+    # level and the system the tender states. So the question is not "what is
+    # your claim", which the user should not have to work out, but the one fact
+    # CairoAI could not read off the form. On his Johannesburg Water RFQ both
+    # 80/20 and 90/10 appear as completed options, because the buyer left both
+    # in; there is no answer to deduce and one to ask for.
+    "bbbee_points_claim":
+        "which preference point system this tender uses — 80/20 or 90/10. The "
+        "form states both and does not say which applies, and the claim is "
+        "double under one of them",
 }
 
 #: Fields carrying personal information about an identifiable person. Worth
@@ -88,8 +98,48 @@ def missing_profile_fields(outstanding_rows, profile: dict) -> list[dict]:
 
     for row in outstanding_rows or []:
         reason = (row.get("reason") or "")
-        # Only "nothing on file" — a blocked signature or a pricing refusal is
-        # not something the user can answer, and asking would be noise.
+        category = (row.get("category") or "")
+
+        # Two kinds of question, and only two. A blocked signature or a pricing
+        # refusal is not something the user can answer, so asking would be noise.
+        #
+        #   "Nothing on file"  — we know the field and have no value for it.
+        #   ambiguous_label    — we cannot tell WHICH field it is.
+        #
+        # The second was skipped here, and that was the bug. A bare "ADDRESS" is
+        # refused because postal and physical are different answers and writing
+        # the wrong one onto a bid is worse than leaving it — correct. But then
+        # nothing followed up, so the owner got a blank line instead of a
+        # three-second question. His words: "i keep telling you the agent needs
+        # to ask me if its not certain, postal address or physical address ill
+        # answer all that needs to be answered."
+        #
+        # Being unsure is the best possible reason to ask. It was the one case
+        # that never did.
+        if category == "ambiguous_label":
+            choice = _ambiguous_choice(row.get("label"))
+            if choice is None:
+                continue
+            column, prompt = choice
+            entry = wanted.setdefault(column, {
+                "field": column,
+                "prompt": prompt,
+                "personal": column in PERSONAL_FIELDS,
+                "asked_by": [],
+                "locations": set(),
+                "count": 0,
+                # The agent must not treat this as "supply a missing fact". The
+                # profile may well hold both values already; what is missing is
+                # which one this form wants.
+                "kind": "which_one",
+            })
+            entry["count"] += 1
+            entry["locations"].add(row.get("location") or "")
+            label = (row.get("label") or "").strip()
+            if label and label not in entry["asked_by"] and len(entry["asked_by"]) < 5:
+                entry["asked_by"].append(label)
+            continue
+
         if not reason.startswith("Nothing on file"):
             continue
 
@@ -112,6 +162,9 @@ def missing_profile_fields(outstanding_rows, profile: dict) -> list[dict]:
             "asked_by": [],
             "locations": set(),
             "count": 0,
+            # We know the field; we have no value for it. Contrast "which_one",
+            # where we may well have the value and not know which is wanted.
+            "kind": "supply",
         })
         entry["count"] += 1
         entry["locations"].add(row.get("location") or "")
@@ -131,6 +184,43 @@ def missing_profile_fields(outstanding_rows, profile: dict) -> list[dict]:
     # before the one blocking a single blank.
     out.sort(key=lambda e: (-e["count"], e["field"]))
     return out
+
+
+#: A too-general label, and the choice to put to the user. The key is the
+#: profile column the ANSWER is written to; the question names both options so
+#: the user picks rather than guesses what we meant.
+#:
+#: Deliberately small. A label is only listed here when the ambiguity is
+#: genuinely between two fields CairoAI already holds — never as a way of
+#: turning a label we do not understand into a question we invented.
+_AMBIGUOUS_CHOICES: dict[str, tuple[str, str]] = {
+    "ADDRESS": ("physical_address",
+                "which address this form wants — your physical (street) "
+                "address or your postal address"),
+    "NAME": ("company_name",
+             "whether this asks for your company's registered name or for a "
+             "person's name"),
+    "NUMBER": ("registration_number",
+               "which number this asks for — your CIPC registration number, "
+               "your CSD number, or a telephone number"),
+    "TEL": ("standard_phone",
+            "whether this wants your landline or your cellphone number"),
+    "TELEPHONE": ("standard_phone",
+                  "whether this wants your landline or your cellphone number"),
+    "CONTACT": ("standard_contact_person",
+                "whether this asks for your contact person's name or for a "
+                "contact number"),
+}
+
+
+def _ambiguous_choice(label: str | None) -> tuple[str, str] | None:
+    """The choice to put to the user for a too-general label, or None."""
+    text = (label or "").strip().upper().rstrip(":").strip()
+    if not text:
+        return None
+    # Exact match only. "PHYSICAL ADDRESS" is not ambiguous and must not be
+    # dragged in here by a substring test — it already fills.
+    return _AMBIGUOUS_CHOICES.get(text)
 
 
 def _canonical_from_label(label: str | None) -> str | None:

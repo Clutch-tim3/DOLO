@@ -29,9 +29,9 @@ because of it:
 * The source is never touched. A copy is opened and written.
 * Every value written is highlighted, so a reader can see at a glance what came
   from CairoAI rather than from a person.
-* Every refusal is marked in place with the same `[ ! ]` used in .docx, so a
-  blank that was deliberately left is visibly different from one that was
-  missed.
+* Nothing is drawn where a field was refused. Refusals are recorded in the
+  result and shown in the review; they are not written onto the form. See
+  `_mark_skipped` for what was there and why it went.
 * Text that will not fit its blank is not written at all. A value spilling over
   a neighbouring field is worse than an empty line, because it looks like an
   answer to the wrong question.
@@ -51,7 +51,10 @@ from agent_autofill.fill_engine.document_filler import (
 )
 from agent_autofill.fill_engine.never_fill_fields import is_blocked
 from agent_autofill.fill_engine.ambiguity_resolver import resolve as resolve_ambiguous
-from agent_autofill.fill_engine.refusal_reasons import classify_unfilled
+from agent_autofill.fill_engine.refusal_reasons import (
+    classify_unfilled,
+    explain_per_tender,
+)
 from agent_autofill.fill_engine.safe_fill_fields import decide
 
 log = logging.getLogger("agent_autofill.pdf_filler")
@@ -60,8 +63,8 @@ log = logging.getLogger("agent_autofill.pdf_filler")
 #: closely enough to read as the same product, in the RGB floats fitz wants.
 FILL_HIGHLIGHT = (0.953, 0.914, 0.839)
 
-#: Written where a field was deliberately not filled. Same marker as .docx, so
-#: "look for [ ! ]" is one instruction across both formats.
+#: Retired. Nothing is written where a field is refused — see `_mark_skipped`.
+#: The constant stays so importers do not break; it is no longer drawn.
 SKIP_MARKER = "[ ! ]"
 
 #: Point size for written values in the handwriting face.
@@ -188,13 +191,71 @@ def _fits(text: str, width: float, size: float = FONT_SIZE) -> bool:
     return _text_width(text, size) <= max(width - FIT_PADDING, 0)
 
 
-def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
+def _identify_unknowns(company_id: str, blanks, match_label_fn, profile) -> dict:
+    """
+    Ask what the labels nobody could place are asking for. {label: answer}.
+
+    ONE PASS, BEFORE ANY WRITING. The alternative — asking as each blank comes
+    up — is one API call per blank on a 145-page pack.
+
+    Only genuinely unknown labels are sent. A label the dictionary places, a
+    lesson already covers, the blocklist refuses, or `classify_unfilled` already
+    describes correctly (a sworn declaration, a price cell, this bid's terms) is
+    not worth an API call and, in the blocked case, is not something to hand to
+    an external service at all.
+
+    Every failure here is silent and total: no key, no quota, no network, a
+    malformed answer — the fill proceeds exactly as it did before this existed.
+    """
+    from agent_autofill.extraction import label_classifier, learned_labels
+
+    unknown, seen = [], set()
+    for blank in blanks:
+        label = (getattr(blank, "label_text", "") or "").strip()
+        key = learned_labels.normalise(label)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+
+        match = match_label_fn(label)
+        if getattr(match, "canonical", None):
+            continue
+        if resolve_ambiguous(label, profile)[0]:
+            continue
+        if learned_labels.lookup(company_id, label) is not None:
+            continue
+        if is_blocked(label).blocked:
+            continue
+        if classify_unfilled(label, match)[0] != "unmatched":
+            continue
+        unknown.append(label)
+
+    if not unknown:
+        return {}
+
+    log.info("asking about %d unrecognised label(s)", len(unknown))
+    try:
+        return label_classifier.classify_and_remember(company_id, unknown)
+    except Exception as exc:  # noqa: BLE001 - a fill must never depend on this
+        log.error("label identification unavailable: %s", exc)
+        return {}
+
+
+def fill_pdf(source, output, profile: dict, match_label_fn,
+             company_id: str = None) -> FillResult:
     """
     Produce a filled COPY of a PDF form.
 
     Mirrors `fill_docx`'s signature and returns the same `FillResult`, so the
     review gate, the pack aggregation and the export path all work on a PDF
     draft without knowing it is one.
+
+    `company_id` turns on the two things that need to know whose forms these
+    are: lessons taught on this company's previous tenders, and asking Claude
+    what a label means when nothing else can say. Without it the fill behaves
+    exactly as it always has — neither is a decision, both are ways of getting
+    a canonical field name, and every field name still goes through
+    `is_blocked` and `decide` below.
     """
     import fitz  # PyMuPDF. Imported here so a machine without it can still
                  # import the fill engine and use the .docx path.
@@ -217,6 +278,21 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
     if not blanks:
         return FillResult(source_path=str(source), output_path=str(output),
                           filled=[], skipped=[], context=set())
+
+    # What the dictionary could not place, asked about once and remembered.
+    # Done before the document is opened so a slow or failing API call cannot
+    # leave a half-written file behind.
+    identified: dict = {}
+    not_a_field: set = set()
+    if company_id:
+        from agent_autofill.extraction import learned_labels
+
+        identified = _identify_unknowns(company_id, blanks, match_label_fn, profile)
+        # Read AFTER identification, so this pack's answers are already in it.
+        not_a_field = {
+            lesson["normalised"] for lesson in learned_labels.lessons(company_id)
+            if lesson["kind"] == learned_labels.KIND_NOT_A_FIELD
+        }
 
     # Opened from the SOURCE and saved to the OUTPUT. PyMuPDF refuses a full
     # rewrite of a file it has open ("save to original must be incremental"),
@@ -287,7 +363,41 @@ def fill_pdf(source, output, profile: dict, match_label_fn) -> FillResult:
                 if resolved:
                     canonical, score = resolved, 100.0
 
+            # A label this company has already explained, or that Claude has
+            # just named. `apply_learning` holds the ordering rule — a
+            # confident dictionary match always wins — and it is called here
+            # rather than reimplemented, so there is one copy of it.
+            #
+            # This produces a FIELD NAME, never a value. What gets written is
+            # still whatever `decide` reads out of the profile for that field,
+            # under `is_blocked` above.
+            if not canonical and label and company_id:
+                learned, _source = learned_labels.apply_learning(
+                    company_id, label, match)
+                if learned:
+                    canonical, score = learned, 100.0
+
             if not canonical:
+                # Established as not a field at all — a section heading, a
+                # table caption, a sentence of instructions. It was never a
+                # question, so listing it as one is noise on a review screen
+                # that already has too much on it.
+                if label and not_a_field and \
+                        learned_labels.normalise(label) in not_a_field:
+                    continue
+
+                # Understood, and still refused. The answer is a fact about
+                # THIS tender, which no company profile could hold — so say
+                # what it is asking for instead of claiming not to know.
+                answer = identified.get(label)
+                if answer and answer.get("kind") == "per_tender":
+                    skipped.append(SkippedField(
+                        label=label,
+                        reason=explain_per_tender(answer.get("asking_for")),
+                        category="per_tender", location=location))
+                    continue
+
+
                 # Deliberately NOT marked on the page. `[ ! ]` means "a field
                 # was refused on purpose"; an unmatched cell is usually not a
                 # field at all. On the real SBD 1 the ruled-cell extractor
@@ -680,14 +790,27 @@ def _write_value(page, bbox, value: str, seed: str = "", size: float = None) -> 
 
 def _mark_skipped(page, bbox) -> None:
     """
-    Put `[ ! ]` where a field was deliberately left. A blank that was refused
-    on purpose must not look like one that was missed.
-    """
-    import fitz
+    Deliberately does nothing. Kept as the one place that USED to write on the
+    page, so the reason is recorded where somebody would go to add it back.
 
-    x0, y0, x1, y1 = [float(v) for v in bbox]
-    if (x1 - x0) < 14.0:
-        return
-    page.insert_text(fitz.Point(x0 + 2, y1 - 2.5), SKIP_MARKER,
-                     fontsize=SKIP_FONT_SIZE, fontname="helv",
-                     color=(0.72, 0.11, 0.11))
+    This drew a red `[ ! ]` into every blank that was refused. The intent was
+    that a field left on purpose should not look like one that was missed —
+    which is a real problem, and this was the wrong place to solve it.
+
+    The owner: "i dont like the exclamation marks that it puts on fields it
+    cant answer it ends up staying on the hard copy so no red exclamation marks
+    remove that feature."
+
+    He is right, and the SBD 4 bidder's disclosure on his RFQ shows why: nine
+    red marks stamped down the Identity Number column of a table that is
+    CORRECTLY empty — no director is employed by the state, so there is nothing
+    to declare. The marks are printed, signed and handed to an organ of state
+    looking like defacement of a statutory form. A draft aid became permanent
+    the moment he pressed print.
+
+    Nothing is lost by removing it. Every refusal is still recorded in
+    `FillResult.skipped` with its reason and page, still listed in the review,
+    and still blocks an export where it always did. The record was never the
+    ink — the ink was a second copy of it on somebody else's form.
+    """
+    return

@@ -143,6 +143,16 @@ _REWRITES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", re.I), "INSERT INTO"),
     # SQLite is untyped enough to accept these; Postgres wants real types.
     (re.compile(r"\bDATETIME\b", re.I), "TIMESTAMP"),
+    # SQLite's binary column. Postgres has no BLOB type at all, so
+    # `provider_tokens.token_ciphertext BLOB NOT NULL` failed with
+    #
+    #     type "blob" does not exist
+    #
+    # every time `provider_db.ensure_schema` ran — which is on every call to
+    # /api/autofill/providers/status, so that endpoint returned 500 on every
+    # request in production while the test suite stayed green against SQLite.
+    # BYTEA is the Postgres equivalent and takes the same bytes.
+    (re.compile(r"\bBLOB\b", re.I), "BYTEA"),
 ]
 
 #: `INSERT OR IGNORE` loses its "or ignore" in the rewrite above, so the

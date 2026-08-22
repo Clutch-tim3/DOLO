@@ -46,6 +46,16 @@ SAFE_FILL_FIELDS: dict[str, str] = {
     # Who signs, not the signature. "Director", "Managing Member".
     "capacity": "authorized_signatory_capacity",
     "director_names_and_id_numbers": "directors",
+    # SBD 6.1's points claim. NOT a stored fact — a derived one, computed by
+    # `preference_points` from the B-BBEE level on the certificate and the
+    # preference system the tender itself states, and put on the profile dict
+    # by the orchestrator for this document only. It is never written to the
+    # database, because it is true of one tender rather than of the company.
+    #
+    # It is absent unless BOTH inputs are known, so this fills or it does not:
+    # a Level 1 bidder claims 20 points under 80/20 and 10 under 90/10, and
+    # there is no halfway answer worth writing onto a bid.
+    "bbbee_points_claim": "bbbee_points_claim",
 }
 
 #: Fields that are safe in principle but frequently ambiguous on SA forms, so
@@ -114,6 +124,21 @@ SENTINEL_VALUES = frozenset({
     "not applicable", "not available", "nil", "-", "--", "0",
     "null", "undefined", "to be confirmed", "to be advised",
 })
+
+#: What goes on the form for a field the user has declared does not apply.
+#: "N/A" and "None" are both accepted by the guide; "N/A" is what SBD 1's own
+#: VAT row instructs.
+NOT_APPLICABLE = "N/A"
+
+#: Where the declared-not-applicable set travels on the profile dict. Underscore
+#: prefixed because it is not a profile COLUMN — it is assembled per fill from
+#: `not_applicable.declared_for`, the same way `bbbee_points_claim` is.
+#:
+#: Note this is NOT the sentinel list below. A sentinel is a junk placeholder
+#: somebody typed into a field and means "absent". This is a person answering
+#: "no, we are not VAT registered" and means "absent ON PURPOSE, and the form
+#: should say so".
+DECLARED_NA_KEY = "_declared_not_applicable"
 
 #: bbbee_level 9 is this codebase's sentinel for "non-compliant or unknown" —
 #: the recognised scale is 1-8, and get_bbbee_points returns 0.0 for anything
@@ -211,6 +236,33 @@ def decide(canonical_field: str | None, label_text: str | None,
 
     value, source = resolve_value(canonical_field, profile)
     if value is None:
+        # The user has said this field does not apply to their company, so the
+        # correct answer is "N/A" rather than a blank line.
+        #
+        # `Comprehensive_Tender_Document_Training_Guide.pdf`, golden rule 1 of
+        # four: "Complete every field — use 'N/A' if not applicable." It lists
+        # "Leaving blank instead of 'N/A'" as a named common mistake on SBD 1's
+        # VAT row, and SBD 4 is blunter: "If 'not applicable,' write 'N/A' or
+        # 'None' — do NOT leave blank." All three procurement systems in that
+        # guide — SBD, UNGM and World Bank — say the same thing.
+        #
+        # AN EMPTY PROFILE IS NOT A DECLARATION. "We are not VAT registered" and
+        # "nobody has told CairoAI the VAT number" are different facts and only
+        # the first one may be written on a bid; writing N/A for the second is a
+        # false statement to an organ of state. So this reads a set the USER
+        # populated by answering a direct question, never the absence of a value.
+        #
+        # It sits AFTER the blocklist and the whitelist deliberately. A
+        # signature, a price and a sworn declaration cannot reach this line, so
+        # no declaration can put "N/A" on one — and "never write 'not
+        # applicable' where a yes/no is required, it reads as avoiding
+        # disclosure" stays true.
+        if canonical_field in (profile or {}).get(DECLARED_NA_KEY, ()):
+            return FillDecision(
+                True,
+                value=NOT_APPLICABLE,
+                source="declared not applicable by you",
+            )
         return FillDecision(
             False,
             reason="Nothing on file for this field yet — add it in your company profile.",

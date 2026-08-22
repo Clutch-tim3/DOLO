@@ -5,7 +5,7 @@
 # decorators in main.py say.
 endpoints:
   api:
-    availableMemoryMb: 1024
+    availableMemoryMb: 2048
     concurrency: null
     entryPoint: api
     httpsTrigger: {}

@@ -284,10 +284,12 @@ def test_a_value_too_wide_for_its_blank_is_refused_not_truncated(
 
 def test_an_unmatched_cell_is_not_marked_on_the_page(blank_pdf, tmp_path,
                                                      monkeypatch):
-    """`[ ! ]` means "refused on purpose", and a header is not a refusal.
-
-    The ruled-cell extractor offered up a table header and an italic footnote
-    as blanks, and both came back stamped in red on the user's own document.
+    """
+    Nothing is stamped on the page. This test predates the removal of the
+    marker — it was about ONE case that must not be marked, and is now the
+    general rule. Kept because the case is still the one that hurt: the
+    ruled-cell extractor offered up a table header and an italic footnote as
+    blanks, and both came back in red on the user's own document.
     """
     out = tmp_path / "filled.pdf"
     monkeypatch.setattr(pdf_filler, "extract_pdf_blanks",
@@ -300,11 +302,20 @@ def test_an_unmatched_cell_is_not_marked_on_the_page(blank_pdf, tmp_path,
     assert SKIP_MARKER not in _page_text(out, 0)
 
 
-def test_a_deliberate_refusal_is_still_marked(blank_pdf, tmp_path, monkeypatch):
-    """The other half: dropping the marker everywhere would hide real refusals.
+def test_a_deliberate_refusal_is_recorded_and_not_drawn(blank_pdf, tmp_path,
+                                                        monkeypatch):
+    """
+    THIS TEST WAS INVERTED, on the owner's instruction.
 
-    A signature block left blank on purpose has to look different from one
-    nobody got to.
+    It used to assert the marker WAS drawn for a real refusal — "a signature
+    block left blank on purpose has to look different from one nobody got to."
+    That reasoning was about the review, and the marker was on the document,
+    which is a different thing that gets printed and submitted. On his RFQ nine
+    of them landed in the Identity Number column of an SBD 4 table that is
+    correctly empty.
+
+    The refusal is still recorded in full. It is just not written onto a
+    statutory form.
     """
     out = tmp_path / "filled.pdf"
     monkeypatch.setattr(pdf_filler, "extract_pdf_blanks",
@@ -313,7 +324,8 @@ def test_a_deliberate_refusal_is_still_marked(blank_pdf, tmp_path, monkeypatch):
     result = fill_pdf(blank_pdf, out, PROFILE, _match_company_name)
 
     assert result.skipped[0].category == "blocked"
-    assert SKIP_MARKER in _page_text(out, 0)
+    assert result.skipped[0].reason, "the refusal must still say why"
+    assert SKIP_MARKER not in _page_text(out, 0)
 
 
 def test_the_highlight_is_visible_on_a_scanned_page(tmp_path, monkeypatch):

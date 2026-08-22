@@ -179,6 +179,17 @@ ALIAS_SEEDS: dict[str, tuple[str, ...]] = {
         "BROAD BASED BLACK ECONOMIC EMPOWERMENT STATUS LEVEL",
         "B-BBEE STATUS LEVEL OF CONTRIBUTOR",
     ),
+    # SBD 6.1's claim box. The wording varies between the PPR 2017 and PPR 2022
+    # editions, and both are still issued.
+    "bbbee_points_claim": (
+        "B-BBEE STATUS LEVEL OF CONTRIBUTION CLAIMED",
+        "NUMBER OF POINTS CLAIMED",
+        "POINTS CLAIMED",
+        "PREFERENCE POINTS CLAIMED",
+        "B-BBEE POINTS CLAIMED",
+        "NUMBER OF PREFERENCE POINTS CLAIMED",
+        "POINTS CLAIMED FOR B-BBEE STATUS LEVEL OF CONTRIBUTION",
+    ),
     "physical_address": (
         "PHYSICAL ADDRESS",
         "STREET ADDRESS",
@@ -303,6 +314,14 @@ ALIAS_SEEDS: dict[str, tuple[str, ...]] = {
         "POSITION OCCUPIED IN THE COMPANY",
         "POSITION OCCUPIED IN THE ENTERPRISE",
         "POSITION OCCUPIED IN THE COMPANY STRUCTURE",
+        # The signature block on MBD 3.1 and most SBDs runs the question
+        # THROUGH the blank: "I (full name) ______, in my capacity as ______,
+        # the duly authorized representative of ______(company name)". The
+        # words left of the second blank are a clause, not a caption, so it
+        # matched nothing and the owner filled his own job title in by hand.
+        "IN MY CAPACITY AS",
+        "IN THE CAPACITY OF",
+        "IN MY CAPACITY",
     ),
 }
 

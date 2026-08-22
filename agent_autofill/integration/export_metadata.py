@@ -146,7 +146,7 @@ class ReviewStamp:
                 + (f" and acknowledged all {self.flags_total} flagged field(s)"
                    if self.flags_total else "")
                 + f", on {self.stamped_at}. Pre-filled values are shaded. Every "
-                "field marked [ ! ] must still be completed by hand. No signature "
+                "field CairoAI left blank must still be completed by hand. No signature "
                 "has been applied and no pricing has been entered. Review "
                 f"reference {self.review_id}."
             )
@@ -154,7 +154,7 @@ class ReviewStamp:
             f"{self.flags_open} of {self.flags_total} flagged field(s) have NOT been "
             "reviewed by a person. This document is an incomplete draft. "
             f"{self.filled_count} field(s) were pre-filled by CairoAI from the company "
-            "profile and are shaded; every field marked [ ! ] is still blank. Do not "
+            "profile and are shaded; every other field is still blank. Do not "
             "submit this document and do not treat any value in it as verified. "
             f"Review reference {self.review_id}."
         )
@@ -176,7 +176,7 @@ class ReviewStamp:
                 "by a person"
                 + (f"; all {self.flags_total} flagged field(s) acknowledged "
                    "individually" if self.flags_total else "")
-                + f" on {self.stamped_at}. Fields marked [ ! ] must still be "
+                + f" on {self.stamped_at}. Fields left blank must still be "
                 "completed by hand. No signature applied, no pricing entered. "
                 "NOT A SUBMISSION."
             )
@@ -184,7 +184,7 @@ class ReviewStamp:
             body = (
                 f"UNREVIEWED DRAFT. {self.flags_open} of {self.flags_total} flagged "
                 f"field(s) NOT reviewed by a person. {self.filled_count} field(s) "
-                "pre-filled by CairoAI; fields marked [ ! ] are blank. "
+                "pre-filled by CairoAI; all other fields are blank. "
                 "DO NOT SUBMIT."
             )
         return _clip(f"{body} Review {self.review_id}.")

@@ -101,11 +101,53 @@ REASONS = {
     "unmatched": (
         "I could not tell what this field is asking for."
     ),
+    "per_tender": (
+        "This asks about this specific tender, not about your company, so "
+        "there is nothing on file to fill it from."
+    ),
 }
 
 #: Categories that are the system working correctly rather than failing. The
 #: review screen can present these as information instead of as problems.
-CORRECT_BY_DESIGN = frozenset({"declaration", "pricing_cell", "tender_terms"})
+CORRECT_BY_DESIGN = frozenset({"declaration", "pricing_cell", "tender_terms",
+                               "per_tender"})
+
+#: Longest description of a question we will repeat back. `asking_for` comes
+#: from a model reading an attacker-controlled label, so it is treated as text
+#: to display, never as anything else.
+_MAX_ASKING_FOR = 120
+
+
+def _tidy(phrase: str) -> str:
+    """
+    A model's phrase, made safe to print in the review.
+
+    It is derived from a label in someone else's tender document, so it is
+    stripped of anything that could read as markup, flattened to one line and
+    capped. This is display text and nothing more — no decision anywhere reads
+    it.
+    """
+    text = re.sub(r"[<>&{}\x00-\x1f]+", " ", phrase or "")
+    text = re.sub(r"\s+", " ", text).strip().rstrip(".")
+    if len(text) > _MAX_ASKING_FOR:
+        text = text[:_MAX_ASKING_FOR].rstrip() + "…"
+    return text
+
+
+def explain_per_tender(asking_for: str | None) -> str:
+    """
+    "This asks for X" instead of "I could not tell what this is asking for."
+
+    The refusal is identical either way — the answer is not in the profile and
+    the system will not invent one. What changes is whether the user can tell
+    the difference between a question CairoAI understood and declined, and one
+    it simply failed to read.
+    """
+    phrase = _tidy(asking_for or "")
+    if not phrase:
+        return REASONS["per_tender"]
+    return (f"This asks for {phrase}. That is specific to this tender rather "
+            f"than a fact about your company, so only you can answer it.")
 
 
 def classify_unfilled(label: str | None, match=None) -> tuple[str, str]:
